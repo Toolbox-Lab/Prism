@@ -69,27 +69,48 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Decode a transaction error into plain English.
+    #[command(subcommand_help_heading = "Analysis Commands")]
     Decode(commands::decode::DecodeArgs),
+
     /// Inspect full transaction context.
+    #[command(subcommand_help_heading = "Analysis Commands")]
     Inspect(commands::inspect::InspectArgs),
+
     /// Replay transaction and output execution trace.
+    #[command(subcommand_help_heading = "Analysis Commands")]
     Trace(commands::trace::TraceArgs),
+
     /// Generate resource consumption profile.
+    #[command(subcommand_help_heading = "Analysis Commands")]
     Profile(commands::profile::ProfileArgs),
+
     /// Show state diff (before/after) for a transaction.
+    #[command(subcommand_help_heading = "State & Simulation")]
     Diff(commands::diff::DiffArgs),
-    /// Launch interactive TUI debugger.
-    Replay(commands::replay::ReplayArgs),
+
     /// Re-simulate with modified inputs.
+    #[command(subcommand_help_heading = "State & Simulation")]
     Whatif(commands::whatif::WhatifArgs),
+
+    /// Launch interactive TUI debugger.
+    #[command(subcommand_help_heading = "Development Tools")]
+    Replay(commands::replay::ReplayArgs),
+
     /// Export debug session as a regression test.
+    #[command(subcommand_help_heading = "Development Tools")]
     Export(commands::export::ExportArgs),
-    /// Clear local cache data.
-    Clean(commands::clean::CleanArgs),
-    /// Manage the error taxonomy database.
-    Db(commands::db::DbArgs),
+
     /// Start WebSocket server for streaming trace updates.
+    #[command(subcommand_help_heading = "Development Tools")]
     Serve(commands::serve::ServeArgs),
+
+    /// Clear local cache data.
+    #[command(subcommand_help_heading = "Configuration & Maintenance")]
+    Clean(commands::clean::CleanArgs),
+
+    /// Manage the error taxonomy database.
+    #[command(subcommand_help_heading = "Configuration & Maintenance")]
+    Db(commands::db::DbArgs),
 }
 
 #[tokio::main]
