@@ -6,10 +6,19 @@ use prism_core::types::config::NetworkConfig;
 #[derive(Args)]
 pub struct InspectArgs {
     /// Transaction hash to inspect.
+    #[arg(value_name = "TX_HASH")]
     pub tx_hash: String,
+
+    /// Show detailed fee breakdown including bid vs charged values.
+    #[arg(long)]
+    pub fee_stats: bool,
 }
 
-pub async fn run(args: InspectArgs, network: &NetworkConfig, output_format: &str) -> anyhow::Result<()> {
+pub async fn run(
+    args: InspectArgs,
+    network: &NetworkConfig,
+    output_format: &str,
+) -> anyhow::Result<()> {
     let spinner = indicatif::ProgressBar::new_spinner();
     spinner.set_message("Fetching and decoding transaction...");
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
@@ -18,11 +27,8 @@ pub async fn run(args: InspectArgs, network: &NetworkConfig, output_format: &str
 
     spinner.finish_and_clear();
 
-    // Inspect shows the full context including decoded args, auth, resources, fees
-    match output_format {
-        "json" => crate::output::json::print_report(&report)?,
-        _ => crate::output::human::print_report(&report)?,
-    }
+    // Inspect shows the full context including decoded args, auth, resources, fees.
+    crate::output::print_diagnostic_report(&report, output_format)?;
 
     Ok(())
 }

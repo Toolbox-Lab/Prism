@@ -17,7 +17,7 @@ mod config;
 mod output;
 mod tui;
 
-use clap::{ArgAction, Parser, Subcommand};
+use clap::{ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
@@ -41,15 +41,20 @@ impl std::fmt::Display for Network {
 
 /// Prism — From cryptic error to root cause in one command.
 #[derive(Parser)]
-#[command(name = "prism", version, about, long_about = None)]
+#[command(
+    name = "prism",
+    disable_version_flag = true,
+    about,
+    long_about = None
+)]
 #[command(propagate_version = true)]
 struct Cli {
     /// Subcommand to execute.
     #[command(subcommand)]
     command: Commands,
 
-    /// Output format: human, json, compact.
-    #[arg(long, default_value = "human", global = true)]
+    /// Output format: human, json, compact, or short.
+    #[arg(long, default_value = "human", value_parser = ["human", "json", "compact", "short"], global = true)]
     output: String,
 
     /// Network: mainnet, testnet, or futurenet.
@@ -83,11 +88,15 @@ enum Commands {
     Clean(commands::clean::CleanArgs),
     /// Manage the error taxonomy database.
     Db(commands::db::DbArgs),
+    /// Start WebSocket server for streaming trace updates.
+    Serve(commands::serve::ServeArgs),
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+    let version = Box::leak(build_version().into_boxed_str());
+    let matches = Cli::command().version(version).get_matches();
+    let cli = Cli::from_arg_matches(&matches)?;
 
     // Initialize logging before resolving the network or dispatching commands.
     tracing_subscriber::fmt()
@@ -126,9 +135,19 @@ async fn main() -> anyhow::Result<()> {
         Commands::Export(args) => commands::export::run(args, &network).await?,
         Commands::Clean(args) => commands::clean::run(args).await?,
         Commands::Db(args) => commands::db::run(args).await?,
+        Commands::Serve(args) => commands::serve::run(args, &network).await?,
     }
 
     Ok(())
+}
+
+fn build_version() -> String {
+    format!(
+        "prism {} (build: {}) | Soroban Protocol: {}",
+        prism_core::VERSION,
+        BUILD_HASH,
+        prism_core::SOROBAN_PROTOCOL_VERSION
+    )
 }
 
 fn build_log_filter(verbose: u8) -> EnvFilter {
@@ -180,6 +199,13 @@ mod tests {
     }
 
     #[test]
+    fn parses_short_output_alias() {
+        let cli = Cli::try_parse_from(["prism", "--output", "short", "decode", "abc123"])
+            .expect("cli should parse");
+        assert_eq!(cli.output, "short");
+    }
+
+    #[test]
     fn defaults_to_warn_without_verbose() {
         let warn = build_log_filter(0).to_string();
         let debug = build_log_filter(1).to_string();
@@ -189,5 +215,14 @@ mod tests {
         assert!(debug.contains("prism=debug"));
         assert!(trace.contains("prism=trace"));
         assert!(trace.contains("prism_core=trace"));
+    }
+
+    #[test]
+    fn version_string_includes_build_hash_and_protocol() {
+        let version = build_version();
+
+        assert!(version.contains(prism_core::VERSION));
+        assert!(version.contains(BUILD_HASH));
+        assert!(version.contains(&prism_core::SOROBAN_PROTOCOL_VERSION.to_string()));
     }
 }

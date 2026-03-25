@@ -146,6 +146,7 @@ The primary interface. Every feature is accessible from the command line with hu
 | `Prism replay <tx-hash> --interactive` | 3 | Launch the TUI debugger with breakpoints |
 | `Prism whatif <tx-hash> --modify <patch>` | 3 | Re-simulate with modified inputs, compare outcomes |
 | `Prism export <tx-hash> --format test` | 3 | Export as a regression test case |
+| `Prism serve` | 2 | Start WebSocket server for streaming trace updates |
 | `Prism db update` | — | Update the error taxonomy database |
 
 ### VS Code Extension

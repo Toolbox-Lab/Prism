@@ -61,18 +61,25 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> PrismResult<ContractSpec> {
     };
 
     for payload in parser.parse_all(wasm_bytes) {
-        let payload = payload.map_err(|e| PrismError::SpecError(format!("WASM parse error: {e}")))?;
+        let payload =
+            payload.map_err(|e| PrismError::SpecError(format!("WASM parse error: {e}")))?;
 
         if let wasmparser::Payload::CustomSection(section) = payload {
             match section.name() {
                 "contractspecv0" => {
                     // TODO: Parse SCSpecEntry items from section data
                     // Each entry can be a function, error enum, struct, or union definition
-                    tracing::debug!("Found contractspecv0 section ({} bytes)", section.data().len());
+                    tracing::debug!(
+                        "Found contractspecv0 section ({} bytes)",
+                        section.data().len()
+                    );
                 }
                 "contractmetav0" => {
                     // TODO: Parse SCMetaEntry items from section data
-                    tracing::debug!("Found contractmetav0 section ({} bytes)", section.data().len());
+                    tracing::debug!(
+                        "Found contractmetav0 section ({} bytes)",
+                        section.data().len()
+                    );
                 }
                 _ => {}
             }

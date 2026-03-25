@@ -14,20 +14,23 @@
 //! - `debugger`: Enable Tier 3 interactive debugger (implies `replay`)
 //! - `wasm-compat`: Build for WASM target (disables features requiring native I/O)
 
+pub mod cache;
+pub mod debugger;
+pub mod decode;
+pub mod network;
+pub mod replay;
+pub mod spec;
+pub mod taxonomy;
 pub mod types;
 pub mod xdr;
-pub mod spec;
-pub mod network;
-pub mod cache;
-pub mod taxonomy;
-pub mod decode;
-pub mod replay;
-pub mod debugger;
 
 // Re-export key types for convenience
+pub use types::config::NetworkConfig;
 pub use types::error::PrismError;
 pub use types::report::DiagnosticReport;
-pub use types::config::NetworkConfig;
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Soroban ledger protocol version supported by the linked core crates.
+pub const SOROBAN_PROTOCOL_VERSION: u32 = soroban_env_host::meta::INTERFACE_VERSION.protocol;

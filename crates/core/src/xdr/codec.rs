@@ -4,6 +4,7 @@
 //! ledger entries, SCVal, and SCSpecEntry types.
 
 use crate::types::error::{PrismError, PrismResult};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 /// Decode a base64-encoded XDR transaction result.
 ///
@@ -14,6 +15,8 @@ use crate::types::error::{PrismError, PrismResult};
 /// The raw decoded bytes, ready for further parsing.
 pub fn decode_xdr_base64(xdr_base64: &str) -> PrismResult<Vec<u8>> {
     // TODO: Implement full XDR decoding pipeline
+    use stellar_xdr::curr::ReadXdr;
+    let _ = ReadXdr::from_xdr_base64;
     let bytes = base64_decode(xdr_base64)
         .map_err(|e| PrismError::XdrError(format!("Base64 decode failed: {e}")))?;
     Ok(bytes)
@@ -42,15 +45,11 @@ pub fn decode_tx_hash(hash_hex: &str) -> PrismResult<[u8; 32]> {
 // --- Internal helpers ---
 
 fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
-    // Simple base64 decode placeholder
-    // In production, use the stellar-xdr built-in base64 support
-    let _ = input;
-    Ok(Vec::new())
+    STANDARD.decode(input).map_err(|err| err.to_string())
 }
 
 fn base64_encode(bytes: &[u8]) -> String {
-    let _ = bytes;
-    String::new()
+    STANDARD.encode(bytes)
 }
 
 fn hex_decode(input: &str) -> Result<Vec<u8>, String> {
@@ -77,6 +76,18 @@ mod tests {
     #[test]
     fn test_decode_tx_hash_invalid_length() {
         let result = decode_tx_hash("abcd");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decode_xdr_base64_valid() {
+        let result = decode_xdr_base64("AAAA");
+        assert_eq!(result.expect("valid base64"), vec![0, 0, 0]);
+    }
+
+    #[test]
+    fn test_decode_xdr_base64_invalid() {
+        let result = decode_xdr_base64("!!!");
         assert!(result.is_err());
     }
 }

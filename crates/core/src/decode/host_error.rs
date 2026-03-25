@@ -3,8 +3,8 @@
 //! Parses error category + code from TransactionResult XDR and classifies
 //! into known error families using the taxonomy database.
 
-use crate::types::error::{PrismError, PrismResult};
 use crate::taxonomy::schema::ErrorCategory;
+use crate::types::error::{PrismError, PrismResult};
 
 /// Classified error information extracted from a transaction result.
 #[derive(Debug, Clone)]
@@ -74,7 +74,10 @@ mod tests {
     #[test]
     fn test_parse_error_category() {
         assert_eq!(parse_error_category("budget"), Some(ErrorCategory::Budget));
-        assert_eq!(parse_error_category("STORAGE"), Some(ErrorCategory::Storage));
+        assert_eq!(
+            parse_error_category("STORAGE"),
+            Some(ErrorCategory::Storage)
+        );
         assert_eq!(parse_error_category("unknown"), None);
     }
 }

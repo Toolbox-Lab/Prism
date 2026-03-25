@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Prism CLI — Soroban Transaction Debugger"
+build = "build.rs"
 
 [[bin]]
 name = "prism"
@@ -22,6 +23,10 @@ tabled = { workspace = true }
 
 # Async
 tokio = { workspace = true }
+
+# WebSocket
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
