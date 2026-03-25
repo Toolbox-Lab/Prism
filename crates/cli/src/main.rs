@@ -34,9 +34,18 @@ struct Cli {
     #[arg(long, short, default_value = "testnet", global = true)]
     network: String,
 
+
     /// Enable verbose logging.
     #[arg(long, short, global = true)]
     verbose: bool,
+
+    /// Quiet mode: suppress spinners/headers/progress (keep core results).
+    #[arg(long, global = true)]
+    quiet: bool,
+
+
+
+
 }
 
 #[derive(Subcommand)]
@@ -76,15 +85,15 @@ async fn main() -> anyhow::Result<()> {
 
     // Dispatch to command handler
     match cli.command {
-        Commands::Decode(args) => commands::decode::run(args, &network, &cli.output).await?,
-        Commands::Inspect(args) => commands::inspect::run(args, &network, &cli.output).await?,
-        Commands::Trace(args) => commands::trace::run(args, &network, &cli.output).await?,
-        Commands::Profile(args) => commands::profile::run(args, &network, &cli.output).await?,
-        Commands::Diff(args) => commands::diff::run(args, &network, &cli.output).await?,
-        Commands::Replay(args) => commands::replay::run(args, &network).await?,
-        Commands::Whatif(args) => commands::whatif::run(args, &network, &cli.output).await?,
-        Commands::Export(args) => commands::export::run(args, &network).await?,
-        Commands::Db(args) => commands::db::run(args).await?,
+        Commands::Decode(args) => commands::decode::run(args, &network, &cli.output, &cli.quiet).await?,
+        Commands::Inspect(args) => commands::inspect::run(args, &network, &cli.output, &cli.quiet).await?,
+        Commands::Trace(args) => commands::trace::run(args, &network, &cli.output, &cli.quiet).await?,
+        Commands::Profile(args) => commands::profile::run(args, &network, &cli.output, &cli.quiet).await?,
+        Commands::Diff(args) => commands::diff::run(args, &network, &cli.output, &cli.quiet).await?,
+        Commands::Replay(args) => commands::replay::run(args, &network, &cli.quiet).await?,
+        Commands::Whatif(args) => commands::whatif::run(args, &network, &cli.output, &cli.quiet).await?,
+        Commands::Export(args) => commands::export::run(args, &network, &cli.quiet).await?,
+        Commands::Db(args) => commands::db::run(args, &cli.quiet).await?,
     }
 
     Ok(())

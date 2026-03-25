@@ -21,19 +21,27 @@ pub enum DbCommands {
     },
 }
 
-pub async fn run(args: DbArgs) -> anyhow::Result<()> {
+pub async fn run(args: DbArgs, quiet: &bool) -> anyhow::Result<()> {
     match args.command {
         DbCommands::Update => {
-            println!("Updating taxonomy database...");
+            if !*quiet {
+                println!("Updating taxonomy database...");
+            }
             // TODO: Download latest taxonomy from GitHub releases
-            println!("Database is up to date.");
+            if !*quiet {
+                println!("Database is up to date.");
+            }
         }
         DbCommands::Stats => {
             let db = prism_core::taxonomy::loader::TaxonomyDatabase::load_embedded()?;
-            println!("Taxonomy database: {} entries", db.len());
+            if !*quiet {
+                println!("Taxonomy database: {} entries", db.len());
+            }
         }
         DbCommands::Search { query } => {
-            println!("Searching for: {query}");
+            if !*quiet {
+                println!("Searching for: {query}");
+            }
             // TODO: Search taxonomy entries
         }
     }

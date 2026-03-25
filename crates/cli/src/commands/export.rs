@@ -17,8 +17,10 @@ pub struct ExportArgs {
     pub output: Option<String>,
 }
 
-pub async fn run(args: ExportArgs, network: &NetworkConfig) -> anyhow::Result<()> {
-    println!("Exporting {} as {} format...", args.tx_hash, args.format);
+pub async fn run(args: ExportArgs, network: &NetworkConfig, quiet: &bool) -> anyhow::Result<()> {
+    if !*quiet {
+        println!("Exporting {} as {} format...", args.tx_hash, args.format);
+    }
 
     // TODO: Generate a self-contained test case from the debug session
     // - Historical state snapshot
@@ -29,7 +31,9 @@ pub async fn run(args: ExportArgs, network: &NetworkConfig) -> anyhow::Result<()
         format!("prism_test_{}.rs", &args.tx_hash[..8.min(args.tx_hash.len())])
     });
 
-    println!("Test case exported to {output_path}");
+    if !*quiet {
+        println!("Test case exported to {output_path}");
+    }
 
     Ok(())
 }

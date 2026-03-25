@@ -9,14 +9,18 @@ pub struct InspectArgs {
     pub tx_hash: String,
 }
 
-pub async fn run(args: InspectArgs, network: &NetworkConfig, output_format: &str) -> anyhow::Result<()> {
-    let spinner = indicatif::ProgressBar::new_spinner();
-    spinner.set_message("Fetching and decoding transaction...");
-    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+pub async fn run(args: InspectArgs, network: &NetworkConfig, output_format: &str, quiet: &bool) -> anyhow::Result<()> {
+    if !*quiet {
+        let spinner = indicatif::ProgressBar::new_spinner();
+        spinner.set_message("Fetching and decoding transaction...");
+        spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    let report = prism_core::decode::decode_transaction(&args.tx_hash, network).await?;
+        let report = prism_core::decode::decode_transaction(&args.tx_hash, network).await?;
 
-    spinner.finish_and_clear();
+        spinner.finish_and_clear();
+    } else {
+        let report = prism_core::decode::decode_transaction(&args.tx_hash, network).await?;
+    }
 
     // Inspect shows the full context including decoded args, auth, resources, fees
     match output_format {

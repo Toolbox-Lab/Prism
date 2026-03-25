@@ -19,20 +19,26 @@ pub struct DecodeArgs {
 }
 
 /// Execute the decode command.
-pub async fn run(args: DecodeArgs, network: &NetworkConfig, output_format: &str) -> anyhow::Result<()> {
+pub async fn run(args: DecodeArgs, network: &NetworkConfig, output_format: &str, quiet: &bool) -> anyhow::Result<()> {
     if args.raw {
-        println!("Decoding raw error string: {}", args.tx_hash);
+        if !*quiet {
+            println!("Decoding raw error string: {}", args.tx_hash);
+        }
         // TODO: Parse raw error string and decode
         return Ok(());
     }
 
-    let spinner = indicatif::ProgressBar::new_spinner();
-    spinner.set_message(format!("Fetching transaction {}...", &args.tx_hash[..8.min(args.tx_hash.len())]));
-    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+    if !*quiet {
+        let spinner = indicatif::ProgressBar::new_spinner();
+        spinner.set_message(format!("Fetching transaction {}...", &args.tx_hash[..8.min(args.tx_hash.len())]));
+        spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    let report = prism_core::decode::decode_transaction(&args.tx_hash, network).await?;
+        let report = prism_core::decode::decode_transaction(&args.tx_hash, network).await?;
 
-    spinner.finish_and_clear();
+        spinner.finish_and_clear();
+    } else {
+        let report = prism_core::decode::decode_transaction(&args.tx_hash, network).await?;
+    }
 
     match output_format {
         "json" => crate::output::json::print_report(&report)?,
