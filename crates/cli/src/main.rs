@@ -10,6 +10,7 @@
 //!   prism whatif <tx-hash>       — Re-simulate with modifications
 //!   prism export <tx-hash>       — Export as regression test
 //!   prism db update              — Update taxonomy database
+//!   prism serve                  — Start web server for Prism Web UI
 //!   prism clean                  — Clear local cache data
 //!   prism serve                  — Launch Web UI dashboard
 
@@ -93,6 +94,8 @@ enum Commands {
     /// Manage the error taxonomy database.
     #[command(subcommand_help_heading = "Configuration & Maintenance")]
     Db(commands::db::DbArgs),
+    /// Start a local web server to host the Prism Web UI.
+    Serve(commands::serve::ServeArgs),
 }
 
 #[tokio::main]

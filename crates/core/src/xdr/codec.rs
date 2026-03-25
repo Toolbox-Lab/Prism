@@ -14,6 +14,9 @@ use base64::{ engine::general_purpose::STANDARD, Engine as _ };
 /// # Returns
 /// The raw decoded bytes, ready for further parsing.
 pub fn decode_xdr_base64(xdr_base64: &str) -> PrismResult<Vec<u8>> {
+    // TODO: Implement full XDR decoding pipeline
+    let bytes = base64_decode(xdr_base64)
+        .map_err(|e| PrismError::XdrError(format!("Base64 decode failed: {e}")))?;
     let bytes = base64_decode(xdr_base64).map_err(|e|
         PrismError::XdrError(format!("Base64 decode failed: {e}"))
     )?;
