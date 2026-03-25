@@ -59,6 +59,8 @@ enum Commands {
     Export(commands::export::ExportArgs),
     /// Manage the error taxonomy database.
     Db(commands::db::DbArgs),
+    /// Manage API credentials for hosted services.
+    Auth(commands::auth::AuthArgs),
 }
 
 #[tokio::main]
@@ -85,6 +87,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Whatif(args) => commands::whatif::run(args, &network, &cli.output).await?,
         Commands::Export(args) => commands::export::run(args, &network).await?,
         Commands::Db(args) => commands::db::run(args).await?,
+        Commands::Auth(args) => commands::auth::run(args).await?,
     }
 
     Ok(())
