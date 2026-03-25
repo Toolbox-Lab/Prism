@@ -13,7 +13,11 @@ pub struct TraceArgs {
     pub output_file: Option<String>,
 }
 
-pub async fn run(args: TraceArgs, network: &NetworkConfig, output_format: &str) -> anyhow::Result<()> {
+pub async fn run(
+    args: TraceArgs,
+    network: &NetworkConfig,
+    output_format: &str,
+) -> anyhow::Result<()> {
     let progress = indicatif::ProgressBar::new_spinner();
     progress.set_message("Reconstructing state and replaying transaction...");
     progress.enable_steady_tick(std::time::Duration::from_millis(100));
@@ -22,10 +26,7 @@ pub async fn run(args: TraceArgs, network: &NetworkConfig, output_format: &str) 
 
     progress.finish_and_clear();
 
-    let output = match output_format {
-        "json" => serde_json::to_string_pretty(&trace)?,
-        _ => format!("{trace:#?}"),
-    };
+    let output = crate::output::format_trace(&trace, output_format)?;
 
     if let Some(path) = args.output_file {
         std::fs::write(&path, &output)?;

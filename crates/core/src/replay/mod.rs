@@ -1,10 +1,10 @@
 //! Tier 2: Execution Trace & Replay Engine.
 
-pub mod state;
-pub mod sandbox;
-pub mod trace;
 pub mod differ;
 pub mod profiler;
+pub mod sandbox;
+pub mod state;
+pub mod trace;
 
 use crate::types::config::NetworkConfig;
 use crate::types::error::PrismResult;

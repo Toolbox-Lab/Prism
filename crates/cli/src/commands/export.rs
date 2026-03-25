@@ -26,7 +26,10 @@ pub async fn run(args: ExportArgs, network: &NetworkConfig) -> anyhow::Result<()
     // - Expected outcome
 
     let output_path = args.output.unwrap_or_else(|| {
-        format!("prism_test_{}.rs", &args.tx_hash[..8.min(args.tx_hash.len())])
+        format!(
+            "prism_test_{}.rs",
+            &args.tx_hash[..8.min(args.tx_hash.len())]
+        )
     });
 
     println!("Test case exported to {output_path}");

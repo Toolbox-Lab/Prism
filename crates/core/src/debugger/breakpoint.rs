@@ -34,21 +34,13 @@ pub enum BreakpointCondition {
         function_name: String,
     },
     /// Break on any call to a specific host function.
-    HostFunction {
-        function_name: String,
-    },
+    HostFunction { function_name: String },
     /// Break when a cross-contract call targets a specific contract.
-    ContractCall {
-        target_contract_id: String,
-    },
+    ContractCall { target_contract_id: String },
     /// Break when CPU budget exceeds a threshold.
-    BudgetThreshold {
-        cpu_instructions: u64,
-    },
+    BudgetThreshold { cpu_instructions: u64 },
     /// Break when a specific ledger key is accessed.
-    StorageAccess {
-        ledger_key: String,
-    },
+    StorageAccess { ledger_key: String },
 }
 
 /// Breakpoint controller — evaluates conditions at each trace point.
@@ -91,10 +83,13 @@ impl BreakpointController {
 
     /// Toggle a breakpoint's enabled state.
     pub fn toggle(&mut self, id: u32) -> Option<bool> {
-        self.breakpoints.iter_mut().find(|bp| bp.id == id).map(|bp| {
-            bp.enabled = !bp.enabled;
-            bp.enabled
-        })
+        self.breakpoints
+            .iter_mut()
+            .find(|bp| bp.id == id)
+            .map(|bp| {
+                bp.enabled = !bp.enabled;
+                bp.enabled
+            })
     }
 
     /// Get all active breakpoints.

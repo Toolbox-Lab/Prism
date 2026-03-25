@@ -70,11 +70,13 @@ impl TaxonomyDatabase {
             let path = entry.path();
 
             if path.extension().map_or(false, |ext| ext == "toml") {
-                let content = std::fs::read_to_string(&path)
-                    .map_err(|e| PrismError::TaxonomyError(format!("Cannot read {}: {e}", path.display())))?;
+                let content = std::fs::read_to_string(&path).map_err(|e| {
+                    PrismError::TaxonomyError(format!("Cannot read {}: {e}", path.display()))
+                })?;
 
-                let file: TaxonomyFile = toml::from_str(&content)
-                    .map_err(|e| PrismError::TaxonomyError(format!("Parse error in {}: {e}", path.display())))?;
+                let file: TaxonomyFile = toml::from_str(&content).map_err(|e| {
+                    PrismError::TaxonomyError(format!("Parse error in {}: {e}", path.display()))
+                })?;
 
                 for entry in file.errors {
                     db.entries

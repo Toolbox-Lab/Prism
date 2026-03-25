@@ -42,29 +42,8 @@ pub async fn run(
 
     spinner.finish_and_clear();
 
-    print_report(&report, output_format)?;
-
-    Ok(())
-}
-
-fn build_raw_xdr_report(raw_xdr: &str) -> anyhow::Result<DiagnosticReport> {
-    let bytes = prism_core::xdr::codec::decode_xdr_base64(raw_xdr)?;
-    let mut report =
-        DiagnosticReport::new("raw-xdr", 0, "RawXdr", "Decoded raw XDR input from --raw");
-    report.severity = Severity::Info;
-    report.detailed_explanation = format!(
-        "Decoded {} bytes from the raw base64 XDR string provided on the command line.",
-        bytes.len()
-    );
-    Ok(report)
-}
-
-fn print_report(report: &DiagnosticReport, output_format: &str) -> anyhow::Result<()> {
-    match output_format {
-        "json" => crate::output::json::print_report(report)?,
-        "compact" => crate::output::compact::print_report(report)?,
-        _ => crate::output::human::print_report(report)?,
-    }
+    let effective_output = if args.short { "short" } else { output_format };
+    crate::output::print_diagnostic_report(&report, effective_output)?;
 
     Ok(())
 }
