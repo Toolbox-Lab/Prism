@@ -7,6 +7,7 @@
 use crate::types::config::NetworkConfig;
 use crate::types::error::{PrismError, PrismResult};
 use serde::{Deserialize, Serialize};
+use std::time::Instant;
 
 /// Soroban RPC client with retry and rate-limit handling.
 pub struct RpcClient {
@@ -123,6 +124,23 @@ impl RpcClient {
                 tracing::debug!("Retry attempt {attempt} for RPC method {method}");
             }
 
+            let started_at = Instant::now();
+            let request_body = serde_json::to_string(&request)
+                .unwrap_or_else(|_| "<failed to serialize request>".to_string());
+            tracing::debug!(
+                method,
+                endpoint = %self.config.rpc_url,
+                attempt,
+                "Sending RPC request"
+            );
+            tracing::trace!(
+                method,
+                endpoint = %self.config.rpc_url,
+                attempt,
+                request = %request_body,
+                "RPC request payload"
+            );
+
             match self
                 .client
                 .post(&self.config.rpc_url)
@@ -131,18 +149,47 @@ impl RpcClient {
                 .await
             {
                 Ok(response) => {
-                    if response.status() == 429 {
+                    let status = response.status();
+                    let response_body = response
+                        .text()
+                        .await
+                        .map_err(|e| PrismError::RpcError(format!("Response read error: {e}")))?;
+                    let elapsed_ms = started_at.elapsed().as_millis();
+
+                    tracing::debug!(
+                        method,
+                        endpoint = %self.config.rpc_url,
+                        attempt,
+                        status = %status,
+                        elapsed_ms,
+                        "RPC response received"
+                    );
+                    tracing::trace!(
+                        method,
+                        endpoint = %self.config.rpc_url,
+                        attempt,
+                        elapsed_ms,
+                        response = %response_body,
+                        "RPC response payload"
+                    );
+
+                    if status == 429 {
                         tracing::warn!("Rate limited by RPC, backing off...");
                         last_error = Some(PrismError::RpcError("Rate limited".to_string()));
                         continue;
                     }
 
-                    let rpc_response: JsonRpcResponse = response
-                        .json()
-                        .await
+                    let rpc_response: JsonRpcResponse = serde_json::from_str(&response_body)
                         .map_err(|e| PrismError::RpcError(format!("Response parse error: {e}")))?;
 
                     if let Some(err) = rpc_response.error {
+                        tracing::debug!(
+                            method,
+                            endpoint = %self.config.rpc_url,
+                            attempt,
+                            error = %err.message,
+                            "RPC returned an error response"
+                        );
                         return Err(PrismError::RpcError(err.message));
                     }
 
@@ -151,6 +198,14 @@ impl RpcClient {
                         .ok_or_else(|| PrismError::RpcError("Empty response".to_string()));
                 }
                 Err(e) => {
+                    tracing::debug!(
+                        method,
+                        endpoint = %self.config.rpc_url,
+                        attempt,
+                        elapsed_ms = started_at.elapsed().as_millis(),
+                        error = %e,
+                        "RPC request failed"
+                    );
                     last_error = Some(PrismError::RpcError(format!("Request failed: {e}")));
                 }
             }
