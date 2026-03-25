@@ -25,9 +25,11 @@ pub async fn run(
     network: &NetworkConfig,
     output_format: &str,
 ) -> anyhow::Result<()> {
+    let effective_output = if args.short { "short" } else { output_format };
+
     if args.raw {
         let report = build_raw_xdr_report(&args.tx_hash)?;
-        print_report(&report, output_format)?;
+        crate::output::print_diagnostic_report(&report, effective_output)?;
         return Ok(());
     }
 
@@ -42,7 +44,7 @@ pub async fn run(
 
     spinner.finish_and_clear();
 
-    print_report(&report, output_format)?;
+    crate::output::print_diagnostic_report(&report, effective_output)?;
 
     Ok(())
 }
@@ -57,16 +59,6 @@ fn build_raw_xdr_report(raw_xdr: &str) -> anyhow::Result<DiagnosticReport> {
         bytes.len()
     );
     Ok(report)
-}
-
-fn print_report(report: &DiagnosticReport, output_format: &str) -> anyhow::Result<()> {
-    match output_format {
-        "json" => crate::output::json::print_report(report)?,
-        "compact" => crate::output::compact::print_report(report)?,
-        _ => crate::output::human::print_report(report)?,
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

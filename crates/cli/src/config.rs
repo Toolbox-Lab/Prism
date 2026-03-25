@@ -5,9 +5,9 @@
 use anyhow::Context;
 use directories::BaseDirs;
 use prism_core::types::config::PrismConfig;
-use std::path::PathBuf;
 #[cfg(test)]
 use std::path::Path;
+use std::path::PathBuf;
 
 /// Reads and writes Prism's global configuration file.
 #[derive(Debug, Clone)]

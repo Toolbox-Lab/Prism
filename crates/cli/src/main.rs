@@ -38,8 +38,8 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    /// Output format: human, json, compact.
-    #[arg(long, default_value = "human", global = true)]
+    /// Output format: human, json, compact, or short.
+    #[arg(long, default_value = "human", value_parser = ["human", "json", "compact", "short"], global = true)]
     output: String,
 
     /// Network: mainnet, testnet, futurenet, or a custom RPC URL.
@@ -185,6 +185,13 @@ mod tests {
         let cli = Cli::try_parse_from(["prism", "decode", "--verbose", "abc123"])
             .expect("cli should parse");
         assert_eq!(cli.verbose, 1);
+    }
+
+    #[test]
+    fn parses_short_output_alias() {
+        let cli = Cli::try_parse_from(["prism", "--output", "short", "decode", "abc123"])
+            .expect("cli should parse");
+        assert_eq!(cli.output, "short");
     }
 
     #[test]

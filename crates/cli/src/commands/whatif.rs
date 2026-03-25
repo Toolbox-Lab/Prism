@@ -1,4 +1,4 @@
-//! `prism whatif` — Re-simulate with modified inputs.
+//! `prism whatif` - Re-simulate with modified inputs.
 
 use clap::Args;
 use prism_core::types::config::NetworkConfig;
@@ -18,19 +18,21 @@ pub async fn run(
     network: &NetworkConfig,
     output_format: &str,
 ) -> anyhow::Result<()> {
-    println!(
-        "What-if simulation for {} on {:?} as {} output",
-        args.tx_hash, network.network, output_format
-    );
+    let _ = network;
 
     if let Some(patch_file) = &args.modify {
         let patch_content = std::fs::read_to_string(patch_file)?;
-        let _patches: Vec<prism_core::debugger::whatif::WhatIfPatch> =
+        let patches: Vec<prism_core::debugger::whatif::WhatIfPatch> =
             serde_json::from_str(&patch_content)?;
         // TODO: Run what-if simulation with patches
-        println!("Patches loaded from {patch_file}");
+        crate::output::print_whatif_status(
+            &args.tx_hash,
+            Some(patch_file),
+            Some(patches.len()),
+            output_format,
+        )?;
     } else {
-        println!("No --modify file provided. Use a JSON patch file to specify modifications.");
+        crate::output::print_whatif_status(&args.tx_hash, None, None, output_format)?;
     }
 
     Ok(())

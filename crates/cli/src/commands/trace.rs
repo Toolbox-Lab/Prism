@@ -27,10 +27,7 @@ pub async fn run(
 
     progress.finish_and_clear();
 
-    let output = match output_format {
-        "json" => serde_json::to_string_pretty(&trace)?,
-        _ => format!("{trace:#?}"),
-    };
+    let output = crate::output::format_trace(&trace, output_format)?;
 
     if let Some(path) = args.output_file {
         std::fs::write(&path, &output)?;
