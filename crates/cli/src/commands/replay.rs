@@ -21,10 +21,11 @@ pub async fn run(args: ReplayArgs, network: &NetworkConfig, quiet: &bool) -> any
         // TODO: Launch the ratatui TUI application
         crate::tui::app::launch(&args.tx_hash, network).await?;
     } else {
-        if !*quiet {
-            println!("Use --interactive / -i to launch the TUI debugger.");
-            println!("Or use `prism trace {}` for non-interactive trace output.", args.tx_hash);
-        }
+        println!("Use --interactive / -i to launch the TUI debugger.");
+        println!(
+            "Or use `prism trace {}` for non-interactive trace output.",
+            args.tx_hash
+        );
     }
 
     Ok(())

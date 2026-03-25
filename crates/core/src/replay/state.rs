@@ -32,10 +32,7 @@ pub enum ReconstructionPath {
 const HOT_PATH_THRESHOLD: u32 = 50_000;
 
 /// Reconstruct ledger state at the time of a transaction.
-pub async fn reconstruct_state(
-    tx_hash: &str,
-    network: &NetworkConfig,
-) -> PrismResult<LedgerState> {
+pub async fn reconstruct_state(tx_hash: &str, network: &NetworkConfig) -> PrismResult<LedgerState> {
     let rpc = crate::network::rpc::RpcClient::new(network.clone());
 
     // 1. Fetch the transaction to determine its ledger sequence
@@ -48,10 +45,7 @@ pub async fn reconstruct_state(
 
     // 2. Get the current latest ledger
     let latest = rpc.get_latest_ledger().await?;
-    let latest_ledger = latest
-        .get("sequence")
-        .and_then(|s| s.as_u64())
-        .unwrap_or(0) as u32;
+    let latest_ledger = latest.get("sequence").and_then(|s| s.as_u64()).unwrap_or(0) as u32;
 
     // 3. Choose reconstruction path
     let age = latest_ledger.saturating_sub(tx_ledger);

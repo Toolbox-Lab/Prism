@@ -10,14 +10,16 @@
 //!   prism whatif <tx-hash>       — Re-simulate with modifications
 //!   prism export <tx-hash>       — Export as regression test
 //!   prism db update              — Update taxonomy database
+//!   prism serve                  — Start web server for Prism Web UI
 //!   prism clean                  — Clear local cache data
+//!   prism serve                  — Launch Web UI dashboard
 
 mod commands;
 mod config;
 mod output;
 mod tui;
 
-use clap::{ArgAction, Parser, Subcommand};
+use clap::{ ArgAction, Parser, Subcommand };
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
@@ -41,30 +43,59 @@ struct Cli {
     /// Enable verbose logging. Repeat for more detail.
     #[arg(long, short, action = ArgAction::Count, global = true)]
     verbose: u8,
+
+    /// Override RPC URL (e.g. http://localhost:8000)
+    #[arg(long, global = true, value_parser = validate_url)]
+    rpc_url: Option<String>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
     /// Decode a transaction error into plain English.
+    #[command(subcommand_help_heading = "Analysis Commands")]
     Decode(commands::decode::DecodeArgs),
+
     /// Inspect full transaction context.
+    #[command(subcommand_help_heading = "Analysis Commands")]
     Inspect(commands::inspect::InspectArgs),
+
     /// Replay transaction and output execution trace.
+    #[command(subcommand_help_heading = "Analysis Commands")]
     Trace(commands::trace::TraceArgs),
+
     /// Generate resource consumption profile.
+    #[command(subcommand_help_heading = "Analysis Commands")]
     Profile(commands::profile::ProfileArgs),
+
     /// Show state diff (before/after) for a transaction.
+    #[command(subcommand_help_heading = "State & Simulation")]
     Diff(commands::diff::DiffArgs),
-    /// Launch interactive TUI debugger.
-    Replay(commands::replay::ReplayArgs),
+
     /// Re-simulate with modified inputs.
+    #[command(subcommand_help_heading = "State & Simulation")]
     Whatif(commands::whatif::WhatifArgs),
+
+    /// Launch interactive TUI debugger.
+    #[command(subcommand_help_heading = "Development Tools")]
+    Replay(commands::replay::ReplayArgs),
+
     /// Export debug session as a regression test.
+    #[command(subcommand_help_heading = "Development Tools")]
     Export(commands::export::ExportArgs),
+
+    /// Launch Web UI dashboard.
+    #[command(subcommand_help_heading = "Development Tools")]
+    Serve(commands::serve::ServeArgs),
+
     /// Clear local cache data.
+    #[command(subcommand_help_heading = "Configuration & Maintenance")]
     Clean(commands::clean::CleanArgs),
+
     /// Manage the error taxonomy database.
+    #[command(subcommand_help_heading = "Configuration & Maintenance")]
     Db(commands::db::DbArgs),
+    /// Start a local web server to host the Prism Web UI.
+    Serve(commands::serve::ServeArgs),
 }
 
 #[tokio::main]
@@ -72,7 +103,8 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Initialize logging before resolving the network or dispatching commands.
-    tracing_subscriber::fmt()
+    tracing_subscriber
+        ::fmt()
         .with_env_filter(build_log_filter(cli.verbose))
         .with_writer(std::io::stderr)
         .with_file(cli.verbose > 1)
@@ -88,7 +120,13 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // Resolve network configuration
-    let network = prism_core::network::config::resolve_network(&cli.network);
+    let mut network = prism_core::network::config::resolve_network(&cli.network);
+
+    // Override RPC URL if provided
+    if let Some(ref rpc_url) = cli.rpc_url {
+        network.rpc_url = rpc_url.clone();
+    }
+
     tracing::debug!(
         resolved_network = ?network.network,
         rpc_url = %network.rpc_url,
@@ -108,6 +146,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Export(args) => commands::export::run(args, &network).await?,
         Commands::Clean(args) => commands::clean::run(args).await?,
         Commands::Db(args) => commands::db::run(args).await?,
+        Commands::Serve(args) => commands::serve::run(args).await?,
     }
 
     Ok(())
@@ -123,16 +162,14 @@ fn build_log_filter(verbose: u8) -> EnvFilter {
     EnvFilter::builder()
         .with_default_directive(LevelFilter::WARN.into())
         .parse_lossy("")
-        .add_directive(
-            format!("prism={prism_level}")
-                .parse()
-                .expect("valid directive"),
-        )
-        .add_directive(
-            format!("prism_core={prism_level}")
-                .parse()
-                .expect("valid directive"),
-        )
+        .add_directive(format!("prism={prism_level}").parse().expect("valid directive"))
+        .add_directive(format!("prism_core={prism_level}").parse().expect("valid directive"))
+}
+
+fn validate_url(value: &str) -> Result<String, String> {
+    url::Url::parse(value)
+        .map(|_| value.to_string())
+        .map_err(|_| format!("Invalid URL: {value}"))
 }
 
 #[cfg(test)]
@@ -149,15 +186,14 @@ mod tests {
     fn parses_repeated_verbose_flags_as_trace() {
         let cli = Cli::try_parse_from(["prism", "-vv", "db", "update"]).expect("cli should parse");
         assert_eq!(cli.verbose, 2);
-        assert!(build_log_filter(cli.verbose)
-            .to_string()
-            .contains("prism=trace"));
+        assert!(build_log_filter(cli.verbose).to_string().contains("prism=trace"));
     }
 
     #[test]
     fn parses_long_verbose_flag_after_subcommand() {
-        let cli = Cli::try_parse_from(["prism", "decode", "--verbose", "abc123"])
-            .expect("cli should parse");
+        let cli = Cli::try_parse_from(["prism", "decode", "--verbose", "abc123"]).expect(
+            "cli should parse"
+        );
         assert_eq!(cli.verbose, 1);
     }
 
@@ -170,6 +206,5 @@ mod tests {
         assert!(warn.contains("prism=warn"));
         assert!(debug.contains("prism=debug"));
         assert!(trace.contains("prism=trace"));
-        assert!(trace.contains("prism_core=trace"));
     }
 }

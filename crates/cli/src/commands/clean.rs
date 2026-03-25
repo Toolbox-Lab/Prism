@@ -47,13 +47,9 @@ fn prism_cache_dir() -> anyhow::Result<std::path::PathBuf> {
 fn directory_size_bytes(path: &Path) -> anyhow::Result<u64> {
     let mut total = 0u64;
 
-    for entry in fs::read_dir(path).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to read cache directory {}: {}",
-            path.display(),
-            e
-        )
-    })? {
+    for entry in fs::read_dir(path)
+        .map_err(|e| anyhow::anyhow!("Failed to read cache directory {}: {}", path.display(), e))?
+    {
         let entry = entry.map_err(|e| {
             anyhow::anyhow!(
                 "Failed to read an entry in cache directory {}: {}",
@@ -82,13 +78,9 @@ fn directory_size_bytes(path: &Path) -> anyhow::Result<u64> {
 }
 
 fn clear_directory_contents(path: &Path) -> anyhow::Result<()> {
-    for entry in fs::read_dir(path).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to read cache directory {}: {}",
-            path.display(),
-            e
-        )
-    })? {
+    for entry in fs::read_dir(path)
+        .map_err(|e| anyhow::anyhow!("Failed to read cache directory {}: {}", path.display(), e))?
+    {
         let entry = entry.map_err(|e| {
             anyhow::anyhow!(
                 "Failed to read an entry in cache directory {}: {}",
