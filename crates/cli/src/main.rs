@@ -20,6 +20,7 @@ mod tui;
 use clap::{ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
+use url::Url;
 
 const BUILD_HASH: &str = env!("PRISM_BUILD_HASH");
 
@@ -49,6 +50,10 @@ struct Cli {
     /// Enable verbose logging. Repeat for more detail.
     #[arg(long, short, action = ArgAction::Count, global = true)]
     verbose: u8,
+
+    /// Override RPC URL (e.g. http://localhost:8000)
+    #[arg(long, global = true, value_parser = validate_url)]
+    rpc_url: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -86,7 +91,6 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|manager| manager.load())
         .ok();
 
-    // Initialize logging before resolving the network or dispatching commands.
     tracing_subscriber::fmt()
         .with_env_filter(build_log_filter(cli.verbose))
         .with_writer(std::io::stderr)
@@ -103,8 +107,11 @@ async fn main() -> anyhow::Result<()> {
         "CLI arguments parsed"
     );
 
-    // Resolve network configuration
-    let network = prism_core::network::config::resolve_network(&cli.network);
+    let mut network = prism_core::network::config::resolve_network(&cli.network);
+    if let Some(ref rpc_url) = cli.rpc_url {
+        network.rpc_url = rpc_url.clone();
+    }
+
     tracing::debug!(
         resolved_network = ?network.network,
         rpc_url = %network.rpc_url,
@@ -112,7 +119,6 @@ async fn main() -> anyhow::Result<()> {
         "Resolved network configuration"
     );
 
-    // Dispatch to command handler
     match cli.command {
         Commands::Decode(args) => commands::decode::run(args, &network, &cli.output).await?,
         Commands::Inspect(args) => commands::inspect::run(args, &network, &cli.output).await?,
@@ -159,6 +165,12 @@ fn build_log_filter(verbose: u8) -> EnvFilter {
                 .parse()
                 .expect("valid directive"),
         )
+}
+
+fn validate_url(value: &str) -> Result<String, String> {
+    Url::parse(value)
+        .map(|_| value.to_string())
+        .map_err(|_| format!("Invalid URL: {value}"))
 }
 
 #[cfg(test)]

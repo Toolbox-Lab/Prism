@@ -93,18 +93,14 @@ async fn handle_connection(stream: TcpStream, peer_addr: SocketAddr, network: Ar
 
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
-    // Handle incoming messages
     while let Some(msg) = ws_receiver.next().await {
         match msg {
             Ok(Message::Text(text)) => {
-                // Parse trace request
                 if let Ok(request) = serde_json::from_str::<TraceRequest>(&text) {
                     tracing::info!("Received trace request for tx: {}", request.tx_hash);
 
-                    // Create a channel for streaming trace updates
                     let (tx, mut rx) = broadcast::channel::<TraceStreamMessage>(100);
 
-                    // Spawn trace replay task
                     let tx_hash = request.tx_hash.clone();
                     let network = Arc::clone(&network);
                     tokio::spawn(async move {
@@ -113,7 +109,6 @@ async fn handle_connection(stream: TcpStream, peer_addr: SocketAddr, network: Ar
                         }
                     });
 
-                    // Forward trace updates to WebSocket
                     while let Ok(update) = rx.recv().await {
                         let json = match serde_json::to_string(&update) {
                             Ok(j) => j,
@@ -158,7 +153,6 @@ struct TraceRequest {
     tx_hash: String,
 }
 
-/// Stream trace replay updates incrementally as nodes are resolved.
 async fn stream_trace_replay(
     tx_hash: &str,
     network: &NetworkConfig,
@@ -168,13 +162,11 @@ async fn stream_trace_replay(
 
     let start = Instant::now();
 
-    // Send trace started event
     let _ = sender.send(TraceStreamMessage::TraceStarted {
         tx_hash: tx_hash.to_string(),
-        ledger_sequence: 0, // Will be updated once state is reconstructed
+        ledger_sequence: 0,
     });
 
-    // Reconstruct state
     let ledger_state = match prism_core::replay::state::reconstruct_state(tx_hash, network).await {
         Ok(state) => state,
         Err(e) => {
@@ -185,13 +177,11 @@ async fn stream_trace_replay(
         }
     };
 
-    // Update with actual ledger sequence
     let _ = sender.send(TraceStreamMessage::TraceStarted {
         tx_hash: tx_hash.to_string(),
         ledger_sequence: ledger_state.ledger_sequence,
     });
 
-    // Execute with streaming tracing
     let result =
         match prism_core::replay::sandbox::execute_with_tracing(&ledger_state, tx_hash).await {
             Ok(r) => r,
@@ -203,10 +193,8 @@ async fn stream_trace_replay(
             }
         };
 
-    // Stream trace nodes as they're built
     let mut node_count = 0;
     for (idx, event) in result.events.iter().enumerate() {
-        // Convert trace event to streamable node
         let node_json = serde_json::to_value(event)?;
 
         let _ = sender.send(TraceStreamMessage::TraceNode {
@@ -216,21 +204,18 @@ async fn stream_trace_replay(
 
         node_count += 1;
 
-        // Send periodic resource updates
         if idx % 10 == 0 {
             let _ = sender.send(TraceStreamMessage::ResourceUpdate {
                 cpu_used: result.total_cpu,
                 memory_used: result.total_memory,
-                cpu_limit: 100_000_000, // TODO: Get from network config
+                cpu_limit: 100_000_000,
                 memory_limit: 40 * 1024 * 1024,
             });
         }
 
-        // Small delay to avoid overwhelming the client
         tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
     }
 
-    // Compute and stream state diff
     let state_diff = prism_core::replay::differ::compute_diff(&ledger_state, &result)?;
     for entry in &state_diff.entries {
         let _ = sender.send(TraceStreamMessage::StateDiffEntry {
@@ -241,7 +226,6 @@ async fn stream_trace_replay(
         });
     }
 
-    // Send completion
     let duration_ms = start.elapsed().as_millis() as u64;
     let _ = sender.send(TraceStreamMessage::TraceCompleted {
         total_nodes: node_count,

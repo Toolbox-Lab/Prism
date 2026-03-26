@@ -115,14 +115,14 @@ pub fn print_whatif_status(
             });
             println!("{}", serde_json::to_string_pretty(&payload)?);
         }
-        OutputMode::Human => {
-            match patch_file {
-                Some(path) => println!("Patches loaded from {path}"),
-                None => {
-                    println!("No --modify file provided. Use a JSON patch file to specify modifications.")
-                }
+        OutputMode::Human => match patch_file {
+            Some(path) => println!("Patches loaded from {path}"),
+            None => {
+                println!(
+                    "No --modify file provided. Use a JSON patch file to specify modifications."
+                );
             }
-        }
+        },
     }
 
     Ok(())
@@ -163,9 +163,15 @@ fn format_state_diff_summary(diff: &StateDiff) -> String {
 
     for entry in &diff.entries {
         match entry.change_type {
-            DiffChangeType::Created => created += 1,
-            DiffChangeType::Updated => updated += 1,
-            DiffChangeType::Deleted => deleted += 1,
+            DiffChangeType::Created => {
+                created += 1;
+            }
+            DiffChangeType::Updated => {
+                updated += 1;
+            }
+            DiffChangeType::Deleted => {
+                deleted += 1;
+            }
             DiffChangeType::Unchanged => {}
         }
     }

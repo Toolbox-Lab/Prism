@@ -46,4 +46,4 @@ anyhow = { workspace = true }
 [dev-dependencies]
 tokio-test = "0.4"
 insta = { version = "1", features = ["json"] }
-wiremock = "0.6"
+wiremock = "0.5"

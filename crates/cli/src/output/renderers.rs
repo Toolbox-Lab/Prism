@@ -4,6 +4,34 @@ use colored::{ColoredString, Colorize};
 
 const BAR_WIDTH: usize = 10;
 
+/// Render a boxed section header suitable for terminal report sections.
+pub fn render_section_header(title: &str) -> String {
+    SectionHeader::new(title).render()
+}
+
+/// Utility for rendering a clearly separated section heading.
+pub struct SectionHeader<'a> {
+    title: &'a str,
+}
+
+impl<'a> SectionHeader<'a> {
+    pub fn new(title: &'a str) -> Self {
+        Self { title }
+    }
+
+    pub fn render(&self) -> String {
+        let normalized_title = self.title.trim().to_uppercase();
+        let inner = format!(" {} ", normalized_title);
+        let border = format!("+{}+", "-".repeat(inner.chars().count()));
+        let middle = format!("|{}|", inner);
+
+        let border = border.cyan().bold().to_string();
+        let middle = middle.white().bold().to_string();
+
+        format!("{}\n{}\n{}", border, middle, border)
+    }
+}
+
 /// Renders a colored budget utilization bar for Soroban resource usage.
 pub struct BudgetBar {
     label: &'static str,
@@ -59,7 +87,7 @@ impl BudgetBar {
 
 #[cfg(test)]
 mod tests {
-    use super::BudgetBar;
+    use super::{render_section_header, BudgetBar, SectionHeader};
 
     #[test]
     fn renders_expected_percentage() {
@@ -83,5 +111,21 @@ mod tests {
         let rendered = BudgetBar::new("CPU", 0, 0).render();
 
         assert_eq!(rendered, "CPU: [n/a] 0%");
+    }
+
+    #[test]
+    fn section_header_renders_boxed_uppercase_title() {
+        let rendered = SectionHeader::new("Transaction Summary").render();
+
+        assert!(rendered.contains("TRANSACTION SUMMARY"));
+        assert!(rendered.contains("+"));
+        assert!(rendered.contains("|"));
+    }
+
+    #[test]
+    fn section_header_function_trims_title() {
+        let rendered = render_section_header("  network info  ");
+
+        assert!(rendered.contains("NETWORK INFO"));
     }
 }
