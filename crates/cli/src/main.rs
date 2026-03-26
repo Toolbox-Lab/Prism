@@ -19,21 +19,26 @@ mod config;
 mod output;
 mod tui;
 
-use clap::{ ArgAction, Parser, Subcommand };
+use clap::{ ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand };
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
 /// Prism — From cryptic error to root cause in one command.
 #[derive(Parser)]
-#[command(name = "prism", version, about, long_about = None)]
+#[command(name = "prism", disable_version_flag = true, about, long_about = None)]
 #[command(propagate_version = true)]
 struct Cli {
     /// Subcommand to execute.
     #[command(subcommand)]
     command: Commands,
 
-    /// Output format: human, json, compact.
-    #[arg(long, default_value = "human", global = true)]
+    /// Output format: human, json, compact, or short.
+    #[arg(
+        long,
+        default_value = "human",
+        value_parser = ["human", "json", "compact", "short"],
+        global = true
+    )]
     output: String,
 
     /// Network: mainnet, testnet, futurenet, or a custom RPC URL.
@@ -195,6 +200,14 @@ mod tests {
             "cli should parse"
         );
         assert_eq!(cli.verbose, 1);
+    }
+
+    #[test]
+    fn parses_short_output_alias() {
+        let cli = Cli::try_parse_from(["prism", "--output", "short", "decode", "abc123"]).expect(
+            "cli should parse"
+        );
+        assert_eq!(cli.output, "short");
     }
 
     #[test]

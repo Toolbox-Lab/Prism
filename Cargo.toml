@@ -42,6 +42,7 @@ colored = "2"
 indicatif = "0.17"
 dialoguer = "0.11"
 tabled = "0.16"
+termcolor = "1.4"
 
 # WASM Processing
 wasmparser = "0.218"

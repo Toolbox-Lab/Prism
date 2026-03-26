@@ -2,6 +2,7 @@
 
 use clap::Args;
 use prism_core::types::config::NetworkConfig;
+use crate::output::trace_tree;
 
 #[derive(Args)]
 pub struct TraceArgs {
