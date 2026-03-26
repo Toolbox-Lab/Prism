@@ -8,6 +8,7 @@ pub struct InspectArgs {
     /// Transaction hash to inspect.
     #[arg(value_name = "TX_HASH")]
     pub tx_hash: String,
+
     /// Index of the specific operation to focus on (0-based).
     #[arg(long)]
     pub op_index: Option<usize>,
@@ -20,7 +21,8 @@ pub struct InspectArgs {
 pub async fn run(
     args: InspectArgs,
     network: &NetworkConfig,
-    output_format: &str
+    output_format: &str,
+    save: Option<&str>,
 ) -> anyhow::Result<()> {
     let spinner = indicatif::ProgressBar::new_spinner();
     spinner.set_message("Fetching and decoding transaction...");
@@ -29,15 +31,16 @@ pub async fn run(
     let report = prism_core::decode::decode_transaction_with_op_filter(
         &args.tx_hash,
         network,
-        args.op_index
-    ).await?;
+        args.op_index,
+    )
+    .await?;
 
         spinner.finish_and_clear();
     } else {
         let report = prism_core::decode::decode_transaction(&args.tx_hash, network).await?;
     }
 
-    // Inspect shows the full context including decoded args, auth, resources, fees
+    // --- Terminal output (always shown) ---
     match output_format {
         "json" => crate::output::json::print_report(&report)?,
         _ => {
@@ -78,6 +81,14 @@ pub async fn run(
                 println!("Surge: {}", format_surge(surge));
             }
         }
+    }
+
+    // --- Optional JSON save (--save flag) ---
+    if let Some(path) = save {
+        let json = serde_json::to_string_pretty(&report)?;
+        std::fs::write(path, &json)
+            .map_err(|e| anyhow::anyhow!("Failed to write save file '{}': {}", path, e))?;
+        eprintln!("Saved report to {path}");
     }
 
     Ok(())

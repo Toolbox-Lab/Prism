@@ -17,11 +17,6 @@ description = "Soroban Transaction Debugger — From cryptic error to root cause
 # Stellar / Soroban — Critical Path
 stellar-xdr = { version = "20.0.0", features = ["std", "serde"] }
 stellar-strkey = "0.0.9"
-soroban-env-host = "20.0.0"
-soroban-spec = "20.0.0"
-soroban-spec-tools = "20.0.0"
-stellar-xdr = { version = "21.2.0", features = ["std", "serde"] }
-stellar-strkey = "0.0.9"
 soroban-env-host = "21"
 soroban-spec = "21"
 soroban-spec-tools = "21.5.3"
@@ -32,6 +27,7 @@ tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+base64 = "0.22"
 
 # Web Server (using built-in HTTP server)
 

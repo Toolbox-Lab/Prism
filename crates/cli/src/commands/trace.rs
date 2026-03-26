@@ -25,7 +25,8 @@ pub struct TraceArgs {
 pub async fn run(
     args: TraceArgs,
     network: &NetworkConfig,
-    output_format: &str
+    output_format: &str,
+    save: Option<&str>,
 ) -> anyhow::Result<()> {
     let progress = indicatif::ProgressBar::new_spinner();
     progress.set_message("Reconstructing state and replaying transaction...");
@@ -38,11 +39,12 @@ pub async fn run(
         let trace = prism_core::replay::replay_transaction(&args.tx_hash, network).await?;
     }
 
+    // --- Terminal output (always shown) ---
     let output = if args.auth || args.auth_only {
         if args.auth_only {
-            prism_cli::output::auth_tree::render_auth_only(&trace)?
+            crate::output::auth_tree::render_auth_only(&trace)?
         } else {
-            prism_cli::output::auth_tree::render_auth_tree(&trace)?
+            crate::output::auth_tree::render_auth_tree(&trace)?
         }
     } else {
         crate::output::format_trace(&trace, output_format)?
@@ -55,6 +57,14 @@ pub async fn run(
         }
     } else {
         println!("{output}");
+    }
+
+    // --- Optional JSON save (--save flag) ---
+    if let Some(path) = save {
+        let json = serde_json::to_string_pretty(&trace)?;
+        std::fs::write(path, &json)
+            .map_err(|e| anyhow::anyhow!("Failed to write save file '{}': {}", path, e))?;
+        eprintln!("Saved trace to {path}");
     }
 
     Ok(())

@@ -12,7 +12,6 @@
 //!   prism db update              — Update taxonomy database
 //!   prism serve                  — Start web server for Prism Web UI
 //!   prism clean                  — Clear local cache data
-//!   prism serve                  — Launch Web UI dashboard
 
 mod commands;
 mod config;
@@ -52,6 +51,16 @@ struct Cli {
     /// Override RPC URL (e.g. http://localhost:8000)
     #[arg(long, global = true, value_parser = validate_url)]
     rpc_url: Option<String>,
+
+    /// Save analysis output as JSON to the specified file path.
+    ///
+    /// Terminal output is unaffected — the file is written in addition to
+    /// the normal human-readable display.  The file always contains the
+    /// JSON representation regardless of the `--output` flag.
+    ///
+    /// Example: prism trace <hash> --save report.json
+    #[arg(long, global = true, value_name = "PATH")]
+    save: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -99,8 +108,6 @@ enum Commands {
     /// Manage the error taxonomy database.
     #[command(subcommand_help_heading = "Configuration & Maintenance")]
     Db(commands::db::DbArgs),
-    /// Start a local web server to host the Prism Web UI.
-    Serve(commands::serve::ServeArgs),
 }
 
 #[tokio::main]
@@ -108,8 +115,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Initialize logging before resolving the network or dispatching commands.
-    tracing_subscriber
-        ::fmt()
+    tracing_subscriber::fmt()
         .with_env_filter(build_log_filter(cli.verbose))
         .with_writer(std::io::stderr)
         .with_file(cli.verbose > 1)
@@ -124,10 +130,10 @@ async fn main() -> anyhow::Result<()> {
         "CLI arguments parsed"
     );
 
-    // Resolve network configuration
+    // Resolve network configuration.
     let mut network = prism_core::network::config::resolve_network(&cli.network);
 
-    // Override RPC URL if provided
+    // Override RPC URL if provided.
     if let Some(ref rpc_url) = cli.rpc_url {
         network.rpc_url = rpc_url.clone();
     }
@@ -139,15 +145,21 @@ async fn main() -> anyhow::Result<()> {
         "Resolved network configuration"
     );
 
-    // Dispatch to command handler
+    let save = cli.save.as_deref();
+
+    // Dispatch to command handler.
     match cli.command {
-        Commands::Decode(args) => commands::decode::run(args, &network, &cli.output).await?,
-        Commands::Inspect(args) => commands::inspect::run(args, &network, &cli.output).await?,
-        Commands::Trace(args) => commands::trace::run(args, &network, &cli.output).await?,
-        Commands::Profile(args) => commands::profile::run(args, &network, &cli.output).await?,
-        Commands::Diff(args) => commands::diff::run(args, &network, &cli.output).await?,
+        Commands::Decode(args) => commands::decode::run(args, &network, &cli.output, save).await?,
+        Commands::Inspect(args) => {
+            commands::inspect::run(args, &network, &cli.output, save).await?
+        }
+        Commands::Trace(args) => commands::trace::run(args, &network, &cli.output, save).await?,
+        Commands::Profile(args) => {
+            commands::profile::run(args, &network, &cli.output, save).await?
+        }
+        Commands::Diff(args) => commands::diff::run(args, &network, &cli.output, save).await?,
+        Commands::Whatif(args) => commands::whatif::run(args, &network, &cli.output, save).await?,
         Commands::Replay(args) => commands::replay::run(args, &network).await?,
-        Commands::Whatif(args) => commands::whatif::run(args, &network, &cli.output).await?,
         Commands::Export(args) => commands::export::run(args, &network).await?,
         Commands::Clean(args) => commands::clean::run(args).await?,
         Commands::Db(args) => commands::db::run(args).await?,
@@ -167,8 +179,16 @@ fn build_log_filter(verbose: u8) -> EnvFilter {
     EnvFilter::builder()
         .with_default_directive(LevelFilter::WARN.into())
         .parse_lossy("")
-        .add_directive(format!("prism={prism_level}").parse().expect("valid directive"))
-        .add_directive(format!("prism_core={prism_level}").parse().expect("valid directive"))
+        .add_directive(
+            format!("prism={prism_level}")
+                .parse()
+                .expect("valid directive"),
+        )
+        .add_directive(
+            format!("prism_core={prism_level}")
+                .parse()
+                .expect("valid directive"),
+        )
 }
 
 fn validate_url(value: &str) -> Result<String, String> {
@@ -191,14 +211,15 @@ mod tests {
     fn parses_repeated_verbose_flags_as_trace() {
         let cli = Cli::try_parse_from(["prism", "-vv", "db", "update"]).expect("cli should parse");
         assert_eq!(cli.verbose, 2);
-        assert!(build_log_filter(cli.verbose).to_string().contains("prism=trace"));
+        assert!(build_log_filter(cli.verbose)
+            .to_string()
+            .contains("prism=trace"));
     }
 
     #[test]
     fn parses_long_verbose_flag_after_subcommand() {
-        let cli = Cli::try_parse_from(["prism", "decode", "--verbose", "abc123"]).expect(
-            "cli should parse"
-        );
+        let cli = Cli::try_parse_from(["prism", "decode", "--verbose", "abc123"])
+            .expect("cli should parse");
         assert_eq!(cli.verbose, 1);
     }
 
@@ -219,5 +240,37 @@ mod tests {
         assert!(warn.contains("prism=warn"));
         assert!(debug.contains("prism=debug"));
         assert!(trace.contains("prism=trace"));
+    }
+
+    #[test]
+    fn parses_save_flag_for_trace() {
+        let cli = Cli::try_parse_from([
+            "prism",
+            "--save",
+            "report.json",
+            "trace",
+            "a".repeat(64).as_str(),
+        ])
+        .expect("cli should parse with --save");
+        assert_eq!(cli.save.as_deref(), Some("report.json"));
+    }
+
+    #[test]
+    fn save_flag_absent_by_default() {
+        let cli = Cli::try_parse_from(["prism", "db", "update"]).expect("cli should parse");
+        assert!(cli.save.is_none());
+    }
+
+    #[test]
+    fn save_flag_can_appear_after_subcommand() {
+        let cli = Cli::try_parse_from([
+            "prism",
+            "trace",
+            "a".repeat(64).as_str(),
+            "--save",
+            "out.json",
+        ])
+        .expect("--save after subcommand should parse");
+        assert_eq!(cli.save.as_deref(), Some("out.json"));
     }
 }

@@ -2,7 +2,7 @@
 
 use clap::Args;
 use prism_core::types::config::NetworkConfig;
-use prism_core::types::report::{DiagnosticReport, Severity};
+use prism_core::types::report::DiagnosticReport;
 
 /// Arguments for the decode command.
 #[derive(Args)]
@@ -25,29 +25,35 @@ pub async fn run(
     args: DecodeArgs,
     network: &NetworkConfig,
     output_format: &str,
+    save: Option<&str>,
 ) -> anyhow::Result<()> {
-    if args.raw {
-        let report = build_raw_xdr_report(&args.hash)?;
-        crate::output::print_diagnostic_report(&report, output_format)?;
-        return Ok(());
-    }
+    let report = if args.raw {
+        build_raw_xdr_report(&args.hash)?
+    } else {
+        let spinner = indicatif::ProgressBar::new_spinner();
+        spinner.set_message(format!(
+            "Fetching transaction {}...",
+            &args.hash[..8.min(args.hash.len())]
+        ));
+        spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    let spinner = indicatif::ProgressBar::new_spinner();
-    spinner.set_message(format!(
-        "Fetching transaction {}...",
-        &args.hash[..8.min(args.hash.len())]
-    ));
-    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
-
-    let report = prism_core::decode::decode_transaction(&args.hash, network).await?;
+        let r = prism_core::decode::decode_transaction(&args.hash, network).await?;
 
         spinner.finish_and_clear();
-    } else {
-        let report = prism_core::decode::decode_transaction(&args.tx_hash, network).await?;
-    }
+        r
+    };
 
+    // --- Terminal output (always shown) ---
     let effective_output = if args.short { "short" } else { output_format };
     crate::output::print_diagnostic_report(&report, effective_output)?;
+
+    // --- Optional JSON save (--save flag) ---
+    if let Some(path) = save {
+        let json = serde_json::to_string_pretty(&report)?;
+        std::fs::write(path, &json)
+            .map_err(|e| anyhow::anyhow!("Failed to write save file '{}': {}", path, e))?;
+        eprintln!("Saved report to {path}");
+    }
 
     Ok(())
 }
@@ -68,18 +74,19 @@ fn validate_hash(s: &str) -> Result<String, String> {
 
 /// Build a report from a raw XDR string.
 fn build_raw_xdr_report(raw_xdr: &str) -> anyhow::Result<DiagnosticReport> {
-    // Basic implementation for --raw mode that satisfies tests
-    let mut report = DiagnosticReport::new(
-        "raw-xdr",
-        0,
-        "RawXdr",
-        "Decoded raw XDR input from --raw",
-    );
-    
-    // In a real scenario we'd decode the XDR, but for now we'll just report the size.
-    // If it's valid base64 (common for Soroban XDR), we'll use that length.
-    let len = base64::decode(raw_xdr).map(|b| b.len()).unwrap_or(raw_xdr.len() / 2);
-    
+    let mut report =
+        DiagnosticReport::new("raw-xdr", 0, "RawXdr", "Decoded raw XDR input from --raw");
+
+    // Estimate decoded byte length: base64 encodes 3 bytes as 4 chars.
+    // If the input isn't valid base64 we fall back to half the string length.
+    let len = if raw_xdr
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+    {
+        (raw_xdr.trim_end_matches('=').len() * 3) / 4
+    } else {
+        raw_xdr.len() / 2
+    };
     report.detailed_explanation = format!("Raw XDR payload ({} bytes)", len);
     Ok(report)
 }
