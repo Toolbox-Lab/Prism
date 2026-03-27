@@ -3,6 +3,7 @@
 pub mod clean;
 pub mod db;
 pub mod decode;
+pub mod diagnostic;
 pub mod diff;
 pub mod export;
 pub mod inspect;

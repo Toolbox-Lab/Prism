@@ -18,6 +18,7 @@ pub async fn run(
     args: TraceArgs,
     network: &NetworkConfig,
     output_format: &str,
+    save: Option<&str>,
 ) -> anyhow::Result<()> {
     let progress = indicatif::ProgressBar::new_spinner();
     progress.set_message("Reconstructing state and replaying transaction...");
@@ -34,6 +35,13 @@ pub async fn run(
         println!("Trace written to {path}");
     } else {
         println!("{output}");
+    }
+
+    if let Some(path) = save {
+        let json = serde_json::to_string_pretty(&trace)?;
+        std::fs::write(path, &json)
+            .map_err(|e| anyhow::anyhow!("Failed to write save file '{}': {}", path, e))?;
+        eprintln!("Saved trace to {path}");
     }
 
     Ok(())

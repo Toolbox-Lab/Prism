@@ -54,6 +54,10 @@ struct Cli {
     /// Override RPC URL (e.g. http://localhost:8000)
     #[arg(long, global = true, value_parser = validate_url)]
     rpc_url: Option<String>,
+
+    /// Save analysis output as JSON to the specified file path.
+    #[arg(long, global = true, value_name = "PATH")]
+    save: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -80,6 +84,8 @@ enum Commands {
     Db(commands::db::DbArgs),
     /// Start WebSocket server for streaming trace updates.
     Serve(commands::serve::ServeArgs),
+    /// Run binary, network, and cache self-checks.
+    Diagnostic(commands::diagnostic::DiagnosticArgs),
 }
 
 #[tokio::main]
@@ -119,18 +125,25 @@ async fn main() -> anyhow::Result<()> {
         "Resolved network configuration"
     );
 
+    let save = cli.save.as_deref();
+
     match cli.command {
-        Commands::Decode(args) => commands::decode::run(args, &network, &cli.output).await?,
-        Commands::Inspect(args) => commands::inspect::run(args, &network, &cli.output).await?,
-        Commands::Trace(args) => commands::trace::run(args, &network, &cli.output).await?,
-        Commands::Profile(args) => commands::profile::run(args, &network, &cli.output).await?,
-        Commands::Diff(args) => commands::diff::run(args, &network, &cli.output).await?,
+        Commands::Decode(args) => commands::decode::run(args, &network, &cli.output, save).await?,
+        Commands::Inspect(args) => {
+            commands::inspect::run(args, &network, &cli.output, save).await?
+        }
+        Commands::Trace(args) => commands::trace::run(args, &network, &cli.output, save).await?,
+        Commands::Profile(args) => {
+            commands::profile::run(args, &network, &cli.output, save).await?
+        }
+        Commands::Diff(args) => commands::diff::run(args, &network, &cli.output, save).await?,
         Commands::Replay(args) => commands::replay::run(args, &network).await?,
-        Commands::Whatif(args) => commands::whatif::run(args, &network, &cli.output).await?,
+        Commands::Whatif(args) => commands::whatif::run(args, &network, &cli.output, save).await?,
         Commands::Export(args) => commands::export::run(args, &network).await?,
         Commands::Clean(args) => commands::clean::run(args).await?,
         Commands::Db(args) => commands::db::run(args).await?,
         Commands::Serve(args) => commands::serve::run(args, &network).await?,
+        Commands::Diagnostic(args) => commands::diagnostic::run(args).await?,
     }
 
     Ok(())

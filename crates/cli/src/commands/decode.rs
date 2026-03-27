@@ -19,32 +19,37 @@ pub struct DecodeArgs {
     pub short: bool,
 }
 
-/// Execute the decode command.
 pub async fn run(
     args: DecodeArgs,
     network: &NetworkConfig,
     output_format: &str,
+    save: Option<&str>,
 ) -> anyhow::Result<()> {
     let effective_output = if args.short { "short" } else { output_format };
 
-    if args.raw {
-        let report = build_raw_xdr_report(&args.tx_hash)?;
-        crate::output::print_diagnostic_report(&report, effective_output)?;
-        return Ok(());
-    }
+    let report = if args.raw {
+        build_raw_xdr_report(&args.tx_hash)?
+    } else {
+        let spinner = indicatif::ProgressBar::new_spinner();
+        spinner.set_message(format!(
+            "Fetching transaction {}...",
+            &args.tx_hash[..8.min(args.tx_hash.len())]
+        ));
+        spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    let spinner = indicatif::ProgressBar::new_spinner();
-    spinner.set_message(format!(
-        "Fetching transaction {}...",
-        &args.tx_hash[..8.min(args.tx_hash.len())]
-    ));
-    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
-
-    let report = prism_core::decode::decode_transaction(&args.tx_hash, network).await?;
-
-    spinner.finish_and_clear();
+        let report = prism_core::decode::decode_transaction(&args.tx_hash, network).await?;
+        spinner.finish_and_clear();
+        report
+    };
 
     crate::output::print_diagnostic_report(&report, effective_output)?;
+
+    if let Some(path) = save {
+        let json = serde_json::to_string_pretty(&report)?;
+        std::fs::write(path, &json)
+            .map_err(|e| anyhow::anyhow!("Failed to write save file '{}': {}", path, e))?;
+        eprintln!("Saved report to {path}");
+    }
 
     Ok(())
 }

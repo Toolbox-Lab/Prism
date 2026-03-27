@@ -20,41 +20,36 @@ pub struct ServeArgs {
     pub host: String,
 }
 
-/// Message types sent over WebSocket during trace streaming.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TraceStreamMessage {
-    /// Trace session started.
     TraceStarted {
         tx_hash: String,
         ledger_sequence: u32,
     },
-    /// A new trace node (invocation or host call) was resolved.
     TraceNode {
         node: serde_json::Value,
         path: Vec<usize>,
     },
-    /// Resource profile update.
     ResourceUpdate {
         cpu_used: u64,
         memory_used: u64,
         cpu_limit: u64,
         memory_limit: u64,
     },
-    /// State diff entry discovered.
     StateDiffEntry {
         key: String,
         before: Option<String>,
         after: Option<String>,
         change_type: String,
     },
-    /// Trace completed successfully.
     TraceCompleted {
         total_nodes: usize,
         duration_ms: u64,
     },
-    /// An error occurred during tracing.
-    TraceError { error: String },
+    TraceError {
+        error: String,
+    },
 }
 
 pub async fn run(args: ServeArgs, network: &NetworkConfig) -> anyhow::Result<()> {

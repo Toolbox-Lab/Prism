@@ -9,6 +9,10 @@ pub struct InspectArgs {
     #[arg(value_name = "TX_HASH")]
     pub tx_hash: String,
 
+    /// Index of the specific operation to focus on (0-based).
+    #[arg(long)]
+    pub op_index: Option<usize>,
+
     /// Show detailed fee breakdown including bid vs charged values.
     #[arg(long)]
     pub fee_stats: bool,
@@ -18,16 +22,21 @@ pub async fn run(
     args: InspectArgs,
     network: &NetworkConfig,
     output_format: &str,
+    save: Option<&str>,
 ) -> anyhow::Result<()> {
     let spinner = indicatif::ProgressBar::new_spinner();
     spinner.set_message("Fetching and decoding transaction...");
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    let report = prism_core::decode::decode_transaction(&args.tx_hash, network).await?;
+    let report = prism_core::decode::decode_transaction_with_op_filter(
+        &args.tx_hash,
+        network,
+        args.op_index,
+    )
+    .await?;
 
     spinner.finish_and_clear();
 
-    // Inspect shows the full context including decoded args, auth, resources, fees.
     crate::output::print_diagnostic_report(&report, output_format)?;
 
     if args.fee_stats
@@ -38,7 +47,6 @@ pub async fn run(
     {
         let fee_context = report.transaction_context.as_ref().map(|ctx| &ctx.fee);
 
-        // Bid fee is not currently exposed in the decoded report pipeline.
         let bid_fee: Option<i64> = None;
         let resource_fee = fee_context.map(|fee| fee.resource_fee);
         let total_charged_fee =
@@ -69,6 +77,13 @@ pub async fn run(
         println!("Resource Fee: {}", format_fee(resource_fee));
         println!("Inclusion Fee: {}", format_fee(inclusion_fee));
         println!("Surge: {}", format_surge(surge));
+    }
+
+    if let Some(path) = save {
+        let json = serde_json::to_string_pretty(&report)?;
+        std::fs::write(path, &json)
+            .map_err(|e| anyhow::anyhow!("Failed to write save file '{}': {}", path, e))?;
+        eprintln!("Saved report to {path}");
     }
 
     Ok(())

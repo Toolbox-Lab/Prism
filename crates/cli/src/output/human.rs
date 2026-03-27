@@ -6,7 +6,7 @@ use crate::output::renderers::{render_section_header, BudgetBar};
 
 /// Print a diagnostic report in human-readable colored format.
 pub fn print_report(report: &DiagnosticReport) -> anyhow::Result<()> {
-    println!("{}", render_section_header("Transaction Summary"));
+    // TODO: Implement rich colored terminal output
     println!(
         "Error: {} ({}:{})",
         report.error_name, report.error_category, report.error_code

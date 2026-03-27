@@ -13,6 +13,7 @@ pub async fn run(
     args: ProfileArgs,
     network: &NetworkConfig,
     output_format: &str,
+    save: Option<&str>,
 ) -> anyhow::Result<()> {
     let progress = indicatif::ProgressBar::new_spinner();
     progress.set_message("Replaying transaction for resource profiling...");
@@ -23,6 +24,13 @@ pub async fn run(
     progress.finish_and_clear();
 
     crate::output::print_resource_profile(&trace.resource_profile, output_format)?;
+
+    if let Some(path) = save {
+        let json = serde_json::to_string_pretty(&trace.resource_profile)?;
+        std::fs::write(path, &json)
+            .map_err(|e| anyhow::anyhow!("Failed to write save file '{}': {}", path, e))?;
+        eprintln!("Saved profile to {path}");
+    }
 
     Ok(())
 }

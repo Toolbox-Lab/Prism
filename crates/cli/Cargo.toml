@@ -12,6 +12,8 @@ path = "src/main.rs"
 
 [dependencies]
 prism-core = { workspace = true }
+fs2     = "0.4"
+walkdir = "2"
 
 # CLI Framework
 clap = { workspace = true }
@@ -31,6 +33,8 @@ futures-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
+reqwest = { workspace = true }
+libc = { workspace = true }
 
 # TUI (Tier 3)
 ratatui = { workspace = true }

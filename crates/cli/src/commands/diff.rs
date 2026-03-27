@@ -13,6 +13,7 @@ pub async fn run(
     args: DiffArgs,
     network: &NetworkConfig,
     output_format: &str,
+    save: Option<&str>,
 ) -> anyhow::Result<()> {
     let progress = indicatif::ProgressBar::new_spinner();
     progress.set_message("Computing state diff...");
@@ -23,6 +24,13 @@ pub async fn run(
     progress.finish_and_clear();
 
     crate::output::print_state_diff(&trace.state_diff, output_format)?;
+
+    if let Some(path) = save {
+        let json = serde_json::to_string_pretty(&trace.state_diff)?;
+        std::fs::write(path, &json)
+            .map_err(|e| anyhow::anyhow!("Failed to write save file '{}': {}", path, e))?;
+        eprintln!("Saved diff to {path}");
+    }
 
     Ok(())
 }
