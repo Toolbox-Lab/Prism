@@ -19,7 +19,7 @@ pub struct ServeArgs {
     pub host: String,
 
     /// Port for the local bridge.
-    #[arg(long, short, default_value_t = 4040)]
+    #[arg(long, short, default_value_t = 3000)]
     pub port: u16,
 }
 
