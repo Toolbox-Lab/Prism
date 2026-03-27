@@ -8,5 +8,7 @@ pub mod export;
 pub mod inspect;
 pub mod profile;
 pub mod replay;
+pub mod serve;
 pub mod trace;
 pub mod whatif;
+pub mod diagnostic;

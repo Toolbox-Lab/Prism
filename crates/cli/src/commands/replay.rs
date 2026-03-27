@@ -13,9 +13,11 @@ pub struct ReplayArgs {
     pub interactive: bool,
 }
 
-pub async fn run(args: ReplayArgs, network: &NetworkConfig) -> anyhow::Result<()> {
+pub async fn run(args: ReplayArgs, network: &NetworkConfig, quiet: &bool) -> anyhow::Result<()> {
     if args.interactive {
-        println!("Launching interactive TUI debugger for {}...", args.tx_hash);
+        if !*quiet {
+            println!("Launching interactive TUI debugger for {}...", args.tx_hash);
+        }
         // TODO: Launch the ratatui TUI application
         crate::tui::app::launch(&args.tx_hash, network).await?;
     } else {
