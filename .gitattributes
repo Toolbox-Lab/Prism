@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Force LF endings for Rust code and common text files
+*.rs text eol=lf
+*.toml text eol=lf
+*.md text eol=lf

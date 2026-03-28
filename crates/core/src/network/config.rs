@@ -3,7 +3,9 @@
 //! Manages RPC endpoints, archive URLs, network passphrases for
 //! mainnet/testnet/futurenet/standalone networks.
 
+use crate::network::jsonrpc::{GetHealthParams, JsonRpcRequest, JsonRpcTransport};
 use crate::types::config::{Network, NetworkConfig};
+use std::time::Duration;
 
 /// Resolve a network name string to a `NetworkConfig`.
 ///
@@ -27,18 +29,16 @@ pub fn default_network() -> NetworkConfig {
 }
 
 /// Validate that a network configuration is reachable.
+///
+/// Uses the timeout from [`NetworkConfig::request_timeout_secs`] so a
+/// misconfigured or unreachable endpoint does not block the caller
+/// indefinitely.
 pub async fn validate_network(config: &NetworkConfig) -> bool {
-    let client = reqwest::Client::new();
-    client
-        .post(&config.rpc_url)
-        .json(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getHealth",
-            "params": {}
-        }))
-        .send()
+    let timeout = Duration::from_secs(config.request_timeout_secs);
+    let transport = JsonRpcTransport::new(&config.rpc_url, 0, timeout);
+    let req = JsonRpcRequest::new(1, "getHealth", GetHealthParams {});
+    transport
+        .call::<_, serde_json::Value>(&req)
         .await
-        .map(|r| r.status().is_success())
-        .unwrap_or(false)
+        .is_ok()
 }

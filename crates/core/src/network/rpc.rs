@@ -2,12 +2,15 @@
 //!
 //! Communicates with Soroban RPC endpoints: `getTransaction`, `simulateTransaction`,
 //! `getLedgerEntries`, `getEvents`, `getLatestLedger`. Handles pagination, retries,
-//! and rate limit backoff.
+//! and rate-limit backoff via [`super::jsonrpc::JsonRpcTransport`].
 
+use crate::network::jsonrpc::{
+    EmptyParams, GetEventsParams, GetLedgerEntriesParams, GetTransactionParams,
+    JsonRpcRequest, JsonRpcTransport, SimulateTransactionParams,
+};
 use crate::types::config::NetworkConfig;
-use crate::types::error::{PrismError, PrismResult};
-use serde::{Deserialize, Serialize};
-use std::time::Instant;
+use crate::types::error::PrismResult;
+use std::time::Duration;
 
 /// Soroban RPC client with retry and rate-limit handling.
 pub struct RpcClient {
@@ -88,14 +91,15 @@ struct JsonRpcError {
 
 impl RpcClient {
     /// Create a new RPC client for the given network.
+    ///
+    /// The per-request timeout is taken from
+    /// [`NetworkConfig::request_timeout_secs`] (default 30 s). Any request
+    /// that does not complete within that window is cancelled and returns
+    /// [`crate::types::error::PrismError::NetworkTimeout`].
     pub fn new(config: NetworkConfig) -> Self {
+        let timeout = Duration::from_secs(config.request_timeout_secs);
         Self {
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .expect("Failed to create HTTP client"),
-            config,
-            max_retries: 3,
+            transport: JsonRpcTransport::new(config.rpc_url, 3, timeout),
         }
     }
 
@@ -105,7 +109,7 @@ impl RpcClient {
         self.call("getTransaction", params).await
     }
 
-    /// Simulate a transaction.
+    /// Simulate a transaction (`simulateTransaction`).
     pub async fn simulate_transaction(&self, tx_xdr: &str) -> PrismResult<serde_json::Value> {
         let params = serde_json::json!({
             "transaction": tx_xdr,
@@ -113,7 +117,7 @@ impl RpcClient {
         self.call::<serde_json::Value>("simulateTransaction", params).await
     }
 
-    /// Get ledger entries by keys.
+    /// Get ledger entries by keys (`getLedgerEntries`).
     pub async fn get_ledger_entries(&self, keys: &[String]) -> PrismResult<serde_json::Value> {
         let params = serde_json::json!({
             "keys": keys,
@@ -121,7 +125,7 @@ impl RpcClient {
         self.call::<serde_json::Value>("getLedgerEntries", params).await
     }
 
-    /// Get events matching a filter.
+    /// Get events matching a filter (`getEvents`).
     pub async fn get_events(
         &self,
         start_ledger: u32,
@@ -134,7 +138,7 @@ impl RpcClient {
         self.call::<serde_json::Value>("getEvents", params).await
     }
 
-    /// Get the latest ledger info.
+    /// Get the latest ledger info (`getLatestLedger`).
     pub async fn get_latest_ledger(&self) -> PrismResult<serde_json::Value> {
         self.call::<serde_json::Value>("getLatestLedger", serde_json::json!({})).await
     }
