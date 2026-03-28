@@ -67,6 +67,8 @@ fn hex_decode(input: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use stellar_xdr::WriteXdr;
+    use stellar_xdr::ReadXdr;
 
     #[test]
     fn test_decode_tx_hash_valid() {
@@ -91,5 +93,71 @@ mod tests {
     fn test_decode_xdr_base64_invalid() {
         let result = decode_xdr_base64("!!!");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_transaction_result_round_trip() {
+        // Create a simple TransactionResult with success code
+        let tx_result = stellar_xdr::TransactionResult {
+            fee_charged: 100,
+            result: stellar_xdr::TransactionResultResult::TxSuccess,
+            ext: stellar_xdr::TransactionResultExt::V0,
+        };
+
+        // Encode to XDR bytes
+        let encoded = tx_result.to_xdr(stellar_xdr::Limits::none()).expect("Failed to encode TransactionResult");
+
+        // Decode back from XDR bytes
+        let decoded = stellar_xdr::TransactionResult::from_xdr(&encoded, stellar_xdr::Limits::none()).expect("Failed to decode TransactionResult");
+
+        // Verify round-trip produces identical result
+        assert_eq!(tx_result, decoded);
+    }
+
+    #[test]
+    fn test_transaction_result_round_trip_with_error() {
+        // Create a TransactionResult with an error code
+        let tx_result = stellar_xdr::TransactionResult {
+            fee_charged: 50,
+            result: stellar_xdr::TransactionResultResult::TxFeeBumpInnerSuccess,
+            ext: stellar_xdr::TransactionResultExt::V0,
+        };
+
+        // Encode to XDR bytes
+        let encoded = tx_result.to_xdr(stellar_xdr::Limits::none()).expect("Failed to encode TransactionResult");
+
+        // Decode back from XDR bytes
+        let decoded = stellar_xdr::TransactionResult::from_xdr(&encoded, stellar_xdr::Limits::none()).expect("Failed to decode TransactionResult");
+
+        // Verify round-trip produces identical result
+        assert_eq!(tx_result, decoded);
+    }
+
+    #[test]
+    fn test_transaction_result_round_trip_base64() {
+        // Create a TransactionResult
+        let tx_result = stellar_xdr::TransactionResult {
+            fee_charged: 200,
+            result: stellar_xdr::TransactionResultResult::TxSuccess,
+            ext: stellar_xdr::TransactionResultExt::V0,
+        };
+
+        // Encode to XDR bytes
+        let encoded_bytes = tx_result.to_xdr(stellar_xdr::Limits::none()).expect("Failed to encode TransactionResult");
+
+        // Convert to base64 using our codec
+        let base64_string = encode_xdr_base64(&encoded_bytes);
+
+        // Decode base64 back to bytes using our codec
+        let decoded_bytes = decode_xdr_base64(&base64_string).expect("Failed to decode base64");
+
+        // Verify bytes match
+        assert_eq!(encoded_bytes, decoded_bytes);
+
+        // Decode back to TransactionResult
+        let decoded_result = stellar_xdr::TransactionResult::from_xdr(&decoded_bytes, stellar_xdr::Limits::none()).expect("Failed to decode TransactionResult from bytes");
+
+        // Verify round-trip produces identical result
+        assert_eq!(tx_result, decoded_result);
     }
 }
