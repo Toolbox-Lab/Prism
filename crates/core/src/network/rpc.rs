@@ -30,13 +30,52 @@ struct JsonRpcRequest<'a> {
 
 /// JSON-RPC response envelope.
 #[derive(Debug, Deserialize)]
-struct JsonRpcResponse {
+struct JsonRpcResponse<T> {
     #[allow(dead_code)]
     jsonrpc: String,
     #[allow(dead_code)]
     id: u64,
-    result: Option<serde_json::Value>,
+    result: Option<T>,
     error: Option<JsonRpcError>,
+}
+
+/// Transaction status in Soroban.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TransactionStatus {
+    Success,
+    NotFound,
+    Failed,
+}
+
+/// Response for the `getTransaction` RPC method.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetTransactionResponse {
+    /// Status of the transaction.
+    pub status: TransactionStatus,
+    /// Latest ledger known to the RPC node.
+    pub latest_ledger: u32,
+    /// Latest ledger close time known to the RPC node.
+    pub latest_ledger_close_time: Option<u64>,
+    /// Oldest ledger known to the RPC node.
+    pub oldest_ledger: Option<u32>,
+    /// Oldest ledger close time known to the RPC node.
+    pub oldest_ledger_close_time: Option<u64>,
+    /// The ledger in which the transaction was included.
+    pub ledger: Option<u32>,
+    /// The creation time of the transaction.
+    pub created_at: Option<String>,
+    /// The order in which the transaction was applied in the ledger.
+    pub application_order: Option<u32>,
+    /// Fee bump information if applicable.
+    pub fee_bump: Option<String>,
+    /// Envelope XDR for the transaction.
+    pub envelope_xdr: Option<String>,
+    /// Result XDR for the transaction.
+    pub result_xdr: Option<String>,
+    /// Result Meta XDR for the transaction.
+    pub result_meta_xdr: Option<String>,
 }
 
 /// JSON-RPC error.
@@ -61,10 +100,8 @@ impl RpcClient {
     }
 
     /// Fetch a transaction by hash.
-    pub async fn get_transaction(&self, tx_hash: &str) -> PrismResult<serde_json::Value> {
-        let params = serde_json::json!({
-            "hash": tx_hash,
-        });
+    pub async fn get_transaction(&self, tx_hash: &str) -> PrismResult<GetTransactionResponse> {
+        let params = serde_json::json!([tx_hash]);
         self.call("getTransaction", params).await
     }
 
@@ -73,7 +110,7 @@ impl RpcClient {
         let params = serde_json::json!({
             "transaction": tx_xdr,
         });
-        self.call("simulateTransaction", params).await
+        self.call::<serde_json::Value>("simulateTransaction", params).await
     }
 
     /// Get ledger entries by keys.
@@ -81,7 +118,7 @@ impl RpcClient {
         let params = serde_json::json!({
             "keys": keys,
         });
-        self.call("getLedgerEntries", params).await
+        self.call::<serde_json::Value>("getLedgerEntries", params).await
     }
 
     /// Get events matching a filter.
@@ -94,20 +131,20 @@ impl RpcClient {
             "startLedger": start_ledger,
             "filters": filters,
         });
-        self.call("getEvents", params).await
+        self.call::<serde_json::Value>("getEvents", params).await
     }
 
     /// Get the latest ledger info.
     pub async fn get_latest_ledger(&self) -> PrismResult<serde_json::Value> {
-        self.call("getLatestLedger", serde_json::json!({})).await
+        self.call::<serde_json::Value>("getLatestLedger", serde_json::json!({})).await
     }
 
     /// Internal JSON-RPC call with retry logic.
-    async fn call(
+    async fn call<T: for<'de> Deserialize<'de>>(
         &self,
         method: &str,
         params: serde_json::Value,
-    ) -> PrismResult<serde_json::Value> {
+    ) -> PrismResult<T> {
         let request = JsonRpcRequest {
             jsonrpc: "2.0",
             id: 1,
@@ -179,7 +216,7 @@ impl RpcClient {
                         continue;
                     }
 
-                    let rpc_response: JsonRpcResponse = serde_json::from_str(&response_body)
+                    let rpc_response: JsonRpcResponse<T> = serde_json::from_str(&response_body)
                         .map_err(|e| PrismError::RpcError(format!("Response parse error: {e}")))?;
 
                     if let Some(err) = rpc_response.error {
