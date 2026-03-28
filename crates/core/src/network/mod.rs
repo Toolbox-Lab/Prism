@@ -3,3 +3,7 @@
 pub mod archive;
 pub mod config;
 pub mod rpc;
+
+pub use rpc::{
+    SimulateCost, SimulateFootprint, SimulateResult, SimulateTransactionResponse,
+};
