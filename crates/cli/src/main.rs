@@ -25,7 +25,7 @@ use tracing_subscriber::EnvFilter;
 
 /// Prism — From cryptic error to root cause in one command.
 #[derive(Parser)]
-#[command(name = "prism", disable_version_flag = true, about, long_about = None)]
+#[command(name = "prism", version, about, long_about = None)]
 #[command(propagate_version = true)]
 struct Cli {
     /// Subcommand to execute.
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn parses_long_verbose_flag_after_subcommand() {
-        let cli = Cli::try_parse_from(["prism", "decode", "--verbose", "abc123"])
+        let cli = Cli::try_parse_from(["prism", "decode", "--verbose", &"a".repeat(64)])
             .expect("cli should parse");
         assert_eq!(cli.verbose, 1);
     }
