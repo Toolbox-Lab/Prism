@@ -1,7 +1,7 @@
 //! Address types for Stellar accounts and contracts.
 
 use std::fmt;
-use stellar_strkey::{Contract, ed25519::PublicKey};
+use stellar_strkey::{ed25519::PublicKey, Contract};
 
 /// Represents a Stellar address (account or contract).
 ///
@@ -26,7 +26,10 @@ pub enum AddressType {
 impl Address {
     /// Create a new Address from raw bytes.
     pub fn new(bytes: Vec<u8>, address_type: AddressType) -> Self {
-        Self { bytes, address_type }
+        Self {
+            bytes,
+            address_type,
+        }
     }
 
     /// Create an Address from a strkey string.

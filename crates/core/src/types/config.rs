@@ -125,9 +125,18 @@ mod tests {
 
     #[test]
     fn test_default_rpc_url() {
-        assert_eq!(Network::Mainnet.default_rpc_url(), "https://soroban-mainnet.stellar.org");
-        assert_eq!(Network::Testnet.default_rpc_url(), "https://soroban-testnet.stellar.org");
-        assert_eq!(Network::Futurenet.default_rpc_url(), "https://rpc-futurenet.stellar.org");
+        assert_eq!(
+            Network::Mainnet.default_rpc_url(),
+            "https://soroban-mainnet.stellar.org"
+        );
+        assert_eq!(
+            Network::Testnet.default_rpc_url(),
+            "https://soroban-testnet.stellar.org"
+        );
+        assert_eq!(
+            Network::Futurenet.default_rpc_url(),
+            "https://rpc-futurenet.stellar.org"
+        );
         assert_eq!(Network::Standalone.default_rpc_url(), "");
         assert_eq!(Network::Custom.default_rpc_url(), "");
     }

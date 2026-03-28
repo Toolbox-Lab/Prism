@@ -110,7 +110,8 @@ impl RpcClient {
         let params = serde_json::json!({
             "transaction": tx_xdr,
         });
-        self.call::<serde_json::Value>("simulateTransaction", params).await
+        self.call::<serde_json::Value>("simulateTransaction", params)
+            .await
     }
 
     /// Get ledger entries by keys.
@@ -118,7 +119,8 @@ impl RpcClient {
         let params = serde_json::json!({
             "keys": keys,
         });
-        self.call::<serde_json::Value>("getLedgerEntries", params).await
+        self.call::<serde_json::Value>("getLedgerEntries", params)
+            .await
     }
 
     /// Get events matching a filter.
@@ -136,7 +138,8 @@ impl RpcClient {
 
     /// Get the latest ledger info.
     pub async fn get_latest_ledger(&self) -> PrismResult<serde_json::Value> {
-        self.call::<serde_json::Value>("getLatestLedger", serde_json::json!({})).await
+        self.call::<serde_json::Value>("getLatestLedger", serde_json::json!({}))
+            .await
     }
 
     /// Internal JSON-RPC call with retry logic.

@@ -3,8 +3,26 @@
 //! Handles serialization/deserialization of transaction envelopes, results,
 //! ledger entries, SCVal, and SCSpecEntry types.
 
-use crate::types::error::{ PrismError, PrismResult };
-use base64::{ engine::general_purpose::STANDARD, Engine as _ };
+use crate::types::error::{PrismError, PrismResult};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use stellar_xdr::curr::{Limits, ReadXdr, TransactionEnvelope, WriteXdr};
+
+pub trait XdrCodec: Sized {
+    fn to_xdr_bytes(&self) -> PrismResult<Vec<u8>>;
+    fn from_xdr_bytes(bytes: &[u8]) -> PrismResult<Self>;
+}
+
+impl XdrCodec for TransactionEnvelope {
+    fn to_xdr_bytes(&self) -> PrismResult<Vec<u8>> {
+        self.to_xdr(Limits::none())
+            .map_err(|e| PrismError::XdrError(format!("Failed to encode TransactionEnvelope: {e}")))
+    }
+
+    fn from_xdr_bytes(bytes: &[u8]) -> PrismResult<Self> {
+        TransactionEnvelope::from_xdr(bytes, Limits::none())
+            .map_err(|e| PrismError::XdrError(format!("Failed to decode TransactionEnvelope: {e}")))
+    }
+}
 
 /// Decode a base64-encoded XDR transaction result.
 ///
@@ -14,12 +32,8 @@ use base64::{ engine::general_purpose::STANDARD, Engine as _ };
 /// # Returns
 /// The raw decoded bytes, ready for further parsing.
 pub fn decode_xdr_base64(xdr_base64: &str) -> PrismResult<Vec<u8>> {
-    // TODO: Implement full XDR decoding pipeline
     let bytes = base64_decode(xdr_base64)
         .map_err(|e| PrismError::XdrError(format!("Base64 decode failed: {e}")))?;
-    let bytes = base64_decode(xdr_base64).map_err(|e|
-        PrismError::XdrError(format!("Base64 decode failed: {e}"))
-    )?;
     Ok(bytes)
 }
 
@@ -28,15 +42,40 @@ pub fn encode_xdr_base64(bytes: &[u8]) -> String {
     base64_encode(bytes)
 }
 
+/// Encode a TransactionEnvelope into XDR bytes.
+pub fn encode_transaction_envelope(envelope: &TransactionEnvelope) -> PrismResult<Vec<u8>> {
+    envelope
+        .to_xdr(Limits::none())
+        .map_err(|e| PrismError::XdrError(format!("Failed to encode TransactionEnvelope: {e}")))
+}
+
+/// Decode a TransactionEnvelope from XDR bytes.
+pub fn decode_transaction_envelope(bytes: &[u8]) -> PrismResult<TransactionEnvelope> {
+    TransactionEnvelope::from_xdr(bytes, Limits::none())
+        .map_err(|e| PrismError::XdrError(format!("Failed to decode TransactionEnvelope: {e}")))
+}
+
+/// Encode a TransactionEnvelope into base64 XDR.
+pub fn encode_transaction_envelope_base64(envelope: &TransactionEnvelope) -> PrismResult<String> {
+    let bytes = encode_transaction_envelope(envelope)?;
+    Ok(encode_xdr_base64(&bytes))
+}
+
+/// Decode a TransactionEnvelope from base64 XDR.
+pub fn decode_transaction_envelope_base64(xdr_base64: &str) -> PrismResult<TransactionEnvelope> {
+    let bytes = decode_xdr_base64(xdr_base64)?;
+    decode_transaction_envelope(&bytes)
+}
+
 /// Decode a transaction hash from hex string.
 pub fn decode_tx_hash(hash_hex: &str) -> PrismResult<[u8; 32]> {
-    let bytes = hex_decode(hash_hex).map_err(|e|
-        PrismError::XdrError(format!("Invalid tx hash hex: {e}"))
-    )?;
+    let bytes = hex_decode(hash_hex)
+        .map_err(|e| PrismError::XdrError(format!("Invalid tx hash hex: {e}")))?;
     if bytes.len() != 32 {
-        return Err(
-            PrismError::XdrError(format!("Transaction hash must be 32 bytes, got {}", bytes.len()))
-        );
+        return Err(PrismError::XdrError(format!(
+            "Transaction hash must be 32 bytes, got {}",
+            bytes.len()
+        )));
     }
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&bytes);
@@ -54,12 +93,15 @@ fn base64_encode(bytes: &[u8]) -> String {
 }
 
 fn hex_decode(input: &str) -> Result<Vec<u8>, String> {
+    if !input.len().is_multiple_of(2) {
+        return Err("Hex input must have an even length".to_string());
+    }
+
     (0..input.len())
         .step_by(2)
         .map(|i| {
-            u8::from_str_radix(&input[i..i + 2], 16).map_err(|e|
-                format!("Invalid hex at position {i}: {e}")
-            )
+            u8::from_str_radix(&input[i..i + 2], 16)
+                .map_err(|e| format!("Invalid hex at position {i}: {e}"))
         })
         .collect()
 }
@@ -67,8 +109,11 @@ fn hex_decode(input: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use stellar_xdr::WriteXdr;
-    use stellar_xdr::ReadXdr;
+    use std::convert::TryInto;
+    use stellar_xdr::curr::{
+        DecoratedSignature, Memo, MuxedAccount, Operation, Preconditions, SequenceNumber,
+        Transaction, TransactionEnvelope, TransactionExt, TransactionV1Envelope, Uint256, VecM,
+    };
 
     #[test]
     fn test_decode_tx_hash_valid() {
@@ -80,6 +125,12 @@ mod tests {
     #[test]
     fn test_decode_tx_hash_invalid_length() {
         let result = decode_tx_hash("abcd");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decode_tx_hash_invalid_hex() {
+        let result = decode_tx_hash(&"z".repeat(64));
         assert!(result.is_err());
     }
 
@@ -96,68 +147,70 @@ mod tests {
     }
 
     #[test]
-    fn test_transaction_result_round_trip() {
-        // Create a simple TransactionResult with success code
-        let tx_result = stellar_xdr::TransactionResult {
-            fee_charged: 100,
-            result: stellar_xdr::TransactionResultResult::TxSuccess,
-            ext: stellar_xdr::TransactionResultExt::V0,
-        };
+    fn test_transaction_envelope_round_trip_bytes() {
+        let envelope = make_test_transaction_envelope();
 
-        // Encode to XDR bytes
-        let encoded = tx_result.to_xdr(stellar_xdr::Limits::none()).expect("Failed to encode TransactionResult");
+        let encoded =
+            encode_transaction_envelope(&envelope).expect("Failed to encode TransactionEnvelope");
 
-        // Decode back from XDR bytes
-        let decoded = stellar_xdr::TransactionResult::from_xdr(&encoded, stellar_xdr::Limits::none()).expect("Failed to decode TransactionResult");
+        let decoded =
+            decode_transaction_envelope(&encoded).expect("Failed to decode TransactionEnvelope");
 
-        // Verify round-trip produces identical result
-        assert_eq!(tx_result, decoded);
+        assert_eq!(envelope, decoded);
     }
 
     #[test]
-    fn test_transaction_result_round_trip_with_error() {
-        // Create a TransactionResult with an error code
-        let tx_result = stellar_xdr::TransactionResult {
-            fee_charged: 50,
-            result: stellar_xdr::TransactionResultResult::TxFeeBumpInnerSuccess,
-            ext: stellar_xdr::TransactionResultExt::V0,
-        };
+    fn test_transaction_envelope_round_trip_base64() {
+        let envelope = make_test_transaction_envelope();
 
-        // Encode to XDR bytes
-        let encoded = tx_result.to_xdr(stellar_xdr::Limits::none()).expect("Failed to encode TransactionResult");
+        let base64_string = encode_transaction_envelope_base64(&envelope)
+            .expect("Failed to encode TransactionEnvelope to base64");
 
-        // Decode back from XDR bytes
-        let decoded = stellar_xdr::TransactionResult::from_xdr(&encoded, stellar_xdr::Limits::none()).expect("Failed to decode TransactionResult");
+        let decoded = decode_transaction_envelope_base64(&base64_string)
+            .expect("Failed to decode TransactionEnvelope from base64");
 
-        // Verify round-trip produces identical result
-        assert_eq!(tx_result, decoded);
+        assert_eq!(envelope, decoded);
     }
 
     #[test]
-    fn test_transaction_result_round_trip_base64() {
-        // Create a TransactionResult
-        let tx_result = stellar_xdr::TransactionResult {
-            fee_charged: 200,
-            result: stellar_xdr::TransactionResultResult::TxSuccess,
-            ext: stellar_xdr::TransactionResultExt::V0,
-        };
+    fn test_transaction_envelope_decode_invalid_bytes() {
+        let result = decode_transaction_envelope(&[1, 2, 3, 4]);
+        assert!(result.is_err());
+    }
 
-        // Encode to XDR bytes
-        let encoded_bytes = tx_result.to_xdr(stellar_xdr::Limits::none()).expect("Failed to encode TransactionResult");
+    #[test]
+    fn test_xdr_codec_trait_round_trip() {
+        let envelope = make_test_transaction_envelope();
 
-        // Convert to base64 using our codec
-        let base64_string = encode_xdr_base64(&encoded_bytes);
+        let encoded = envelope
+            .to_xdr_bytes()
+            .expect("Failed to encode with XdrCodec");
+        let decoded =
+            TransactionEnvelope::from_xdr_bytes(&encoded).expect("Failed to decode with XdrCodec");
 
-        // Decode base64 back to bytes using our codec
-        let decoded_bytes = decode_xdr_base64(&base64_string).expect("Failed to decode base64");
+        assert_eq!(envelope, decoded);
+    }
 
-        // Verify bytes match
-        assert_eq!(encoded_bytes, decoded_bytes);
+    fn make_test_transaction_envelope() -> TransactionEnvelope {
+        let operations: VecM<Operation, 100> = Vec::<Operation>::new()
+            .try_into()
+            .expect("empty operations should fit");
 
-        // Decode back to TransactionResult
-        let decoded_result = stellar_xdr::TransactionResult::from_xdr(&decoded_bytes, stellar_xdr::Limits::none()).expect("Failed to decode TransactionResult from bytes");
+        let signatures: VecM<DecoratedSignature, 20> = Vec::<DecoratedSignature>::new()
+            .try_into()
+            .expect("empty signatures should fit");
 
-        // Verify round-trip produces identical result
-        assert_eq!(tx_result, decoded_result);
+        TransactionEnvelope::Tx(TransactionV1Envelope {
+            tx: Transaction {
+                source_account: MuxedAccount::Ed25519(Uint256([0; 32])),
+                fee: 100,
+                seq_num: SequenceNumber(1),
+                cond: Preconditions::None,
+                memo: Memo::None,
+                operations,
+                ext: TransactionExt::V0,
+            },
+            signatures,
+        })
     }
 }

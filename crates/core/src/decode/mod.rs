@@ -15,7 +15,7 @@ use crate::types::report::DiagnosticReport;
 /// Filter transaction data to focus on a specific operation index.
 fn filter_transaction_by_operation(
     tx_data: &mut serde_json::Value,
-    op_index: usize
+    op_index: usize,
 ) -> PrismResult<()> {
     // Filter contract events to only show events from the specified operation
     if let Some(events) = tx_data.get_mut("events") {
@@ -58,7 +58,7 @@ fn filter_transaction_by_operation(
 /// This is the main entry point for Tier 1 functionality.
 pub async fn decode_transaction(
     tx_hash: &str,
-    network: &crate::types::config::NetworkConfig
+    network: &crate::types::config::NetworkConfig,
 ) -> PrismResult<DiagnosticReport> {
     decode_transaction_with_op_filter(tx_hash, network, None).await
 }
@@ -68,7 +68,7 @@ pub async fn decode_transaction(
 pub async fn decode_transaction_with_op_filter(
     tx_hash: &str,
     network: &crate::types::config::NetworkConfig,
-    op_index: Option<usize>
+    op_index: Option<usize>,
 ) -> PrismResult<DiagnosticReport> {
     // 1. Fetch the transaction result
     let rpc = crate::network::rpc::RpcClient::new(network.clone());
