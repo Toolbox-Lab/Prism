@@ -160,4 +160,127 @@ mod tests {
         // Verify round-trip produces identical result
         assert_eq!(tx_result, decoded_result);
     }
+
+    #[test]
+    fn test_transaction_envelope_round_trip() {
+        use stellar_xdr::{
+            TransactionEnvelope, TransactionV1Envelope, Transaction, Memo, Preconditions,
+            SequenceNumber, MuxedAccount, Uint256, TransactionExt, Limits, WriteXdr, ReadXdr
+        };
+
+        // Create a dummy TransactionV1Envelope
+        let tx = Transaction {
+            source_account: MuxedAccount::Ed25519(Uint256([0; 32])),
+            fee: 100,
+            seq_num: SequenceNumber(1),
+            cond: Preconditions::None,
+            memo: Memo::None,
+            operations: vec![].try_into().unwrap(),
+            ext: TransactionExt::V0,
+        };
+
+        let envelope = TransactionEnvelope::Tx(TransactionV1Envelope {
+            tx,
+            signatures: vec![].try_into().unwrap(),
+        });
+
+        // Encode to XDR bytes
+        let encoded = envelope.to_xdr(Limits::none()).expect("Failed to encode TransactionEnvelope");
+
+        // Decode back from XDR bytes
+        let decoded = TransactionEnvelope::from_xdr(&encoded, Limits::none()).expect("Failed to decode TransactionEnvelope");
+
+        // Verify round-trip produces identical result
+        assert_eq!(envelope, decoded);
+    }
+
+    #[test]
+    fn test_transaction_envelope_round_trip_base64() {
+        use stellar_xdr::{
+            TransactionEnvelope, TransactionV1Envelope, Transaction, Memo, Preconditions,
+            SequenceNumber, MuxedAccount, Uint256, TransactionExt, Limits, WriteXdr, ReadXdr
+        };
+
+        // Create a TransactionEnvelope
+        let tx = Transaction {
+            source_account: MuxedAccount::Ed25519(Uint256([1; 32])),
+            fee: 500,
+            seq_num: SequenceNumber(42),
+            cond: Preconditions::None,
+            memo: Memo::Text("test memo".as_bytes().try_into().unwrap()),
+            operations: vec![].try_into().unwrap(),
+            ext: TransactionExt::V0,
+        };
+
+        let envelope = TransactionEnvelope::Tx(TransactionV1Envelope {
+            tx,
+            signatures: vec![].try_into().unwrap(),
+        });
+
+        // Encode to XDR bytes
+        let encoded_bytes = envelope.to_xdr(Limits::none()).expect("Failed to encode TransactionEnvelope");
+
+        // Convert to base64 using our codec
+        let base64_string = encode_xdr_base64(&encoded_bytes);
+
+        // Decode base64 back to bytes using our codec
+        let decoded_bytes = decode_xdr_base64(&base64_string).expect("Failed to decode base64");
+
+        // Verify bytes match
+        assert_eq!(encoded_bytes, decoded_bytes);
+
+        // Decode back to TransactionEnvelope
+        let decoded_envelope = TransactionEnvelope::from_xdr(&decoded_bytes, Limits::none()).expect("Failed to decode TransactionEnvelope from bytes");
+
+        // Verify round-trip produces identical result
+        assert_eq!(envelope, decoded_envelope);
+    }
+
+    #[test]
+    fn test_fee_bump_transaction_envelope_round_trip() {
+        use stellar_xdr::{
+            TransactionEnvelope, FeeBumpTransactionEnvelope, FeeBumpTransaction,
+            MuxedAccount, Uint256, SequenceNumber, FeeBumpTransactionInnerTx,
+            TransactionV1Envelope, Transaction, Memo, Preconditions, TransactionExt,
+            Limits, WriteXdr, ReadXdr, FeeBumpTransactionExt
+        };
+
+        // Create an inner TransactionV1Envelope
+        let inner_tx = Transaction {
+            source_account: MuxedAccount::Ed25519(Uint256([0; 32])),
+            fee: 100,
+            seq_num: SequenceNumber(1),
+            cond: Preconditions::None,
+            memo: Memo::None,
+            operations: vec![].try_into().unwrap(),
+            ext: TransactionExt::V0,
+        };
+
+        let inner_envelope = TransactionV1Envelope {
+            tx: inner_tx,
+            signatures: vec![].try_into().unwrap(),
+        };
+
+        // Create FeeBumpTransaction
+        let fee_bump = FeeBumpTransaction {
+            fee_source: MuxedAccount::Ed25519(Uint256([1; 32])),
+            fee: 200,
+            inner_tx: FeeBumpTransactionInnerTx::Tx(inner_envelope),
+            ext: FeeBumpTransactionExt::V0,
+        };
+
+        let envelope = TransactionEnvelope::FeeBump(FeeBumpTransactionEnvelope {
+            tx: fee_bump,
+            signatures: vec![].try_into().unwrap(),
+        });
+
+        // Encode to XDR bytes
+        let encoded = envelope.to_xdr(Limits::none()).expect("Failed to encode FeeBumpTransactionEnvelope");
+
+        // Decode back from XDR bytes
+        let decoded = TransactionEnvelope::from_xdr(&encoded, Limits::none()).expect("Failed to decode FeeBumpTransactionEnvelope");
+
+        // Verify round-trip produces identical result
+        assert_eq!(envelope, decoded);
+    }
 }
