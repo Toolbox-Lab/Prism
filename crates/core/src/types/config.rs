@@ -3,20 +3,15 @@
 use serde::{Deserialize, Serialize};
 
 /// Supported Stellar networks.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Network {
     Mainnet,
+    #[default]
     Testnet,
     Futurenet,
     Standalone,
     Custom,
-}
-
-impl Default for Network {
-    fn default() -> Self {
-        Self::Testnet
-    }
 }
 
 /// Configuration for connecting to a Stellar network.

@@ -1,8 +1,8 @@
 //! `prism db` — Manage the error taxonomy database.
 
-use clap::{ Args, Subcommand };
-use anyhow::{ Result, Context };
-use indicatif::{ ProgressBar, ProgressStyle };
+use anyhow::{Context, Result};
+use clap::{Args, Subcommand};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -32,14 +32,10 @@ pub async fn run(args: DbArgs) -> Result<()> {
         }
         DbCommands::Stats => {
             let db = prism_core::taxonomy::loader::TaxonomyDatabase::load_embedded()?;
-            if !*quiet {
-                println!("Taxonomy database: {} entries", db.len());
-            }
+            println!("Taxonomy database: {} entries", db.len());
         }
         DbCommands::Search { query } => {
-            if !*quiet {
-                println!("Searching for: {query}");
-            }
+            println!("Searching for: {query}");
             // TODO: Search taxonomy entries
         }
     }
@@ -54,7 +50,7 @@ async fn update_taxonomy_database() -> Result<()> {
         ProgressStyle::default_spinner()
             .template("{spinner:.green} [{elapsed_precise}] {msg}")
             .unwrap()
-            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
     );
     spinner.set_message("Fetching latest taxonomy release...");
     spinner.enable_steady_tick(Duration::from_millis(100));
@@ -80,8 +76,7 @@ async fn update_taxonomy_database() -> Result<()> {
     spinner.finish_with_message("✅ Taxonomy database updated successfully!");
 
     // Load and display stats
-    let db = prism_core::taxonomy::loader::TaxonomyDatabase
-        ::load_embedded()
+    let db = prism_core::taxonomy::loader::TaxonomyDatabase::load_embedded()
         .context("Failed to load updated taxonomy database")?;
     println!("📊 Database now contains {} error definitions", db.len());
 
@@ -90,8 +85,7 @@ async fn update_taxonomy_database() -> Result<()> {
 
 /// Get the local data directory for storing taxonomy files.
 fn get_local_data_dir() -> Result<PathBuf> {
-    let dirs = directories::ProjectDirs
-        ::from("com", "toolbox-lab", "prism")
+    let dirs = directories::ProjectDirs::from("com", "toolbox-lab", "prism")
         .context("Failed to determine project directories")?;
 
     Ok(dirs.data_dir().join("taxonomy"))

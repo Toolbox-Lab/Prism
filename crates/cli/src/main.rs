@@ -19,7 +19,7 @@ mod output;
 mod tui;
 mod version_check;
 
-use clap::{ ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand };
+use clap::{ArgAction, Parser, Subcommand};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 
@@ -62,6 +62,10 @@ struct Cli {
     /// Example: prism trace <hash> --save report.json
     #[arg(long, global = true, value_name = "PATH")]
     save: Option<String>,
+
+    /// Suppress non-essential output.
+    #[arg(long, short, global = true)]
+    quiet: bool,
 }
 
 #[derive(Subcommand)]
@@ -158,28 +162,31 @@ async fn main() -> anyhow::Result<()> {
         Commands::Inspect(args) => {
             commands::inspect::run(args, &network, &cli.output, save).await?
         }
-        Commands::Trace(args) => commands::trace::run(args, &network, &cli.output, save).await?,
-        Commands::Profile(args) => {
-            commands::profile::run(args, &network, &cli.output, save).await?
-        }
-        Commands::Diff(args) => commands::diff::run(args, &network, &cli.output, save).await?,
-        Commands::Whatif(args) => commands::whatif::run(args, &network, &cli.output, save).await?,
-        Commands::Replay(args) => commands::replay::run(args, &network).await?,
-        Commands::Export(args) => commands::export::run(args, &network).await?,
+        Commands::Trace(args) => commands::trace::run(args, &network, &cli.output).await?,
+        Commands::Profile(args) => commands::profile::run(args, &network, &cli.output).await?,
+        Commands::Diff(args) => commands::diff::run(args, &network, &cli.output).await?,
+        Commands::Whatif(args) => commands::whatif::run(args, &network, &cli.output).await?,
+        Commands::Replay(args) => commands::replay::run(args, &network, &cli.quiet).await?,
+        Commands::Export(args) => commands::export::run(args, &network, &cli.quiet).await?,
         Commands::Serve(args) => commands::serve::run(args, &network).await?,
         Commands::Clean(args) => commands::clean::run(args).await?,
         Commands::Db(args) => commands::db::run(args).await?,
-        Commands::Serve(args) => commands::serve::run(args).await?,
         Commands::Diagnostic(args) => commands::diagnostic::run(args).await?,
     }
 
     // After all normal output, check if the update version task detected a new release
     // using a brief timeout so we don't hold up CLI exit if it's lagging.
-    if let Ok(Ok(Some(newer_version))) = tokio::time::timeout(std::time::Duration::from_millis(50), update_check_handle).await {
+    if let Ok(Ok(Some(newer_version))) =
+        tokio::time::timeout(std::time::Duration::from_millis(50), update_check_handle).await
+    {
         eprintln!(
-            "\n{}", 
+            "\n{}",
             colored::Colorize::bright_yellow(
-                format!("A newer version of Prism is available (v{}). Update to stay current!", newer_version).as_str()
+                format!(
+                    "A newer version of Prism is available (v{}). Update to stay current!",
+                    newer_version
+                )
+                .as_str()
             )
         );
     }
