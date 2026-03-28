@@ -10,6 +10,7 @@ use crate::network::jsonrpc::{
 };
 use crate::types::config::NetworkConfig;
 use crate::types::error::PrismResult;
+use std::time::Duration;
 
 /// Soroban RPC client with retry and rate-limit handling.
 pub struct RpcClient {
@@ -18,9 +19,15 @@ pub struct RpcClient {
 
 impl RpcClient {
     /// Create a new RPC client for the given network.
+    ///
+    /// The per-request timeout is taken from
+    /// [`NetworkConfig::request_timeout_secs`] (default 30 s). Any request
+    /// that does not complete within that window is cancelled and returns
+    /// [`crate::types::error::PrismError::NetworkTimeout`].
     pub fn new(config: NetworkConfig) -> Self {
+        let timeout = Duration::from_secs(config.request_timeout_secs);
         Self {
-            transport: JsonRpcTransport::new(config.rpc_url, 3),
+            transport: JsonRpcTransport::new(config.rpc_url, 3, timeout),
         }
     }
 

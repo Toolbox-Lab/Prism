@@ -30,6 +30,21 @@ pub struct NetworkConfig {
     pub network_passphrase: String,
     /// History archive URL(s).
     pub archive_urls: Vec<String>,
+    /// Per-request timeout in seconds for all RPC calls.
+    ///
+    /// Any request that does not receive a complete response within this
+    /// window is cancelled and returns [`crate::types::error::PrismError::NetworkTimeout`].
+    /// Defaults to [`DEFAULT_REQUEST_TIMEOUT_SECS`] (30 s) when deserializing
+    /// configs that do not specify this field.
+    #[serde(default = "default_request_timeout_secs")]
+    pub request_timeout_secs: u64,
+}
+
+/// Default per-request timeout: 30 seconds.
+pub const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
+
+fn default_request_timeout_secs() -> u64 {
+    DEFAULT_REQUEST_TIMEOUT_SECS
 }
 
 impl NetworkConfig {
@@ -42,6 +57,7 @@ impl NetworkConfig {
             archive_urls: vec![
                 "https://history.stellar.org/prd/core-testnet/core_testnet_001".to_string(),
             ],
+            request_timeout_secs: DEFAULT_REQUEST_TIMEOUT_SECS,
         }
     }
 
@@ -54,6 +70,7 @@ impl NetworkConfig {
             archive_urls: vec![
                 "https://history.stellar.org/prd/core-live/core_live_001".to_string()
             ],
+            request_timeout_secs: DEFAULT_REQUEST_TIMEOUT_SECS,
         }
     }
 
@@ -64,6 +81,7 @@ impl NetworkConfig {
             rpc_url: "https://rpc-futurenet.stellar.org".to_string(),
             network_passphrase: "Test SDF Future Network ; October 2022".to_string(),
             archive_urls: vec!["https://history-futurenet.stellar.org".to_string()],
+            request_timeout_secs: DEFAULT_REQUEST_TIMEOUT_SECS,
         }
     }
 
@@ -74,6 +92,7 @@ impl NetworkConfig {
             rpc_url: rpc_url.to_string(),
             network_passphrase: passphrase.to_string(),
             archive_urls: Vec::new(),
+            request_timeout_secs: DEFAULT_REQUEST_TIMEOUT_SECS,
         }
     }
 }

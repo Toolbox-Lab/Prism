@@ -5,6 +5,8 @@ use std::fmt;
 /// Top-level error type for all Prism operations.
 #[derive(Debug)]
 pub enum PrismError {
+    /// A network request exceeded the configured timeout duration.
+    NetworkTimeout { method: String, timeout_secs: u64 },
     /// Error communicating with the Soroban RPC endpoint.
     RpcError(String),
     /// Error fetching or parsing history archive data.
@@ -32,6 +34,9 @@ pub enum PrismError {
 impl fmt::Display for PrismError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::NetworkTimeout { method, timeout_secs } => {
+                write!(f, "RPC request timed out after {timeout_secs}s (method: {method})")
+            }
             Self::RpcError(msg) => write!(f, "RPC error: {msg}"),
             Self::ArchiveError(msg) => write!(f, "Archive error: {msg}"),
             Self::XdrError(msg) => write!(f, "XDR error: {msg}"),
