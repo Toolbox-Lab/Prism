@@ -24,7 +24,6 @@ pub async fn run(
 
     progress.finish_and_clear();
 
-    // --- Terminal output (always shown) ---
     match output_format {
         "json" => println!("{}", serde_json::to_string_pretty(&trace.state_diff)?),
         _ => {
@@ -47,14 +46,6 @@ pub async fn run(
                 println!("{symbol} {}", entry.key);
             }
         }
-    }
-
-    // --- Optional JSON save (--save flag) ---
-    if let Some(path) = save {
-        let json = serde_json::to_string_pretty(&trace.state_diff)?;
-        std::fs::write(path, &json)
-            .map_err(|e| anyhow::anyhow!("Failed to write save file '{}': {}", path, e))?;
-        eprintln!("Saved diff to {path}");
     }
 
     Ok(())

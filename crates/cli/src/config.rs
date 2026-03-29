@@ -2,6 +2,8 @@
 //!
 //! Handles reading and writing user preferences at `~/.prism/config.toml`.
 
+#![allow(dead_code)]
+
 use anyhow::Context;
 use directories::BaseDirs;
 use prism_core::types::config::PrismConfig;
@@ -111,8 +113,10 @@ mod tests {
         let path = root.join("config.toml");
         let manager = ConfigManager::with_path(path.clone());
 
-        let mut config = PrismConfig::default();
-        config.max_cache_size_mb = 1024;
+        let config = PrismConfig {
+            max_cache_size_mb: 1024,
+            ..PrismConfig::default()
+        };
 
         manager.save(&config).expect("save config");
         let loaded = manager.load().expect("load config");

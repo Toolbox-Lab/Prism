@@ -35,10 +35,7 @@ pub async fn run(
     )
     .await?;
 
-        spinner.finish_and_clear();
-    } else {
-        let report = prism_core::decode::decode_transaction(&args.tx_hash, network).await?;
-    }
+    spinner.finish_and_clear();
 
     // --- Terminal output (always shown) ---
     match output_format {

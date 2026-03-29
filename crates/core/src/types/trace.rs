@@ -68,7 +68,7 @@ pub enum DiffChangeType {
 }
 
 /// Complete state diff for a transaction.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StateDiff {
     /// Individual entry changes.
     pub entries: Vec<LedgerEntryDiff>,
@@ -90,7 +90,7 @@ pub struct ResourceHotspot {
 }
 
 /// Resource consumption profile for a transaction.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ResourceProfile {
     /// Total CPU instructions used.
     pub total_cpu: u64,
