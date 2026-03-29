@@ -2,8 +2,12 @@
 //!
 //! Communicates with Soroban RPC endpoints: `getTransaction`, `simulateTransaction`,
 //! `getLedgerEntries`, `getEvents`, `getLatestLedger`. Handles pagination, retries,
-//! and rate limit backoff.
+//! and rate-limit backoff via [`super::jsonrpc::JsonRpcTransport`].
 
+use crate::network::jsonrpc::{
+    EmptyParams, GetEventsParams, GetLedgerEntriesParams, GetTransactionParams,
+    JsonRpcRequest, JsonRpcTransport, SimulateTransactionParams,
+};
 use crate::types::config::NetworkConfig;
 use crate::types::error::{PrismError, PrismResult};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
