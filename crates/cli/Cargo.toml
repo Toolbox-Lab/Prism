@@ -17,6 +17,7 @@ walkdir = "2"
 
 # CLI Framework
 clap = { workspace = true }
+clap_complete = "4"
 anyhow = { workspace = true }
 colored = { workspace = true }
 indicatif = { workspace = true }

@@ -368,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_get_transaction_deserialization() {
-        let response_json = r#"{
+        let json = r#"{
             "jsonrpc": "2.0",
             "id": 1,
             "result": {
@@ -384,9 +384,8 @@ mod tests {
             }
         }"#;
 
-        let rpc_response: JsonRpcResponse<GetTransactionResponse> =
-            serde_json::from_str(response_json).unwrap();
-        let result = rpc_response.result.unwrap();
+        let resp: JsonRpcResponse<GetTransactionResponse> = serde_json::from_str(json).unwrap();
+        let result = resp.result.unwrap();
 
         assert_eq!(result.status, TransactionStatus::Success);
         assert_eq!(result.latest_ledger, 123);
@@ -394,15 +393,16 @@ mod tests {
     }
 
     #[test]
-    fn test_transaction_status_enum() {
-        let status: TransactionStatus = serde_json::from_str("\"SUCCESS\"").unwrap();
-        assert_eq!(status, TransactionStatus::Success);
-
-        let status: TransactionStatus = serde_json::from_str("\"NOT_FOUND\"").unwrap();
-        assert_eq!(status, TransactionStatus::NotFound);
-
-        let status: TransactionStatus = serde_json::from_str("\"FAILED\"").unwrap();
-        assert_eq!(status, TransactionStatus::Failed);
+    fn test_transaction_status_variants() {
+        let cases = [
+            ("\"SUCCESS\"", TransactionStatus::Success),
+            ("\"NOT_FOUND\"", TransactionStatus::NotFound),
+            ("\"FAILED\"", TransactionStatus::Failed),
+        ];
+        for (raw, expected) in cases {
+            let got: TransactionStatus = serde_json::from_str(raw).unwrap();
+            assert_eq!(got, expected);
+        }
     }
 
     #[test]

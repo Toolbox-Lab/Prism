@@ -9,8 +9,10 @@ use crate::types::error::{PrismError, PrismResult};
 /// Client for accessing Stellar History Archives.
 pub struct ArchiveClient {
     /// HTTP client.
+    #[allow(dead_code)]
     client: reqwest::Client,
     /// Archive base URLs.
+    #[allow(dead_code)]
     archive_urls: Vec<String>,
 }
 

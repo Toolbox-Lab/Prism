@@ -53,7 +53,7 @@ pub struct ContractSpec {
 pub fn decode_contract_spec(wasm_bytes: &[u8]) -> PrismResult<ContractSpec> {
     // Parse WASM to find custom sections named "contractspecv0" and "contractmetav0"
     let parser = wasmparser::Parser::new(0);
-    let mut spec = ContractSpec {
+    let spec = ContractSpec {
         errors: Vec::new(),
         functions: Vec::new(),
         name: None,

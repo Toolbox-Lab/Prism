@@ -36,14 +36,17 @@ pub async fn reconstruct_state(tx_hash: &str, network: &NetworkConfig) -> PrismR
     let rpc = crate::network::rpc::SorobanRpcClient::new(network);
 
     // 1. Fetch the transaction to determine its ledger sequence
-    let tx_data = rpc.get_transaction(tx_hash).await?;
-    let tx_ledger = tx_data
-        .ledger
-        .ok_or_else(|| PrismError::ReplayError("Cannot determine transaction ledger".to_string()))?;
+    let tx_response = rpc.get_transaction(tx_hash).await?;
+    let tx_ledger = tx_response.ledger.ok_or_else(|| {
+        PrismError::ReplayError("Cannot determine transaction ledger".to_string())
+    })?;
 
     // 2. Get the current latest ledger
-    let latest = rpc.get_latest_ledger().await?;
-    let latest_ledger = latest.get("sequence").and_then(|s| s.as_u64()).unwrap_or(0) as u32;
+    let latest: serde_json::Value = rpc.get_latest_ledger().await?;
+    let latest_ledger = latest
+        .get("sequence")
+        .and_then(|s: &serde_json::Value| s.as_u64())
+        .unwrap_or(0) as u32;
 
     // 3. Choose reconstruction path
     let age = latest_ledger.saturating_sub(tx_ledger);

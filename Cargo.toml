@@ -22,7 +22,7 @@ soroban-spec = "=21.2.0"
 soroban-spec-tools = "=21.2.0"
 
 # Networking & Serialization
-reqwest = { version = "0.12", features = ["json", "gzip"] }
+reqwest = { version = "0.12", features = ["json", "gzip", "rustls-tls"] }
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "0.24"
 futures-util = "=0.3.30"

@@ -3,7 +3,7 @@
 //! Manages RPC endpoints, archive URLs, network passphrases for
 //! mainnet/testnet/futurenet/standalone networks.
 
-use crate::types::config::{Network, NetworkConfig};
+use crate::types::config::NetworkConfig;
 
 /// Resolve a network name string to a `NetworkConfig`.
 ///
