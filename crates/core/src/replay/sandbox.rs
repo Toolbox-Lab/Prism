@@ -8,7 +8,7 @@ use crate::replay::state::LedgerState;
 use crate::types::error::{PrismError, PrismResult};
 
 /// A raw trace event emitted during sandboxed execution.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct TraceEvent {
     /// Event type.
     pub event_type: TraceEventType,
@@ -19,7 +19,7 @@ pub struct TraceEvent {
 }
 
 /// Types of trace events.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum TraceEventType {
     /// A contract invocation started.
     InvocationStart,

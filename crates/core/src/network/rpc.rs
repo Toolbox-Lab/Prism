@@ -1,8 +1,8 @@
 //! Soroban RPC client.
 //!
 //! Communicates with Soroban RPC endpoints: `getTransaction`, `simulateTransaction`,
-//! `getLedgerEntries`, `getEvents`, `getLatestLedger`. Handles pagination, retries,
-//! and rate limit backoff.
+//! `getLedgerEntries`, `getEvents`, `getLatestLedger`. Handles retries and
+//! basic rate-limit backoff.
 
 use crate::types::config::NetworkConfig;
 use crate::types::error::{PrismError, PrismResult};
@@ -116,13 +116,10 @@ impl SimulateTransactionResponse {
 /// Primary entry point for Soroban network communication.
 #[derive(Debug, Clone)]
 pub struct SorobanRpcClient {
-    /// HTTP client instance.
     client: reqwest::Client,
-    /// Soroban RPC endpoint URL.
     rpc_url: String,
 }
 
-/// JSON-RPC request envelope.
 #[derive(Debug, Serialize)]
 struct JsonRpcRequest<'a, P: Serialize> {
     jsonrpc: &'a str,
@@ -131,7 +128,6 @@ struct JsonRpcRequest<'a, P: Serialize> {
     params: P,
 }
 
-/// JSON-RPC response envelope.
 #[derive(Debug, Deserialize)]
 struct JsonRpcResponse<T> {
     #[allow(dead_code)]
@@ -142,46 +138,6 @@ struct JsonRpcResponse<T> {
     error: Option<JsonRpcError>,
 }
 
-/// Transaction status in Soroban.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TransactionStatus {
-    Success,
-    NotFound,
-    Failed,
-}
-
-/// Response for the `getTransaction` RPC method.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GetTransactionResponse {
-    /// Status of the transaction.
-    pub status: TransactionStatus,
-    /// Latest ledger known to the RPC node.
-    pub latest_ledger: u32,
-    /// Latest ledger close time known to the RPC node.
-    pub latest_ledger_close_time: Option<u64>,
-    /// Oldest ledger known to the RPC node.
-    pub oldest_ledger: Option<u32>,
-    /// Oldest ledger close time known to the RPC node.
-    pub oldest_ledger_close_time: Option<u64>,
-    /// The ledger in which the transaction was included.
-    pub ledger: Option<u32>,
-    /// The creation time of the transaction.
-    pub created_at: Option<String>,
-    /// The order in which the transaction was applied in the ledger.
-    pub application_order: Option<u32>,
-    /// Fee bump information if applicable.
-    pub fee_bump: Option<String>,
-    /// Envelope XDR for the transaction.
-    pub envelope_xdr: Option<String>,
-    /// Result XDR for the transaction.
-    pub result_xdr: Option<String>,
-    /// Result Meta XDR for the transaction.
-    pub result_meta_xdr: Option<String>,
-}
-
-/// JSON-RPC error.
 #[derive(Debug, Deserialize)]
 struct JsonRpcError {
     #[allow(dead_code)]
@@ -191,9 +147,6 @@ struct JsonRpcError {
 
 impl SorobanRpcClient {
     /// Create a new `SorobanRpcClient` from a [`NetworkConfig`].
-    ///
-    /// Initialises a [`reqwest::Client`] with a 30-second timeout and sets the
-    /// `Content-Type: application/json` header on every request.
     pub fn new(config: &NetworkConfig) -> Self {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -254,8 +207,10 @@ impl SorobanRpcClient {
 
     /// Fetch ledger entries by their XDR keys.
     pub async fn get_ledger_entries(&self, keys: &[String]) -> PrismResult<serde_json::Value> {
-        let params = serde_json::json!({ "keys": keys });
-        self.call::<serde_json::Value>("getLedgerEntries", params).await
+        let params = serde_json::json!({
+            "keys": keys,
+        });
+        self.call("getLedgerEntries", params).await
     }
 
     /// Query events starting from `start_ledger` with the given filters.
@@ -268,12 +223,12 @@ impl SorobanRpcClient {
             "startLedger": start_ledger,
             "filters": filters,
         });
-        self.call::<serde_json::Value>("getEvents", params).await
+        self.call("getEvents", params).await
     }
 
     /// Return the latest ledger info from the RPC node.
     pub async fn get_latest_ledger(&self) -> PrismResult<serde_json::Value> {
-        self.call::<serde_json::Value>("getLatestLedger", serde_json::json!({})).await
+        self.call("getLatestLedger", serde_json::json!({})).await
     }
 
     /// Internal JSON-RPC call with retry and rate-limit backoff.
@@ -326,6 +281,13 @@ impl SorobanRpcClient {
                         continue;
                     }
 
+                    if !status.is_success() {
+                        return Err(PrismError::RpcError(format!(
+                            "RPC request failed with HTTP {}: {}",
+                            status, body
+                        )));
+                    }
+
                     let rpc_response: JsonRpcResponse<T> = serde_json::from_str(&body)
                         .map_err(|e| PrismError::RpcError(format!("Response parse error: {e}")))?;
 
@@ -367,7 +329,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_get_transaction_deserialization() {
+    fn get_transaction_response_deserializes() {
         let json = r#"{
             "jsonrpc": "2.0",
             "id": 1,
@@ -393,18 +355,18 @@ mod tests {
     }
 
     #[test]
-    fn test_transaction_status_variants() {
+    fn transaction_status_variants_deserialize() {
         let cases = [
             ("\"SUCCESS\"", TransactionStatus::Success),
             ("\"NOT_FOUND\"", TransactionStatus::NotFound),
             ("\"FAILED\"", TransactionStatus::Failed),
         ];
+
         for (raw, expected) in cases {
             let got: TransactionStatus = serde_json::from_str(raw).unwrap();
             assert_eq!(got, expected);
         }
     }
-
     #[test]
     fn test_simulate_response_is_success() {
         let ok = SimulateTransactionResponse {

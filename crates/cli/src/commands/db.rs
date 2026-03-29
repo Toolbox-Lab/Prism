@@ -25,11 +25,9 @@ pub enum DbCommands {
     },
 }
 
-pub async fn run(args: DbArgs) -> Result<()> {
+pub async fn run(args: DbArgs) -> anyhow::Result<()> {
     match args.command {
-        DbCommands::Update => {
-            update_taxonomy_database().await?;
-        }
+        DbCommands::Update => update_taxonomy_database().await?,
         DbCommands::Stats => {
             let db = prism_core::taxonomy::loader::TaxonomyDatabase::load_embedded()?;
             println!("Taxonomy database: {} entries", db.len());

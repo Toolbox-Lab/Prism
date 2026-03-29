@@ -45,11 +45,16 @@ impl ArchiveClient {
     pub async fn fetch_checkpoint(&self, ledger_sequence: u32) -> PrismResult<ArchiveCheckpoint> {
         let checkpoint_seq = (ledger_sequence / 64) * 64;
         let _path = format_checkpoint_path(checkpoint_seq);
+        let archive_count = self.archive_urls.len();
+        let _client = &self.client;
 
         // TODO: Fetch and decompress archive files (gzip/xz)
         // TODO: Try each archive URL in order until one succeeds
 
-        tracing::info!("Fetching archive checkpoint for ledger {checkpoint_seq}");
+        tracing::info!(
+            archive_count,
+            "Fetching archive checkpoint for ledger {checkpoint_seq}"
+        );
 
         Err(PrismError::ArchiveError(
             "Archive fetch not yet implemented".to_string(),

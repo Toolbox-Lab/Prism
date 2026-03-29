@@ -27,11 +27,15 @@ termcolor = { workspace = true }
 
 # Async
 tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
+reqwest = { workspace = true }
+libc = { workspace = true }
 
 # TUI (Tier 3)
 ratatui = { workspace = true }
@@ -44,7 +48,6 @@ directories = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
-reqwest = { workspace = true }
 semver = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5.0"
