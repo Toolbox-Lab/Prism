@@ -14,7 +14,7 @@
 
 use crate::types::error::{PrismError, PrismResult};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use stellar_xdr::next::{Limits, ReadXdr, TransactionMeta, WriteXdr};
+use stellar_xdr::next::{Limits, ReadXdr, TransactionMeta, TransactionResult, WriteXdr};
 
 // ── XdrCodec trait ────────────────────────────────────────────────────────────
 
@@ -73,6 +73,59 @@ impl XdrCodec for TransactionMeta {
 
     fn from_xdr_base64(b64: &str) -> PrismResult<Self> {
         TransactionMeta::from_xdr_base64(b64, Limits::none()).map_err(|e| {
+            PrismError::XdrDecodingFailed {
+                type_name: Self::TYPE_NAME,
+                reason: e.to_string(),
+            }
+        })
+    }
+
+    fn to_xdr_base64(&self) -> PrismResult<String> {
+        self.to_xdr_base64(Limits::none()).map_err(|e| {
+            PrismError::XdrDecodingFailed {
+                type_name: Self::TYPE_NAME,
+                reason: e.to_string(),
+            }
+        })
+    }
+}
+
+// ── TransactionResult ─────────────────────────────────────────────────────────
+
+/// Decode / encode [`TransactionResult`] XDR.
+///
+/// `TransactionResult` is a struct wrapping:
+/// - `fee_charged: i64` — actual fee deducted from the source account
+/// - `result: TransactionResultResult` — the outcome union; key variants:
+///
+/// | Variant | Meaning |
+/// |---------|---------|
+/// | `TxSuccess(ops)` | All operations succeeded; `ops` holds per-op results |
+/// | `TxFailed(ops)`  | One or more operations failed; `ops` holds per-op results |
+/// | `TxInsufficientBalance` | Fee would drop account below minimum reserve |
+/// | `TxBadSeq` | Sequence number mismatch |
+/// | `TxInsufficientFee` | Submitted fee too low |
+/// | `TxSorobanInvalid` | Soroban-specific precondition not met |
+/// | *(other void variants)* | See [`stellar_xdr::next::TransactionResultResult`] |
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use stellar_xdr::next::{TransactionResult, TransactionResultResult};
+/// use prism_core::xdr::codec::XdrCodec;
+///
+/// let result = TransactionResult::from_xdr_base64(raw_b64)?;
+/// match &result.result {
+///     TransactionResultResult::TxSuccess(ops) => { /* index ops */ }
+///     TransactionResultResult::TxInsufficientBalance => { /* surface error */ }
+///     _ => {}
+/// }
+/// ```
+impl XdrCodec for TransactionResult {
+    const TYPE_NAME: &'static str = "TransactionResult";
+
+    fn from_xdr_base64(b64: &str) -> PrismResult<Self> {
+        TransactionResult::from_xdr_base64(b64, Limits::none()).map_err(|e| {
             PrismError::XdrDecodingFailed {
                 type_name: Self::TYPE_NAME,
                 reason: e.to_string(),
@@ -315,5 +368,88 @@ mod tests {
         let meta2 = TransactionMeta::from_xdr_base64(&re_encoded)
             .expect("re-decoded value should be valid");
         assert_eq!(meta, meta2, "round-trip must be lossless");
+    }
+
+    // ── XdrCodec: TransactionResult ───────────────────────────────────────────
+
+    /// Decode a successful `TransactionResult` XDR and assert structural
+    /// properties.
+    ///
+    /// XDR byte layout (big-endian):
+    /// ```text
+    ///   00 00 00 00  00 00 00 64  — fee_charged = 100 (i64)
+    ///   00 00 00 00              — result discriminant TxSuccess = 0
+    ///   00 00 00 00              — TxSuccess: OperationResult vec length = 0
+    ///   00 00 00 00              — ext discriminant V0
+    /// ```
+    #[test]
+    fn test_transaction_result_success_decoding() {
+        use stellar_xdr::next::{TransactionResult, TransactionResultResult};
+
+        let xdr_bytes: Vec<u8> = vec![
+            0, 0, 0, 0, 0, 0, 0, 100, // fee_charged = 100 (i64 big-endian)
+            0, 0, 0, 0,               // result discriminant: TxSuccess = 0
+            0, 0, 0, 0,               // TxSuccess: empty OperationResult vec
+            0, 0, 0, 0,               // ext: V0
+        ];
+        let b64 = encode_xdr_base64(&xdr_bytes);
+
+        let result = TransactionResult::from_xdr_base64(&b64)
+            .expect("should decode valid TxSuccess TransactionResult XDR");
+
+        assert_eq!(result.fee_charged, 100, "fee_charged should be 100");
+        assert!(
+            matches!(result.result, TransactionResultResult::TxSuccess(_)),
+            "expected TxSuccess, got {:?}",
+            result.result
+        );
+        if let TransactionResultResult::TxSuccess(ops) = &result.result {
+            assert_eq!(ops.len(), 0, "expected 0 operation results");
+        }
+
+        // Round-trip.
+        let re_encoded = result.to_xdr_base64().expect("re-encode should succeed");
+        let result2 = TransactionResult::from_xdr_base64(&re_encoded)
+            .expect("re-decoded value should be valid");
+        assert_eq!(result, result2, "round-trip must be lossless");
+    }
+
+    /// Decode a failed `TransactionResult` with code `TxInsufficientBalance`
+    /// and assert the correct void variant is parsed.
+    ///
+    /// XDR byte layout (big-endian):
+    /// ```text
+    ///   00 00 00 00  00 00 00 64  — fee_charged = 100 (i64)
+    ///   FF FF FF F9              — result discriminant TxInsufficientBalance = -7
+    ///                            — (void body — no additional bytes)
+    ///   00 00 00 00              — ext discriminant V0
+    /// ```
+    #[test]
+    fn test_transaction_result_failure_decoding() {
+        use stellar_xdr::next::{TransactionResult, TransactionResultResult};
+
+        let xdr_bytes: Vec<u8> = vec![
+            0, 0, 0, 0, 0, 0, 0, 100, // fee_charged = 100 (i64 big-endian)
+            0xFF, 0xFF, 0xFF, 0xF9,   // result discriminant: TxInsufficientBalance = -7
+                                      // void body — no bytes
+            0, 0, 0, 0,               // ext: V0
+        ];
+        let b64 = encode_xdr_base64(&xdr_bytes);
+
+        let result = TransactionResult::from_xdr_base64(&b64)
+            .expect("should decode valid TxInsufficientBalance TransactionResult XDR");
+
+        assert_eq!(result.fee_charged, 100, "fee_charged should be 100");
+        assert!(
+            matches!(result.result, TransactionResultResult::TxInsufficientBalance),
+            "expected TxInsufficientBalance, got {:?}",
+            result.result
+        );
+
+        // Round-trip.
+        let re_encoded = result.to_xdr_base64().expect("re-encode should succeed");
+        let result2 = TransactionResult::from_xdr_base64(&re_encoded)
+            .expect("re-decoded value should be valid");
+        assert_eq!(result, result2, "round-trip must be lossless");
     }
 }
