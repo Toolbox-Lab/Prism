@@ -6,8 +6,9 @@
 
 use crate::types::config::NetworkConfig;
 use crate::types::error::{PrismError, PrismResult};
+use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 // ── simulateTransaction response types ──────────────────────────────────────
 
@@ -112,23 +113,22 @@ impl SimulateTransactionResponse {
     }
 }
 
-/// Soroban RPC client with retry and rate-limit handling.
-pub struct RpcClient {
+/// Primary entry point for Soroban network communication.
+#[derive(Debug, Clone)]
+pub struct SorobanRpcClient {
     /// HTTP client instance.
     client: reqwest::Client,
-    /// Network configuration.
-    config: NetworkConfig,
-    /// Maximum number of retries for failed requests.
-    max_retries: u32,
+    /// Soroban RPC endpoint URL.
+    rpc_url: String,
 }
 
 /// JSON-RPC request envelope.
 #[derive(Debug, Serialize)]
-struct JsonRpcRequest<'a> {
+struct JsonRpcRequest<'a, P: Serialize> {
     jsonrpc: &'a str,
     id: u64,
     method: &'a str,
-    params: serde_json::Value,
+    params: P,
 }
 
 /// JSON-RPC response envelope.
@@ -189,16 +189,24 @@ struct JsonRpcError {
     message: String,
 }
 
-impl RpcClient {
-    /// Create a new RPC client for the given network.
-    pub fn new(config: NetworkConfig) -> Self {
+impl SorobanRpcClient {
+    /// Create a new `SorobanRpcClient` from a [`NetworkConfig`].
+    ///
+    /// Initialises a [`reqwest::Client`] with a 30-second timeout and sets the
+    /// `Content-Type: application/json` header on every request.
+    pub fn new(config: &NetworkConfig) -> Self {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .default_headers(headers)
+            .build()
+            .expect("Failed to build reqwest client");
+
         Self {
-            client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .expect("Failed to create HTTP client"),
-            config,
-            max_retries: 3,
+            client,
+            rpc_url: config.rpc_url.clone(),
         }
     }
 
@@ -244,15 +252,13 @@ impl RpcClient {
         Ok(response)
     }
 
-    /// Get ledger entries by keys.
+    /// Fetch ledger entries by their XDR keys.
     pub async fn get_ledger_entries(&self, keys: &[String]) -> PrismResult<serde_json::Value> {
-        let params = serde_json::json!({
-            "keys": keys,
-        });
+        let params = serde_json::json!({ "keys": keys });
         self.call::<serde_json::Value>("getLedgerEntries", params).await
     }
 
-    /// Get events matching a filter.
+    /// Query events starting from `start_ledger` with the given filters.
     pub async fn get_events(
         &self,
         start_ledger: u32,
@@ -265,12 +271,12 @@ impl RpcClient {
         self.call::<serde_json::Value>("getEvents", params).await
     }
 
-    /// Get the latest ledger info.
+    /// Return the latest ledger info from the RPC node.
     pub async fn get_latest_ledger(&self) -> PrismResult<serde_json::Value> {
         self.call::<serde_json::Value>("getLatestLedger", serde_json::json!({})).await
     }
 
-    /// Internal JSON-RPC call with retry logic.
+    /// Internal JSON-RPC call with retry and rate-limit backoff.
     async fn call<T: for<'de> Deserialize<'de>>(
         &self,
         method: &str,
@@ -283,77 +289,50 @@ impl RpcClient {
             params,
         };
 
-        let mut last_error = None;
+        const MAX_RETRIES: u32 = 3;
+        let mut last_error: Option<PrismError> = None;
 
-        for attempt in 0..=self.max_retries {
+        for attempt in 0..=MAX_RETRIES {
             if attempt > 0 {
-                let backoff = std::time::Duration::from_millis(100 * 2u64.pow(attempt));
+                let backoff = Duration::from_millis(100 * 2u64.pow(attempt));
                 tokio::time::sleep(backoff).await;
-                tracing::debug!("Retry attempt {attempt} for RPC method {method}");
+                tracing::debug!(attempt, method, "Retrying RPC request");
             }
 
-            let started_at = Instant::now();
-            let request_body = serde_json::to_string(&request)
-                .unwrap_or_else(|_| "<failed to serialize request>".to_string());
-            tracing::debug!(
-                method,
-                endpoint = %self.config.rpc_url,
-                attempt,
-                "Sending RPC request"
-            );
-            tracing::trace!(
-                method,
-                endpoint = %self.config.rpc_url,
-                attempt,
-                request = %request_body,
-                "RPC request payload"
-            );
+            let started = Instant::now();
+            tracing::debug!(method, endpoint = %self.rpc_url, attempt, "Sending RPC request");
 
-            match self
-                .client
-                .post(&self.config.rpc_url)
-                .json(&request)
-                .send()
-                .await
-            {
+            match self.client.post(&self.rpc_url).json(&request).send().await {
                 Ok(response) => {
                     let status = response.status();
-                    let response_body = response
-                        .text()
-                        .await
-                        .map_err(|e| PrismError::RpcError(format!("Response read error: {e}")))?;
-                    let elapsed_ms = started_at.elapsed().as_millis();
+                    let elapsed_ms = started.elapsed().as_millis();
+                    let body = response.text().await.map_err(|e| {
+                        PrismError::RpcError(format!("Failed to read response body: {e}"))
+                    })?;
 
                     tracing::debug!(
                         method,
-                        endpoint = %self.config.rpc_url,
+                        endpoint = %self.rpc_url,
                         attempt,
-                        status = %status,
+                        %status,
                         elapsed_ms,
                         "RPC response received"
                     );
-                    tracing::trace!(
-                        method,
-                        endpoint = %self.config.rpc_url,
-                        attempt,
-                        elapsed_ms,
-                        response = %response_body,
-                        "RPC response payload"
-                    );
 
                     if status == 429 {
-                        tracing::warn!("Rate limited by RPC, backing off...");
-                        last_error = Some(PrismError::RpcError("Rate limited".to_string()));
+                        tracing::warn!(method, "Rate limited by RPC node, backing off");
+                        last_error =
+                            Some(PrismError::RpcError("Rate limited (HTTP 429)".to_string()));
                         continue;
                     }
 
-                    let rpc_response: JsonRpcResponse<T> = serde_json::from_str(&response_body)
+                    let rpc_response: JsonRpcResponse<T> = serde_json::from_str(&body)
                         .map_err(|e| PrismError::RpcError(format!("Response parse error: {e}")))?;
 
                     if let Some(err) = rpc_response.error {
                         tracing::debug!(
                             method,
-                            endpoint = %self.config.rpc_url,
+                            endpoint = %self.rpc_url,
                             attempt,
                             error = %err.message,
                             "RPC returned an error response"
@@ -361,25 +340,25 @@ impl RpcClient {
                         return Err(PrismError::RpcError(err.message));
                     }
 
-                    return rpc_response
-                        .result
-                        .ok_or_else(|| PrismError::RpcError("Empty response".to_string()));
+                    return rpc_response.result.ok_or_else(|| {
+                        PrismError::RpcError("Empty result in RPC response".into())
+                    });
                 }
                 Err(e) => {
                     tracing::debug!(
                         method,
-                        endpoint = %self.config.rpc_url,
+                        endpoint = %self.rpc_url,
                         attempt,
-                        elapsed_ms = started_at.elapsed().as_millis(),
+                        elapsed_ms = started.elapsed().as_millis(),
                         error = %e,
                         "RPC request failed"
                     );
-                    last_error = Some(PrismError::RpcError(format!("Request failed: {e}")));
+                    last_error = Some(PrismError::RpcError(format!("HTTP request failed: {e}")));
                 }
             }
         }
 
-        Err(last_error.unwrap_or_else(|| PrismError::RpcError("Unknown error".to_string())))
+        Err(last_error.unwrap_or_else(|| PrismError::RpcError("Unknown RPC error".into())))
     }
 }
 
@@ -424,5 +403,53 @@ mod tests {
 
         let status: TransactionStatus = serde_json::from_str("\"FAILED\"").unwrap();
         assert_eq!(status, TransactionStatus::Failed);
+    }
+
+    #[test]
+    fn test_simulate_response_is_success() {
+        let ok = SimulateTransactionResponse {
+            latest_ledger: 100,
+            soroban_data: Some("AAAA".to_string()),
+            min_resource_fee: Some("1000".to_string()),
+            auth: vec![],
+            results: vec![],
+            error: None,
+            events: vec![],
+            cost: None,
+        };
+        assert!(ok.is_success());
+
+        let err = SimulateTransactionResponse {
+            error: Some("contract trap".to_string()),
+            ..ok
+        };
+        assert!(!err.is_success());
+    }
+
+    #[test]
+    fn test_simulate_response_deserialization() {
+        let json = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "latestLedger": 200,
+                "transactionData": "AAAAXDR=",
+                "minResourceFee": "5000",
+                "auth": ["AUTHXDR="],
+                "results": [{"xdr": "RETVAL=", "auth": []}],
+                "events": []
+            }
+        }"#;
+
+        let resp: JsonRpcResponse<SimulateTransactionResponse> =
+            serde_json::from_str(json).unwrap();
+        let result = resp.result.unwrap();
+
+        assert_eq!(result.latest_ledger, 200);
+        assert_eq!(result.soroban_data.as_deref(), Some("AAAAXDR="));
+        assert_eq!(result.min_resource_fee.as_deref(), Some("5000"));
+        assert_eq!(result.auth, vec!["AUTHXDR="]);
+        assert_eq!(result.return_value_xdr(), Some("RETVAL="));
+        assert!(result.is_success());
     }
 }

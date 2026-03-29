@@ -33,15 +33,13 @@ const HOT_PATH_THRESHOLD: u32 = 50_000;
 
 /// Reconstruct ledger state at the time of a transaction.
 pub async fn reconstruct_state(tx_hash: &str, network: &NetworkConfig) -> PrismResult<LedgerState> {
-    let rpc = crate::network::rpc::RpcClient::new(network.clone());
+    let rpc = crate::network::rpc::SorobanRpcClient::new(network);
 
     // 1. Fetch the transaction to determine its ledger sequence
     let tx_data = rpc.get_transaction(tx_hash).await?;
     let tx_ledger = tx_data
-        .get("ledger")
-        .and_then(|l| l.as_u64())
-        .ok_or_else(|| PrismError::ReplayError("Cannot determine transaction ledger".to_string()))?
-        as u32;
+        .ledger
+        .ok_or_else(|| PrismError::ReplayError("Cannot determine transaction ledger".to_string()))?;
 
     // 2. Get the current latest ledger
     let latest = rpc.get_latest_ledger().await?;
@@ -62,7 +60,7 @@ pub async fn reconstruct_state(tx_hash: &str, network: &NetworkConfig) -> PrismR
 /// Hot path: reconstruct state from Soroban RPC.
 async fn reconstruct_hot_path(
     ledger_sequence: u32,
-    _rpc: &crate::network::rpc::RpcClient,
+    _rpc: &crate::network::rpc::SorobanRpcClient,
 ) -> PrismResult<LedgerState> {
     // TODO: Use getLedgerEntries to fetch all entries in the transaction's footprint
     Ok(LedgerState {

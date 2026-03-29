@@ -6,4 +6,5 @@ pub mod rpc;
 
 pub use rpc::{
     SimulateCost, SimulateFootprint, SimulateResult, SimulateTransactionResponse,
+    SorobanRpcClient,
 };
