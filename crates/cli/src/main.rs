@@ -10,7 +10,21 @@
 //!   prism whatif <tx-hash>       — Re-simulate with modifications
 //!   prism export <tx-hash>       — Export as regression test
 //!   prism db update              — Update taxonomy database
-//!   prism serve                  — Start web server for Prism Web UI
+//!   prism clean                  — Clear local cache data
+
+//! Prism CLI — Soroban Transaction Debugger
+//!
+//! Usage:
+//!   prism decode <tx-hash>       — Decode a transaction error
+//!   prism inspect <tx-hash>      — Full transaction context
+//!   prism trace <tx-hash>        — Replay and trace execution
+//!   prism profile <tx-hash>      — Resource consumption profile
+//!   prism diff <tx-hash>         — State diff (before/after)
+//!   prism replay <tx-hash> -i    — Interactive TUI debugger
+//!   prism whatif <tx-hash>       — Re-simulate with modifications
+//!   prism export <tx-hash>       — Export as regression test
+//!   prism db update              — Update taxonomy database
+//!   prism serve                  — Start WebSocket server for streaming trace updates
 //!   prism clean                  — Clear local cache data
 
 mod commands;
@@ -19,13 +33,16 @@ mod output;
 mod tui;
 mod version_check;
 
-use clap::{ArgAction, Parser, Subcommand};
+use clap::{ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
+use url::Url;
+
+const BUILD_HASH: &str = env!("PRISM_BUILD_HASH");
 
 /// Prism — From cryptic error to root cause in one command.
 #[derive(Parser)]
-#[command(name = "prism", version, about, long_about = None)]
+#[command(name = "prism", version = env!("CARGO_PKG_VERSION"), about, long_about = None)]
 #[command(propagate_version = true)]
 struct Cli {
     /// Subcommand to execute.
@@ -54,12 +71,6 @@ struct Cli {
     rpc_url: Option<String>,
 
     /// Save analysis output as JSON to the specified file path.
-    ///
-    /// Terminal output is unaffected — the file is written in addition to
-    /// the normal human-readable display.  The file always contains the
-    /// JSON representation regardless of the `--output` flag.
-    ///
-    /// Example: prism trace <hash> --save report.json
     #[arg(long, global = true, value_name = "PATH")]
     save: Option<String>,
 
@@ -71,59 +82,42 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Decode a transaction error into plain English.
-    #[command(subcommand_help_heading = "Analysis Commands")]
     Decode(commands::decode::DecodeArgs),
-
     /// Inspect full transaction context.
-    #[command(subcommand_help_heading = "Analysis Commands")]
     Inspect(commands::inspect::InspectArgs),
-
     /// Replay transaction and output execution trace.
-    #[command(subcommand_help_heading = "Analysis Commands")]
     Trace(commands::trace::TraceArgs),
-
     /// Generate resource consumption profile.
-    #[command(subcommand_help_heading = "Analysis Commands")]
     Profile(commands::profile::ProfileArgs),
-
     /// Show state diff (before/after) for a transaction.
-    #[command(subcommand_help_heading = "State & Simulation")]
     Diff(commands::diff::DiffArgs),
-
-    /// Re-simulate with modified inputs.
-    #[command(subcommand_help_heading = "State & Simulation")]
-    Whatif(commands::whatif::WhatifArgs),
-
     /// Launch interactive TUI debugger.
-    #[command(subcommand_help_heading = "Development Tools")]
     Replay(commands::replay::ReplayArgs),
-
+    /// Re-simulate with modified inputs.
+    Whatif(commands::whatif::WhatifArgs),
     /// Export debug session as a regression test.
-    #[command(subcommand_help_heading = "Development Tools")]
     Export(commands::export::ExportArgs),
-    /// Start the local JSON-RPC bridge for the Web dashboard.
-    Serve(commands::serve::ServeArgs),
     /// Clear local cache data.
-    #[command(subcommand_help_heading = "Configuration & Maintenance")]
     Clean(commands::clean::CleanArgs),
-
     /// Manage the error taxonomy database.
-    #[command(subcommand_help_heading = "Configuration & Maintenance")]
     Db(commands::db::DbArgs),
-
-    /// Run a self-test: binary version, network connectivity, and cache health.
-    #[command(subcommand_help_heading = "Configuration & Maintenance")]
+    /// Start WebSocket server for streaming trace updates.
+    Serve(commands::serve::ServeArgs),
+    /// Run binary, network, and cache self-checks.
     Diagnostic(commands::diagnostic::DiagnosticArgs),
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Spawn the update check in the background immediately
     let update_check_handle = tokio::spawn(version_check::check_for_updates());
 
-    let cli = Cli::parse();
+    let version: &'static str = Box::leak(build_version().into_boxed_str());
+    let matches = Cli::command().version(version).get_matches();
+    let cli = Cli::from_arg_matches(&matches)?;
+    let loaded_config = config::ConfigManager::new()
+        .and_then(|manager| manager.load())
+        .ok();
 
-    // Initialize logging before resolving the network or dispatching commands.
     tracing_subscriber::fmt()
         .with_env_filter(build_log_filter(cli.verbose))
         .with_writer(std::io::stderr)
@@ -136,13 +130,11 @@ async fn main() -> anyhow::Result<()> {
         output = %cli.output,
         network_arg = %cli.network,
         verbose = cli.verbose,
+        config_loaded = loaded_config.is_some(),
         "CLI arguments parsed"
     );
 
-    // Resolve network configuration.
     let mut network = prism_core::network::config::resolve_network(&cli.network);
-
-    // Override RPC URL if provided.
     if let Some(ref rpc_url) = cli.rpc_url {
         network.rpc_url = rpc_url.clone();
     }
@@ -156,26 +148,25 @@ async fn main() -> anyhow::Result<()> {
 
     let save = cli.save.as_deref();
 
-    // Dispatch to command handler.
     match cli.command {
         Commands::Decode(args) => commands::decode::run(args, &network, &cli.output, save).await?,
         Commands::Inspect(args) => {
             commands::inspect::run(args, &network, &cli.output, save).await?
         }
-        Commands::Trace(args) => commands::trace::run(args, &network, &cli.output).await?,
-        Commands::Profile(args) => commands::profile::run(args, &network, &cli.output).await?,
-        Commands::Diff(args) => commands::diff::run(args, &network, &cli.output).await?,
-        Commands::Whatif(args) => commands::whatif::run(args, &network, &cli.output).await?,
+        Commands::Trace(args) => commands::trace::run(args, &network, &cli.output, save).await?,
+        Commands::Profile(args) => {
+            commands::profile::run(args, &network, &cli.output, save).await?
+        }
+        Commands::Diff(args) => commands::diff::run(args, &network, &cli.output, save).await?,
         Commands::Replay(args) => commands::replay::run(args, &network, &cli.quiet).await?,
+        Commands::Whatif(args) => commands::whatif::run(args, &network, &cli.output, save).await?,
         Commands::Export(args) => commands::export::run(args, &network, &cli.quiet).await?,
-        Commands::Serve(args) => commands::serve::run(args, &network).await?,
         Commands::Clean(args) => commands::clean::run(args).await?,
         Commands::Db(args) => commands::db::run(args).await?,
+        Commands::Serve(args) => commands::serve::run(args, &network).await?,
         Commands::Diagnostic(args) => commands::diagnostic::run(args).await?,
     }
 
-    // After all normal output, check if the update version task detected a new release
-    // using a brief timeout so we don't hold up CLI exit if it's lagging.
     if let Ok(Ok(Some(newer_version))) =
         tokio::time::timeout(std::time::Duration::from_millis(50), update_check_handle).await
     {
@@ -192,6 +183,15 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn build_version() -> String {
+    format!(
+        "prism {} (build: {}) | Soroban Protocol: {}",
+        prism_core::VERSION,
+        BUILD_HASH,
+        prism_core::SOROBAN_PROTOCOL_VERSION
+    )
 }
 
 fn build_log_filter(verbose: u8) -> EnvFilter {
@@ -217,7 +217,7 @@ fn build_log_filter(verbose: u8) -> EnvFilter {
 }
 
 fn validate_url(value: &str) -> Result<String, String> {
-    url::Url::parse(value)
+    Url::parse(value)
         .map(|_| value.to_string())
         .map_err(|_| format!("Invalid URL: {value}"))
 }
@@ -249,6 +249,40 @@ mod tests {
     }
 
     #[test]
+    fn parses_short_output_alias() {
+        let cli = Cli::try_parse_from(["prism", "--output", "short", "decode", "abc123"])
+            .expect("cli should parse");
+        assert_eq!(cli.output, "short");
+    }
+
+    #[test]
+    fn parses_trace_tx_hash_as_positional_argument() {
+        let cli = Cli::try_parse_from(["prism", "trace", "abc123"]).expect("cli should parse");
+
+        match cli.command {
+            Commands::Trace(args) => {
+                assert_eq!(args.tx_hash, "abc123");
+                assert!(args.output_file.is_none());
+            }
+            _ => panic!("expected trace command"),
+        }
+    }
+
+    #[test]
+    fn parses_trace_output_file_flag_with_positional_tx_hash() {
+        let cli = Cli::try_parse_from(["prism", "trace", "abc123", "--output-file", "trace.json"])
+            .expect("cli should parse");
+
+        match cli.command {
+            Commands::Trace(args) => {
+                assert_eq!(args.tx_hash, "abc123");
+                assert_eq!(args.output_file.as_deref(), Some("trace.json"));
+            }
+            _ => panic!("expected trace command"),
+        }
+    }
+
+    #[test]
     fn parses_diff_tx_hash_argument() {
         let cli = Cli::try_parse_from(["prism", "diff", "deadbeef"]).expect("cli should parse");
 
@@ -259,26 +293,10 @@ mod tests {
     }
 
     #[test]
-    fn defaults_to_warn_without_verbose() {
-        let warn = build_log_filter(0).to_string();
-        let debug = build_log_filter(1).to_string();
-        let trace = build_log_filter(2).to_string();
-
-        assert!(warn.contains("prism=warn"));
-        assert!(debug.contains("prism=debug"));
-        assert!(trace.contains("prism=trace"));
-    }
-
-    #[test]
     fn parses_save_flag_for_trace() {
-        let cli = Cli::try_parse_from([
-            "prism",
-            "--save",
-            "report.json",
-            "trace",
-            "a".repeat(64).as_str(),
-        ])
-        .expect("cli should parse with --save");
+        let tx_hash = "a".repeat(64);
+        let cli = Cli::try_parse_from(["prism", "--save", "report.json", "trace", &tx_hash])
+            .expect("cli should parse with --save");
         assert_eq!(cli.save.as_deref(), Some("report.json"));
     }
 
@@ -290,14 +308,30 @@ mod tests {
 
     #[test]
     fn save_flag_can_appear_after_subcommand() {
-        let cli = Cli::try_parse_from([
-            "prism",
-            "trace",
-            "a".repeat(64).as_str(),
-            "--save",
-            "out.json",
-        ])
-        .expect("--save after subcommand should parse");
+        let tx_hash = "a".repeat(64);
+        let cli = Cli::try_parse_from(["prism", "trace", &tx_hash, "--save", "out.json"])
+            .expect("--save after subcommand should parse");
         assert_eq!(cli.save.as_deref(), Some("out.json"));
+    }
+
+    #[test]
+    fn defaults_to_warn_without_verbose() {
+        let warn = build_log_filter(0).to_string();
+        let debug = build_log_filter(1).to_string();
+        let trace = build_log_filter(2).to_string();
+
+        assert!(warn.contains("prism=warn"));
+        assert!(debug.contains("prism=debug"));
+        assert!(trace.contains("prism=trace"));
+        assert!(trace.contains("prism_core=trace"));
+    }
+
+    #[test]
+    fn version_string_includes_build_hash_and_protocol() {
+        let version = build_version();
+
+        assert!(version.contains(prism_core::VERSION));
+        assert!(version.contains(BUILD_HASH));
+        assert!(version.contains(&prism_core::SOROBAN_PROTOCOL_VERSION.to_string()));
     }
 }

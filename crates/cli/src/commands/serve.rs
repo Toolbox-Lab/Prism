@@ -1,502 +1,231 @@
-//! `prism serve` - Local JSON-RPC bridge for the Web UI.
+//! `prism serve` — Start WebSocket server for streaming trace updates.
 
-use anyhow::Context;
 use clap::Args;
-use prism_core::network::rpc::SorobanRpcClient;
+use futures_util::{SinkExt, StreamExt};
 use prism_core::types::config::NetworkConfig;
-use prism_core::types::error::PrismError;
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use std::io::{ErrorKind, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::broadcast;
+use tokio_tungstenite::{accept_async, tungstenite::Message};
 
-const JSON_RPC_VERSION: &str = "2.0";
-
-#[derive(Args, Debug, Clone)]
+#[derive(Args)]
 pub struct ServeArgs {
-    /// Host interface for the local bridge.
+    /// Port to listen on for WebSocket connections.
+    #[arg(long, short, default_value = "8080")]
+    pub port: u16,
+
+    /// Host to bind to.
     #[arg(long, default_value = "127.0.0.1")]
     pub host: String,
+}
 
-    /// Port for the local bridge.
-    #[arg(long, short, default_value_t = 3000)]
-    pub port: u16,
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TraceStreamMessage {
+    TraceStarted {
+        tx_hash: String,
+        ledger_sequence: u32,
+    },
+    TraceNode {
+        node: serde_json::Value,
+        path: Vec<usize>,
+    },
+    ResourceUpdate {
+        cpu_used: u64,
+        memory_used: u64,
+        cpu_limit: u64,
+        memory_limit: u64,
+    },
+    StateDiffEntry {
+        key: String,
+        before: Option<String>,
+        after: Option<String>,
+        change_type: String,
+    },
+    TraceCompleted {
+        total_nodes: usize,
+        duration_ms: u64,
+    },
+    TraceError {
+        error: String,
+    },
 }
 
 pub async fn run(args: ServeArgs, network: &NetworkConfig) -> anyhow::Result<()> {
-    let bind_addr = format!("{}:{}", args.host, args.port);
-    let listener = TcpListener::bind(&bind_addr)
-        .with_context(|| format!("failed to bind local bridge on {bind_addr}"))?;
-    listener
-        .set_nonblocking(false)
-        .context("failed to configure local bridge listener")?;
+    let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
+    let listener = TcpListener::bind(&addr).await?;
 
-    let bridge = ApiBridge::new(network.clone());
+    println!("🚀 Prism WebSocket server listening on ws://{}", addr);
+    println!("   Ready to stream trace updates to connected clients");
+    println!("   Press Ctrl+C to stop");
 
-    println!(
-        "Prism API bridge listening on http://{} (JSON-RPC at /rpc)",
-        bind_addr
-    );
+    let network = Arc::new(network.clone());
 
     loop {
-        let (mut stream, remote_addr) = listener.accept().context("failed to accept connection")?;
-        if let Err(err) = handle_connection(&mut stream, remote_addr, &bridge).await {
-            tracing::warn!(error = %err, ?remote_addr, "failed to handle API bridge request");
+        match listener.accept().await {
+            Ok((stream, peer_addr)) => {
+                let network = Arc::clone(&network);
+                tokio::spawn(handle_connection(stream, peer_addr, network));
+            }
+            Err(e) => {
+                tracing::error!("Failed to accept connection: {}", e);
+            }
         }
     }
 }
 
-async fn handle_connection(
-    stream: &mut TcpStream,
-    remote_addr: SocketAddr,
-    bridge: &ApiBridge,
-) -> anyhow::Result<()> {
-    let request = match HttpRequest::read_from(stream)? {
-        Some(request) => request,
-        None => return Ok(()),
+async fn handle_connection(stream: TcpStream, peer_addr: SocketAddr, network: Arc<NetworkConfig>) {
+    tracing::info!("New WebSocket connection from {}", peer_addr);
+
+    let ws_stream = match accept_async(stream).await {
+        Ok(ws) => ws,
+        Err(e) => {
+            tracing::error!("WebSocket handshake failed: {}", e);
+            return;
+        }
     };
 
-    tracing::debug!(
-        ?remote_addr,
-        method = %request.method,
-        path = %request.path,
-        "received bridge request"
-    );
+    let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
-    match (request.method.as_str(), request.path.as_str()) {
-        ("GET", "/health") => {
-            write_json_response(
-                stream,
-                200,
-                &json!({
-                    "status": "ok",
-                    "version": prism_core::VERSION,
-                    "jsonrpc": JSON_RPC_VERSION,
-                }),
-            )?;
-        }
-        ("OPTIONS", "/rpc") | ("OPTIONS", "/health") => {
-            write_empty_response(stream, 204)?;
-        }
-        ("POST", "/rpc") => {
-            let response = match serde_json::from_slice::<JsonRpcRequest>(&request.body) {
-                Ok(rpc_request) => bridge.handle(rpc_request).await,
-                Err(err) => JsonRpcResponse::error(
-                    Value::Null,
-                    -32700,
-                    "Parse error",
-                    Some(json!({ "details": err.to_string() })),
-                ),
-            };
-            write_json_response(stream, 200, &serde_json::to_value(response)?)?;
-        }
-        _ => {
-            write_json_response(
-                stream,
-                404,
-                &json!({
-                    "error": "not_found",
-                    "message": "Route not found",
-                }),
-            )?;
+    while let Some(msg) = ws_receiver.next().await {
+        match msg {
+            Ok(Message::Text(text)) => {
+                if let Ok(request) = serde_json::from_str::<TraceRequest>(&text) {
+                    tracing::info!("Received trace request for tx: {}", request.tx_hash);
+
+                    let (tx, mut rx) = broadcast::channel::<TraceStreamMessage>(100);
+
+                    let tx_hash = request.tx_hash.clone();
+                    let network = Arc::clone(&network);
+                    tokio::spawn(async move {
+                        if let Err(e) = stream_trace_replay(&tx_hash, &network, tx).await {
+                            tracing::error!("Trace replay failed: {}", e);
+                        }
+                    });
+
+                    while let Ok(update) = rx.recv().await {
+                        let json = match serde_json::to_string(&update) {
+                            Ok(j) => j,
+                            Err(e) => {
+                                tracing::error!("Failed to serialize trace update: {}", e);
+                                continue;
+                            }
+                        };
+
+                        if let Err(e) = ws_sender.send(Message::Text(json)).await {
+                            tracing::error!("Failed to send WebSocket message: {}", e);
+                            break;
+                        }
+                    }
+                } else {
+                    tracing::warn!("Invalid trace request: {}", text);
+                }
+            }
+            Ok(Message::Close(_)) => {
+                tracing::info!("Client {} closed connection", peer_addr);
+                break;
+            }
+            Ok(Message::Ping(data)) => {
+                if let Err(e) = ws_sender.send(Message::Pong(data)).await {
+                    tracing::error!("Failed to send pong: {}", e);
+                    break;
+                }
+            }
+            Err(e) => {
+                tracing::error!("WebSocket error: {}", e);
+                break;
+            }
+            _ => {}
         }
     }
 
-    Ok(())
+    tracing::info!("Connection closed: {}", peer_addr);
 }
 
-struct ApiBridge {
-    default_network: NetworkConfig,
+#[derive(Debug, serde::Deserialize)]
+struct TraceRequest {
+    tx_hash: String,
 }
 
-impl ApiBridge {
-    fn new(default_network: NetworkConfig) -> Self {
-        Self { default_network }
-    }
+async fn stream_trace_replay(
+    tx_hash: &str,
+    network: &NetworkConfig,
+    sender: broadcast::Sender<TraceStreamMessage>,
+) -> anyhow::Result<()> {
+    use std::time::Instant;
 
-    async fn handle(&self, request: JsonRpcRequest) -> JsonRpcResponse {
-        if request.jsonrpc != JSON_RPC_VERSION {
-            return JsonRpcResponse::error(
-                request.id,
-                -32600,
-                "Invalid Request",
-                Some(json!({ "expected": JSON_RPC_VERSION })),
-            );
+    let start = Instant::now();
+
+    let _ = sender.send(TraceStreamMessage::TraceStarted {
+        tx_hash: tx_hash.to_string(),
+        ledger_sequence: 0,
+    });
+
+    let ledger_state = match prism_core::replay::state::reconstruct_state(tx_hash, network).await {
+        Ok(state) => state,
+        Err(e) => {
+            let _ = sender.send(TraceStreamMessage::TraceError {
+                error: format!("Failed to reconstruct state: {}", e),
+            });
+            return Err(e.into());
         }
+    };
 
-        let result = match request.method.as_str() {
-            "prism.health" => Ok(json!({
-                "status": "ok",
-                "version": prism_core::VERSION,
-            })),
-            "prism.transaction.get" => self.get_transaction(&request.params).await,
-            "prism.decode" => self.decode_transaction(&request.params).await,
-            "prism.inspect" => self.inspect_transaction(&request.params).await,
-            "prism.trace" => self.trace_transaction(&request.params).await,
-            "prism.profile" => self.profile_transaction(&request.params).await,
-            "prism.diff" => self.diff_transaction(&request.params).await,
-            _ => Err(JsonRpcError::method_not_found(&request.method)),
+    let _ = sender.send(TraceStreamMessage::TraceStarted {
+        tx_hash: tx_hash.to_string(),
+        ledger_sequence: ledger_state.ledger_sequence,
+    });
+
+    let result =
+        match prism_core::replay::sandbox::execute_with_tracing(&ledger_state, tx_hash).await {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = sender.send(TraceStreamMessage::TraceError {
+                    error: format!("Sandbox execution failed: {}", e),
+                });
+                return Err(e.into());
+            }
         };
 
-        match result {
-            Ok(result) => JsonRpcResponse::success(request.id, result),
-            Err(err) => JsonRpcResponse::error(request.id, err.code, &err.message, err.data),
-        }
-    }
+    let mut node_count = 0;
+    for (idx, event) in result.events.iter().enumerate() {
+        let node_json = serde_json::to_value(event)?;
 
-    async fn get_transaction(&self, params: &Value) -> Result<Value, JsonRpcError> {
-        let tx_hash = required_string(params, "txHash")?;
-        let network = self.resolve_network(params);
-        let rpc = SorobanRpcClient::new(&network);
-        rpc.get_transaction(&tx_hash)
-            .await
-            .map(|transaction| {
-                json!({
-                    "txHash": tx_hash,
-                    "transaction": serde_json::to_value(transaction).unwrap_or_default(),
-                })
-            })
-            .map_err(map_prism_error)
-    }
+        let _ = sender.send(TraceStreamMessage::TraceNode {
+            node: node_json,
+            path: vec![idx],
+        });
 
-    async fn decode_transaction(&self, params: &Value) -> Result<Value, JsonRpcError> {
-        let tx_hash = required_string(params, "txHash")?;
-        let network = self.resolve_network(params);
-        prism_core::decode::decode_transaction(&tx_hash, &network)
-            .await
-            .map(|report| {
-                json!({
-                    "txHash": tx_hash,
-                    "report": report,
-                })
-            })
-            .map_err(map_prism_error)
-    }
+        node_count += 1;
 
-    async fn inspect_transaction(&self, params: &Value) -> Result<Value, JsonRpcError> {
-        let tx_hash = required_string(params, "txHash")?;
-        let network = self.resolve_network(params);
-        prism_core::decode::decode_transaction(&tx_hash, &network)
-            .await
-            .map(|report| {
-                let context = report.transaction_context.clone();
-                json!({
-                    "txHash": tx_hash,
-                    "report": report,
-                    "transactionContext": context,
-                })
-            })
-            .map_err(map_prism_error)
-    }
-
-    async fn trace_transaction(&self, params: &Value) -> Result<Value, JsonRpcError> {
-        let tx_hash = required_string(params, "txHash")?;
-        let network = self.resolve_network(params);
-        prism_core::replay::replay_transaction(&tx_hash, &network)
-            .await
-            .map(|trace| {
-                json!({
-                    "txHash": tx_hash,
-                    "trace": trace,
-                })
-            })
-            .map_err(map_prism_error)
-    }
-
-    async fn profile_transaction(&self, params: &Value) -> Result<Value, JsonRpcError> {
-        let tx_hash = required_string(params, "txHash")?;
-        let network = self.resolve_network(params);
-        prism_core::replay::replay_transaction(&tx_hash, &network)
-            .await
-            .map(|trace| {
-                json!({
-                    "txHash": tx_hash,
-                    "resourceProfile": trace.resource_profile,
-                })
-            })
-            .map_err(map_prism_error)
-    }
-
-    async fn diff_transaction(&self, params: &Value) -> Result<Value, JsonRpcError> {
-        let tx_hash = required_string(params, "txHash")?;
-        let network = self.resolve_network(params);
-        prism_core::replay::replay_transaction(&tx_hash, &network)
-            .await
-            .map(|trace| {
-                json!({
-                    "txHash": tx_hash,
-                    "stateDiff": trace.state_diff,
-                })
-            })
-            .map_err(map_prism_error)
-    }
-
-    fn resolve_network(&self, params: &Value) -> NetworkConfig {
-        params
-            .get("network")
-            .and_then(Value::as_str)
-            .map(prism_core::network::config::resolve_network)
-            .unwrap_or_else(|| self.default_network.clone())
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct JsonRpcRequest {
-    jsonrpc: String,
-    id: Value,
-    method: String,
-    #[serde(default)]
-    params: Value,
-}
-
-#[derive(Debug, Serialize)]
-struct JsonRpcResponse {
-    jsonrpc: &'static str,
-    id: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<JsonRpcErrorBody>,
-}
-
-impl JsonRpcResponse {
-    fn success(id: Value, result: Value) -> Self {
-        Self {
-            jsonrpc: JSON_RPC_VERSION,
-            id,
-            result: Some(result),
-            error: None,
-        }
-    }
-
-    fn error(id: Value, code: i64, message: &str, data: Option<Value>) -> Self {
-        Self {
-            jsonrpc: JSON_RPC_VERSION,
-            id,
-            result: None,
-            error: Some(JsonRpcErrorBody {
-                code,
-                message: message.to_string(),
-                data,
-            }),
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct JsonRpcErrorBody {
-    code: i64,
-    message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    data: Option<Value>,
-}
-
-#[derive(Debug)]
-struct JsonRpcError {
-    code: i64,
-    message: String,
-    data: Option<Value>,
-}
-
-impl JsonRpcError {
-    fn invalid_params(message: impl Into<String>) -> Self {
-        Self {
-            code: -32602,
-            message: message.into(),
-            data: None,
-        }
-    }
-
-    fn method_not_found(method: &str) -> Self {
-        Self {
-            code: -32601,
-            message: format!("Method not found: {method}"),
-            data: None,
-        }
-    }
-}
-
-fn map_prism_error(error: PrismError) -> JsonRpcError {
-    let (code, message) = match error {
-        PrismError::TransactionNotFound(hash) => (-32004, format!("Transaction not found: {hash}")),
-        PrismError::ConfigError(message) => (-32010, message),
-        PrismError::RpcError(message) => (-32020, message),
-        other => (-32000, other.to_string()),
-    };
-
-    JsonRpcError {
-        code,
-        message,
-        data: None,
-    }
-}
-
-fn required_string(params: &Value, field: &str) -> Result<String, JsonRpcError> {
-    params
-        .get(field)
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| {
-            JsonRpcError::invalid_params(format!("missing required string field `{field}`"))
-        })
-}
-
-struct HttpRequest {
-    method: String,
-    path: String,
-    body: Vec<u8>,
-}
-
-impl HttpRequest {
-    fn read_from(stream: &mut TcpStream) -> anyhow::Result<Option<Self>> {
-        let mut buffer = Vec::new();
-        let mut temp = [0u8; 1024];
-        let mut header_end = None;
-
-        loop {
-            let read = stream.read(&mut temp)?;
-            if read == 0 {
-                if buffer.is_empty() {
-                    return Ok(None);
-                }
-                break;
-            }
-
-            buffer.extend_from_slice(&temp[..read]);
-            header_end = find_header_end(&buffer);
-            if header_end.is_some() {
-                break;
-            }
-
-            if buffer.len() > 1024 * 1024 {
-                anyhow::bail!("request headers too large");
-            }
+        if idx % 10 == 0 {
+            let _ = sender.send(TraceStreamMessage::ResourceUpdate {
+                cpu_used: result.total_cpu,
+                memory_used: result.total_memory,
+                cpu_limit: 100_000_000,
+                memory_limit: 40 * 1024 * 1024,
+            });
         }
 
-        let header_end = header_end.context("malformed HTTP request")?;
-        let headers = &buffer[..header_end];
-        let header_text =
-            String::from_utf8(headers.to_vec()).context("request headers were not valid UTF-8")?;
-        let mut lines = header_text.lines();
-        let request_line = lines.next().context("missing HTTP request line")?;
-        let mut parts = request_line.split_whitespace();
-        let method = parts.next().context("missing HTTP method")?.to_string();
-        let path = parts.next().context("missing HTTP path")?.to_string();
-
-        let mut content_length = 0usize;
-        for line in lines {
-            if let Some((name, value)) = line.split_once(':') {
-                if name.eq_ignore_ascii_case("content-length") {
-                    content_length = value.trim().parse().context("invalid content-length")?;
-                }
-            }
-        }
-
-        let body_start = header_end + 4;
-        let mut body = buffer[body_start..].to_vec();
-        while body.len() < content_length {
-            let read = stream.read(&mut temp)?;
-            if read == 0 {
-                return Err(std::io::Error::new(
-                    ErrorKind::UnexpectedEof,
-                    "request body ended before content-length bytes were read",
-                )
-                .into());
-            }
-            body.extend_from_slice(&temp[..read]);
-        }
-        body.truncate(content_length);
-
-        Ok(Some(Self { method, path, body }))
+        tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
     }
-}
 
-fn find_header_end(buffer: &[u8]) -> Option<usize> {
-    buffer.windows(4).position(|window| window == b"\r\n\r\n")
-}
+    let state_diff = prism_core::replay::differ::compute_diff(&ledger_state, &result)?;
+    for entry in &state_diff.entries {
+        let _ = sender.send(TraceStreamMessage::StateDiffEntry {
+            key: entry.key.clone(),
+            before: entry.before.clone(),
+            after: entry.after.clone(),
+            change_type: format!("{:?}", entry.change_type),
+        });
+    }
 
-fn write_json_response(stream: &mut TcpStream, status: u16, body: &Value) -> anyhow::Result<()> {
-    let payload = serde_json::to_vec(body)?;
-    write_response(stream, status, "application/json", &payload)
-}
+    let duration_ms = start.elapsed().as_millis() as u64;
+    let _ = sender.send(TraceStreamMessage::TraceCompleted {
+        total_nodes: node_count,
+        duration_ms,
+    });
 
-fn write_empty_response(stream: &mut TcpStream, status: u16) -> anyhow::Result<()> {
-    write_response(stream, status, "text/plain", &[])
-}
-
-fn write_response(
-    stream: &mut TcpStream,
-    status: u16,
-    content_type: &str,
-    body: &[u8],
-) -> anyhow::Result<()> {
-    let status_text = match status {
-        200 => "OK",
-        204 => "No Content",
-        404 => "Not Found",
-        _ => "OK",
-    };
-
-    let headers = format!(
-        "HTTP/1.1 {status} {status_text}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: content-type\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nConnection: close\r\n\r\n",
-        body.len()
-    );
-
-    stream.write_all(headers.as_bytes())?;
-    stream.write_all(body)?;
-    stream.flush()?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn finds_header_boundary() {
-        let request = b"POST /rpc HTTP/1.1\r\nHost: localhost\r\n\r\n{}";
-        assert_eq!(find_header_end(request), Some(35));
-    }
-
-    #[test]
-    fn validates_required_string_param() {
-        let params = json!({ "txHash": "abc123" });
-        assert_eq!(required_string(&params, "txHash").unwrap(), "abc123");
-        assert!(required_string(&json!({}), "txHash").is_err());
-    }
-
-    #[tokio::test]
-    async fn returns_method_not_found_for_unknown_calls() {
-        let bridge = ApiBridge::new(prism_core::network::config::resolve_network("testnet"));
-        let response = bridge
-            .handle(JsonRpcRequest {
-                jsonrpc: JSON_RPC_VERSION.to_string(),
-                id: json!(1),
-                method: "prism.unknown".to_string(),
-                params: json!({}),
-            })
-            .await;
-
-        assert!(response.error.is_some());
-        assert_eq!(response.error.unwrap().code, -32601);
-    }
-
-    #[tokio::test]
-    async fn returns_health_payload() {
-        let bridge = ApiBridge::new(prism_core::network::config::resolve_network("testnet"));
-        let response = bridge
-            .handle(JsonRpcRequest {
-                jsonrpc: JSON_RPC_VERSION.to_string(),
-                id: json!("health"),
-                method: "prism.health".to_string(),
-                params: json!({}),
-            })
-            .await;
-
-        assert_eq!(
-            response.result.unwrap()["status"],
-            Value::String("ok".to_string())
-        );
-    }
 }

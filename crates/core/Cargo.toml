@@ -18,8 +18,6 @@ wasm-compat = []
 stellar-xdr = { workspace = true }
 stellar-strkey = { workspace = true }
 soroban-env-host = { workspace = true }
-soroban-spec = { workspace = true }
-soroban-spec-tools = { workspace = true }
 
 # Networking
 reqwest = { workspace = true }

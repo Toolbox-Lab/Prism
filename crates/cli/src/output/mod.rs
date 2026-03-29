@@ -168,15 +168,9 @@ fn format_state_diff_summary(diff: &StateDiff) -> String {
 
     for entry in &diff.entries {
         match entry.change_type {
-            DiffChangeType::Created => {
-                created += 1;
-            }
-            DiffChangeType::Updated => {
-                updated += 1;
-            }
-            DiffChangeType::Deleted => {
-                deleted += 1;
-            }
+            DiffChangeType::Created => created += 1,
+            DiffChangeType::Updated => updated += 1,
+            DiffChangeType::Deleted => deleted += 1,
             DiffChangeType::Unchanged => {}
         }
     }

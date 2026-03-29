@@ -1,8 +1,8 @@
 //! Soroban RPC client.
 //!
 //! Communicates with Soroban RPC endpoints: `getTransaction`, `simulateTransaction`,
-//! `getLedgerEntries`, `getEvents`, `getLatestLedger`. Handles pagination, retries,
-//! and rate limit backoff.
+//! `getLedgerEntries`, `getEvents`, `getLatestLedger`. Handles retries and
+//! basic rate-limit backoff.
 
 use crate::types::config::NetworkConfig;
 use crate::types::error::{PrismError, PrismResult};
@@ -13,13 +13,10 @@ use std::time::{Duration, Instant};
 /// Primary entry point for Soroban network communication.
 #[derive(Debug, Clone)]
 pub struct SorobanRpcClient {
-    /// HTTP client instance.
     client: reqwest::Client,
-    /// Soroban RPC endpoint URL.
     rpc_url: String,
 }
 
-/// JSON-RPC request envelope.
 #[derive(Debug, Serialize)]
 struct JsonRpcRequest<'a, P: Serialize> {
     jsonrpc: &'a str,
@@ -28,7 +25,6 @@ struct JsonRpcRequest<'a, P: Serialize> {
     params: P,
 }
 
-/// JSON-RPC response envelope.
 #[derive(Debug, Deserialize)]
 struct JsonRpcResponse<T> {
     #[allow(dead_code)]
@@ -39,46 +35,6 @@ struct JsonRpcResponse<T> {
     error: Option<JsonRpcError>,
 }
 
-/// Transaction status in Soroban.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TransactionStatus {
-    Success,
-    NotFound,
-    Failed,
-}
-
-/// Response for the `getTransaction` RPC method.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GetTransactionResponse {
-    /// Status of the transaction.
-    pub status: TransactionStatus,
-    /// Latest ledger known to the RPC node.
-    pub latest_ledger: u32,
-    /// Latest ledger close time known to the RPC node.
-    pub latest_ledger_close_time: Option<u64>,
-    /// Oldest ledger known to the RPC node.
-    pub oldest_ledger: Option<u32>,
-    /// Oldest ledger close time known to the RPC node.
-    pub oldest_ledger_close_time: Option<u64>,
-    /// The ledger in which the transaction was included.
-    pub ledger: Option<u32>,
-    /// The creation time of the transaction.
-    pub created_at: Option<String>,
-    /// The order in which the transaction was applied in the ledger.
-    pub application_order: Option<u32>,
-    /// Fee bump information if applicable.
-    pub fee_bump: Option<String>,
-    /// Envelope XDR for the transaction.
-    pub envelope_xdr: Option<String>,
-    /// Result XDR for the transaction.
-    pub result_xdr: Option<String>,
-    /// Result Meta XDR for the transaction.
-    pub result_meta_xdr: Option<String>,
-}
-
-/// JSON-RPC error.
 #[derive(Debug, Deserialize)]
 struct JsonRpcError {
     #[allow(dead_code)]
@@ -115,9 +71,6 @@ pub struct GetTransactionResponse {
 
 impl SorobanRpcClient {
     /// Create a new `SorobanRpcClient` from a [`NetworkConfig`].
-    ///
-    /// Initialises a [`reqwest::Client`] with a 30-second timeout and sets the
-    /// `Content-Type: application/json` header on every request.
     pub fn new(config: &NetworkConfig) -> Self {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -145,7 +98,7 @@ impl SorobanRpcClient {
         let params = serde_json::json!({
             "transaction": tx_xdr,
         });
-        self.call::<serde_json::Value>("simulateTransaction", params).await
+        self.call("simulateTransaction", params).await
     }
 
     /// Fetch ledger entries by their XDR keys.
@@ -153,7 +106,7 @@ impl SorobanRpcClient {
         let params = serde_json::json!({
             "keys": keys,
         });
-        self.call::<serde_json::Value>("getLedgerEntries", params).await
+        self.call("getLedgerEntries", params).await
     }
 
     /// Query events starting from `start_ledger` with the given filters.
@@ -166,15 +119,14 @@ impl SorobanRpcClient {
             "startLedger": start_ledger,
             "filters": filters,
         });
-        self.call::<serde_json::Value>("getEvents", params).await
+        self.call("getEvents", params).await
     }
 
     /// Return the latest ledger info from the RPC node.
     pub async fn get_latest_ledger(&self) -> PrismResult<serde_json::Value> {
-        self.call::<serde_json::Value>("getLatestLedger", serde_json::json!({})).await
+        self.call("getLatestLedger", serde_json::json!({})).await
     }
 
-    /// Internal JSON-RPC call with retry logic.
     async fn call<T: for<'de> Deserialize<'de>>(
         &self,
         method: &str,
@@ -200,7 +152,7 @@ impl SorobanRpcClient {
             let started = Instant::now();
             tracing::debug!(method, endpoint = %self.rpc_url, attempt, "Sending RPC request");
 
-            match self.client.post(&self.rpc_url).json(&envelope).send().await {
+            match self.client.post(&self.rpc_url).json(&request).send().await {
                 Ok(response) => {
                     let status = response.status();
                     let elapsed_ms = started.elapsed().as_millis();
@@ -224,13 +176,20 @@ impl SorobanRpcClient {
                         continue;
                     }
 
-                    let rpc_response: JsonRpcResponse<T> = serde_json::from_str(&response_body)
+                    if !status.is_success() {
+                        return Err(PrismError::RpcError(format!(
+                            "RPC request failed with HTTP {}: {}",
+                            status, body
+                        )));
+                    }
+
+                    let rpc_response: JsonRpcResponse<T> = serde_json::from_str(&body)
                         .map_err(|e| PrismError::RpcError(format!("Response parse error: {e}")))?;
 
                     if let Some(err) = rpc_response.error {
                         tracing::debug!(
                             method,
-                            endpoint = %self.config.rpc_url,
+                            endpoint = %self.rpc_url,
                             attempt,
                             error = %err.message,
                             "RPC returned an error response"
@@ -238,7 +197,7 @@ impl SorobanRpcClient {
                         return Err(PrismError::RpcError(err.message));
                     }
 
-                    return rpc_resp.result.ok_or_else(|| {
+                    return rpc_response.result.ok_or_else(|| {
                         PrismError::RpcError("Empty result in RPC response".into())
                     });
                 }
@@ -265,7 +224,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_get_transaction_deserialization() {
+    fn get_transaction_response_deserializes() {
         let json = r#"{
             "jsonrpc": "2.0",
             "id": 1,
@@ -291,66 +250,16 @@ mod tests {
     }
 
     #[test]
-    fn test_transaction_status_variants() {
+    fn transaction_status_variants_deserialize() {
         let cases = [
             ("\"SUCCESS\"", TransactionStatus::Success),
             ("\"NOT_FOUND\"", TransactionStatus::NotFound),
             ("\"FAILED\"", TransactionStatus::Failed),
         ];
+
         for (raw, expected) in cases {
             let got: TransactionStatus = serde_json::from_str(raw).unwrap();
             assert_eq!(got, expected);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::types::config::NetworkConfig;
-
-    fn test_config() -> NetworkConfig {
-        NetworkConfig {
-            rpc_url: "https://rpc.example.com".to_string(),
-            network_passphrase: "Test SDF Network ; September 2015".to_string(),
-        }
-    }
-
-    #[test]
-    fn test_get_ledger_entries_request_format() {
-        let config = test_config();
-        let client = RpcClient::new(config);
-        
-        // Test that the method exists and can be called
-        // We can't actually make HTTP requests in unit tests without mocking,
-        // but we can verify the method signature and structure
-        let keys = vec![
-            "AAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string(),
-            "AAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB=".to_string(),
-        ];
-        
-        // This will fail with a network error, but that's expected in unit tests
-        // The important thing is that the method compiles and accepts the correct parameters
-        let result = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(client.get_ledger_entries(&keys));
-        
-        // We expect a network error since we're not mocking the HTTP client
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_get_ledger_entries_empty_keys() {
-        let config = test_config();
-        let client = RpcClient::new(config);
-        
-        let keys: Vec<String> = vec![];
-        
-        let result = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(client.get_ledger_entries(&keys));
-        
-        // We expect a network error since we're not mocking the HTTP client
-        assert!(result.is_err());
     }
 }

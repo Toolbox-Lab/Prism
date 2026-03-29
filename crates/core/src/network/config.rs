@@ -16,7 +16,7 @@ pub fn resolve_network(network_str: &str) -> NetworkConfig {
         url if url.starts_with("http") => NetworkConfig::custom(url, ""),
         _ => {
             tracing::warn!("Unknown network '{network_str}', defaulting to testnet");
-            NetworkConfig::testnet()
+            default_network()
         }
     }
 }
@@ -27,6 +27,7 @@ pub fn default_network() -> NetworkConfig {
 }
 
 /// Validate that a network configuration is reachable.
+#[allow(dead_code)]
 pub async fn validate_network(config: &NetworkConfig) -> bool {
     let client = reqwest::Client::new();
     client

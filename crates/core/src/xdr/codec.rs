@@ -14,7 +14,6 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 /// # Returns
 /// The raw decoded bytes, ready for further parsing.
 pub fn decode_xdr_base64(xdr_base64: &str) -> PrismResult<Vec<u8>> {
-    // TODO: Implement full XDR decoding pipeline
     let bytes = base64_decode(xdr_base64)
         .map_err(|e| PrismError::XdrError(format!("Base64 decode failed: {e}")))?;
     Ok(bytes)
@@ -63,8 +62,8 @@ fn hex_decode(input: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use stellar_xdr::WriteXdr;
     use stellar_xdr::ReadXdr;
+    use stellar_xdr::WriteXdr;
 
     #[test]
     fn test_decode_tx_hash_valid() {
@@ -101,10 +100,14 @@ mod tests {
         };
 
         // Encode to XDR bytes
-        let encoded = tx_result.to_xdr(stellar_xdr::Limits::none()).expect("Failed to encode TransactionResult");
+        let encoded = tx_result
+            .to_xdr(stellar_xdr::Limits::none())
+            .expect("Failed to encode TransactionResult");
 
         // Decode back from XDR bytes
-        let decoded = stellar_xdr::TransactionResult::from_xdr(&encoded, stellar_xdr::Limits::none()).expect("Failed to decode TransactionResult");
+        let decoded =
+            stellar_xdr::TransactionResult::from_xdr(&encoded, stellar_xdr::Limits::none())
+                .expect("Failed to decode TransactionResult");
 
         // Verify round-trip produces identical result
         assert_eq!(tx_result, decoded);
@@ -120,10 +123,14 @@ mod tests {
         };
 
         // Encode to XDR bytes
-        let encoded = tx_result.to_xdr(stellar_xdr::Limits::none()).expect("Failed to encode TransactionResult");
+        let encoded = tx_result
+            .to_xdr(stellar_xdr::Limits::none())
+            .expect("Failed to encode TransactionResult");
 
         // Decode back from XDR bytes
-        let decoded = stellar_xdr::TransactionResult::from_xdr(&encoded, stellar_xdr::Limits::none()).expect("Failed to decode TransactionResult");
+        let decoded =
+            stellar_xdr::TransactionResult::from_xdr(&encoded, stellar_xdr::Limits::none())
+                .expect("Failed to decode TransactionResult");
 
         // Verify round-trip produces identical result
         assert_eq!(tx_result, decoded);
@@ -139,7 +146,9 @@ mod tests {
         };
 
         // Encode to XDR bytes
-        let encoded_bytes = tx_result.to_xdr(stellar_xdr::Limits::none()).expect("Failed to encode TransactionResult");
+        let encoded_bytes = tx_result
+            .to_xdr(stellar_xdr::Limits::none())
+            .expect("Failed to encode TransactionResult");
 
         // Convert to base64 using our codec
         let base64_string = encode_xdr_base64(&encoded_bytes);
@@ -151,7 +160,9 @@ mod tests {
         assert_eq!(encoded_bytes, decoded_bytes);
 
         // Decode back to TransactionResult
-        let decoded_result = stellar_xdr::TransactionResult::from_xdr(&decoded_bytes, stellar_xdr::Limits::none()).expect("Failed to decode TransactionResult from bytes");
+        let decoded_result =
+            stellar_xdr::TransactionResult::from_xdr(&decoded_bytes, stellar_xdr::Limits::none())
+                .expect("Failed to decode TransactionResult from bytes");
 
         // Verify round-trip produces identical result
         assert_eq!(tx_result, decoded_result);
@@ -160,8 +171,8 @@ mod tests {
     #[test]
     fn test_transaction_envelope_round_trip() {
         use stellar_xdr::{
-            TransactionEnvelope, TransactionV1Envelope, Transaction, Memo, Preconditions,
-            SequenceNumber, MuxedAccount, Uint256, TransactionExt, Limits, WriteXdr, ReadXdr
+            Limits, Memo, MuxedAccount, Preconditions, ReadXdr, SequenceNumber, Transaction,
+            TransactionEnvelope, TransactionExt, TransactionV1Envelope, Uint256, WriteXdr,
         };
 
         // Create a dummy TransactionV1Envelope
@@ -181,10 +192,13 @@ mod tests {
         });
 
         // Encode to XDR bytes
-        let encoded = envelope.to_xdr(Limits::none()).expect("Failed to encode TransactionEnvelope");
+        let encoded = envelope
+            .to_xdr(Limits::none())
+            .expect("Failed to encode TransactionEnvelope");
 
         // Decode back from XDR bytes
-        let decoded = TransactionEnvelope::from_xdr(&encoded, Limits::none()).expect("Failed to decode TransactionEnvelope");
+        let decoded = TransactionEnvelope::from_xdr(&encoded, Limits::none())
+            .expect("Failed to decode TransactionEnvelope");
 
         // Verify round-trip produces identical result
         assert_eq!(envelope, decoded);
@@ -193,8 +207,8 @@ mod tests {
     #[test]
     fn test_transaction_envelope_round_trip_base64() {
         use stellar_xdr::{
-            TransactionEnvelope, TransactionV1Envelope, Transaction, Memo, Preconditions,
-            SequenceNumber, MuxedAccount, Uint256, TransactionExt, Limits, WriteXdr, ReadXdr
+            Limits, Memo, MuxedAccount, Preconditions, ReadXdr, SequenceNumber, Transaction,
+            TransactionEnvelope, TransactionExt, TransactionV1Envelope, Uint256, WriteXdr,
         };
 
         // Create a TransactionEnvelope
@@ -214,7 +228,9 @@ mod tests {
         });
 
         // Encode to XDR bytes
-        let encoded_bytes = envelope.to_xdr(Limits::none()).expect("Failed to encode TransactionEnvelope");
+        let encoded_bytes = envelope
+            .to_xdr(Limits::none())
+            .expect("Failed to encode TransactionEnvelope");
 
         // Convert to base64 using our codec
         let base64_string = encode_xdr_base64(&encoded_bytes);
@@ -226,7 +242,8 @@ mod tests {
         assert_eq!(encoded_bytes, decoded_bytes);
 
         // Decode back to TransactionEnvelope
-        let decoded_envelope = TransactionEnvelope::from_xdr(&decoded_bytes, Limits::none()).expect("Failed to decode TransactionEnvelope from bytes");
+        let decoded_envelope = TransactionEnvelope::from_xdr(&decoded_bytes, Limits::none())
+            .expect("Failed to decode TransactionEnvelope from bytes");
 
         // Verify round-trip produces identical result
         assert_eq!(envelope, decoded_envelope);
@@ -235,10 +252,10 @@ mod tests {
     #[test]
     fn test_fee_bump_transaction_envelope_round_trip() {
         use stellar_xdr::{
-            TransactionEnvelope, FeeBumpTransactionEnvelope, FeeBumpTransaction,
-            MuxedAccount, Uint256, SequenceNumber, FeeBumpTransactionInnerTx,
-            TransactionV1Envelope, Transaction, Memo, Preconditions, TransactionExt,
-            Limits, WriteXdr, ReadXdr, FeeBumpTransactionExt
+            FeeBumpTransaction, FeeBumpTransactionEnvelope, FeeBumpTransactionExt,
+            FeeBumpTransactionInnerTx, Limits, Memo, MuxedAccount, Preconditions, ReadXdr,
+            SequenceNumber, Transaction, TransactionEnvelope, TransactionExt,
+            TransactionV1Envelope, Uint256, WriteXdr,
         };
 
         // Create an inner TransactionV1Envelope
@@ -271,10 +288,13 @@ mod tests {
         });
 
         // Encode to XDR bytes
-        let encoded = envelope.to_xdr(Limits::none()).expect("Failed to encode FeeBumpTransactionEnvelope");
+        let encoded = envelope
+            .to_xdr(Limits::none())
+            .expect("Failed to encode FeeBumpTransactionEnvelope");
 
         // Decode back from XDR bytes
-        let decoded = TransactionEnvelope::from_xdr(&encoded, Limits::none()).expect("Failed to decode FeeBumpTransactionEnvelope");
+        let decoded = TransactionEnvelope::from_xdr(&encoded, Limits::none())
+            .expect("Failed to decode FeeBumpTransactionEnvelope");
 
         // Verify round-trip produces identical result
         assert_eq!(envelope, decoded);

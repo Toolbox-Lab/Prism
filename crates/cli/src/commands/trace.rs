@@ -6,6 +6,7 @@ use prism_core::types::config::NetworkConfig;
 #[derive(Args)]
 pub struct TraceArgs {
     /// Transaction hash to trace.
+    #[arg(index = 1, value_name = "TX_HASH")]
     pub tx_hash: String,
 
     /// Output trace to a file instead of stdout.
@@ -16,7 +17,7 @@ pub struct TraceArgs {
     #[arg(long)]
     pub auth: bool,
 
-    /// Show only authorization structure (no resource details).
+    /// Show only authorization structure.
     #[arg(long)]
     pub auth_only: bool,
 }
@@ -25,6 +26,7 @@ pub async fn run(
     args: TraceArgs,
     network: &NetworkConfig,
     output_format: &str,
+    save: Option<&str>,
 ) -> anyhow::Result<()> {
     let progress = indicatif::ProgressBar::new_spinner();
     progress.set_message("Reconstructing state and replaying transaction...");
@@ -51,5 +53,11 @@ pub async fn run(
         println!("{output}");
     }
 
+    if let Some(path) = save {
+        let json = serde_json::to_string_pretty(&trace)?;
+        std::fs::write(path, &json)
+            .map_err(|e| anyhow::anyhow!("Failed to write save file '{}': {}", path, e))?;
+        eprintln!("Saved trace to {path}");
+    }
     Ok(())
 }
