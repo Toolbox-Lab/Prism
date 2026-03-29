@@ -1,0 +1,21 @@
+[package]
+name = "instability"
+version = "0.3.2"
+description = "Rust API stability attributes for the rest of us. A fork of the `stability` crate."
+authors = ["Stephen M. Coakley <me@stephencoakley.com>", "Joshka"]
+license = "MIT"
+repository = "https://github.com/ratatui-org/instability"
+documentation = "https://docs.rs/instability/"
+readme = "README.md"
+edition = "2021"
+rust-version = "1.61"
+
+[dependencies]
+quote = "1.0.26"
+syn = { version = "2", features = ["derive", "full"] }
+
+[lib]
+proc-macro = true
+
+[workspace]
+members = ["example"]

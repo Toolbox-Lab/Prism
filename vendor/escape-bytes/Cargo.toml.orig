@@ -1,0 +1,17 @@
+[package]
+name = "escape-bytes"
+description = "Escapes bytes that are not printable ASCII characters."
+homepage = "https://github.com/stellar/escape-bytes"
+repository = "https://github.com/stellar/escape-bytes"
+authors = ["Stellar Development Foundation <info@stellar.org>"]
+license = "Apache-2.0"
+version = "0.1.1"
+edition = "2021"
+
+[features]
+default = ["alloc"]
+alloc = []
+docs = []
+
+[package.metadata.docs.rs]
+all-features = true
