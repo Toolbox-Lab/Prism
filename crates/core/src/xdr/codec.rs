@@ -5,7 +5,7 @@
 
 use crate::types::error::{PrismError, PrismResult};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use stellar_xdr::{ReadXdr, WriteXdr, Limits, TransactionMeta, TransactionMetaV1};
+use stellar_xdr::{ReadXdr, WriteXdr, Limits, TransactionMeta, TransactionMetaV1, LedgerEntry};
 
 /// Trait for types that can be encoded/decoded to/from XDR.
 pub trait XdrCodec: Sized {
@@ -37,6 +37,18 @@ impl XdrCodec for TransactionMeta {
     fn to_xdr_bytes(&self) -> PrismResult<Vec<u8>> {
         self.to_xdr(Limits::none())
             .map_err(|e| PrismError::XdrError(format!("Failed to encode TransactionMeta: {e}")))
+    }
+}
+
+impl XdrCodec for LedgerEntry {
+    fn from_xdr_bytes(bytes: &[u8]) -> PrismResult<Self> {
+        LedgerEntry::from_xdr(bytes, Limits::none())
+            .map_err(|e| PrismError::XdrError(format!("Failed to decode LedgerEntry: {e}")))
+    }
+
+    fn to_xdr_bytes(&self) -> PrismResult<Vec<u8>> {
+        self.to_xdr(Limits::none())
+            .map_err(|e| PrismError::XdrError(format!("Failed to encode LedgerEntry: {e}")))
     }
 }
 
@@ -344,5 +356,47 @@ mod test_xdr_codec {
         // Test decoding from base64
         let decoded_from_base64 = TransactionMeta::from_xdr_base64(&base64).expect("Failed to decode from base64");
         assert_eq!(meta, decoded_from_base64);
+    }
+
+    #[test]
+    fn test_ledger_entry_xdr_codec() {
+        use stellar_xdr::{LedgerEntry, LedgerEntryData, AccountEntry, AccountId, PublicKey, Uint256, AccountEntryExt, Thresholds, Signer, SignerKey};
+
+        // Create a simple AccountEntry
+        let account_id = AccountId(PublicKey::PublicKeyTypeEd25519(Uint256([0; 32])));
+        let account_entry = AccountEntry {
+            account_id: account_id.clone(),
+            balance: 1000000000, // 100 XLM in stroops
+            seq_num: stellar_xdr::SequenceNumber(1),
+            num_sub_entries: 0,
+            inflation_dest: None,
+            flags: 0,
+            home_domain: "".try_into().unwrap(),
+            thresholds: Thresholds([1; 4]),
+            signers: vec![].try_into().unwrap(),
+            ext: AccountEntryExt::V0,
+        };
+
+        let ledger_entry = LedgerEntry {
+            last_modified_ledger_seq: 1,
+            data: LedgerEntryData::Account(account_entry),
+            ext: stellar_xdr::LedgerEntryExt::V0,
+        };
+
+        // Test encoding to bytes
+        let bytes = ledger_entry.to_xdr_bytes().expect("Failed to encode LedgerEntry");
+        assert!(!bytes.is_empty());
+
+        // Test decoding from bytes
+        let decoded = LedgerEntry::from_xdr_bytes(&bytes).expect("Failed to decode LedgerEntry");
+        assert_eq!(ledger_entry, decoded);
+
+        // Test encoding to base64
+        let base64 = ledger_entry.to_xdr_base64().expect("Failed to encode to base64");
+        assert!(!base64.is_empty());
+
+        // Test decoding from base64
+        let decoded_from_base64 = LedgerEntry::from_xdr_base64(&base64).expect("Failed to decode from base64");
+        assert_eq!(ledger_entry, decoded_from_base64);
     }
 }
