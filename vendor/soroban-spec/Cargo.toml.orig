@@ -1,0 +1,20 @@
+[package]
+name = "soroban-spec"
+description = "Soroban contract spec utilities."
+homepage = "https://github.com/stellar/rs-soroban-sdk"
+repository = "https://github.com/stellar/rs-soroban-sdk"
+authors = ["Stellar Development Foundation <info@stellar.org>"]
+readme = "../README.md"
+license = "Apache-2.0"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+
+[dependencies]
+stellar-xdr = { workspace = true, features = ["curr", "std", "serde"] }
+base64 = "0.13.0"
+thiserror = "1.0.32"
+wasmparser = "0.116.1"
+
+[dev-dependencies]
+pretty_assertions = "1.2.1"

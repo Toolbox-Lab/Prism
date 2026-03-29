@@ -1,0 +1,43 @@
+name: Rust
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Clang
+      run: |
+        LLVM_VERSION=$(rustc --version --verbose | sed -n 's/^LLVM version: \([0-9]*\).*$/\1/p')
+        curl -s https://apt.llvm.org/llvm.sh | sudo bash -s -- ${LLVM_VERSION}
+        echo "CLANG=clang-${LLVM_VERSION}" >> ${GITHUB_ENV}
+    - name: Lint
+      run: |
+        cargo fmt --all -- --check
+        cargo clippy --workspace --all-targets -- -D warnings
+    - name: Test Native Intrinsics
+      run: |
+        cargo test
+        cargo test --release
+    - name: Test LLVM Intrinsics
+      run: |
+        cargo clippy --features llvm-intrinsics --all-targets -- -D warnings
+        cargo test --features llvm-intrinsics
+        cargo test --features llvm-intrinsics --release
+    - name: Test Additional Features
+      run: |
+        cargo clippy --features serde --all-targets -- -D warnings
+        cargo test --features serde
+        cargo test --features serde --release
+    - name: Build Deprecated Features
+      run: |
+        cargo clippy --features macros --all-targets -- -D warnings

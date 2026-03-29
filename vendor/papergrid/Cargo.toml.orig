@@ -1,0 +1,58 @@
+[package]
+name = "papergrid"
+version = "0.12.0"
+authors = ["Maxim Zhiburt <zhiburt@gmail.com>"]
+edition = "2018"
+description = "Papergrid is a core library to print a table"
+repository = "https://github.com/zhiburt/tabled"
+license = "MIT"
+
+[features]
+default = ["std"]
+std = []
+ansi = ["ansi-str", "ansitok"]
+
+[dependencies]
+unicode-width = "=0.1.11"
+bytecount = "0.6"
+fnv = "1.0"
+ansi-str = { version = "0.8", optional = true }
+ansitok = { version = "0.2", optional = true  }
+
+[dev-dependencies]
+owo-colors = "3.4.0"
+testing_table = { path = "../testing_table", features = ["ansi"] }
+
+[[example]]
+name = "papergrid_color"
+required-features = ["std", "ansi"]
+
+[[example]]
+name = "color_map"
+path = "examples/color_map.rs"
+required-features = ["std"]
+
+[[example]]
+name = "colored_border"
+path = "examples/colored_border.rs"
+required-features = ["std"]
+
+[[example]]
+name = "common_grid"
+path = "examples/common_grid.rs"
+required-features = ["std"]
+
+[[example]]
+name = "span_usage"
+path = "examples/span_usage.rs"
+required-features = ["std"]
+
+[[example]]
+name = "common_grid_no_std"
+path = "examples/common_grid_no_std.rs"
+required-features = []
+
+[[example]]
+name = "hello_world"
+path = "examples/hello_world.rs"
+required-features = ["std"]

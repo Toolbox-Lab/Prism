@@ -1,0 +1,32 @@
+[package]
+name = "stellar-strkey"
+description = "Encode and decode strkeys for Stellar."
+homepage = "https://github.com/stellar/rs-stellar-strkey"
+repository = "https://github.com/stellar/rs-stellar-strkey"
+authors = ["Stellar Development Foundation <info@stellar.org>"]
+license = "Apache-2.0"
+readme = "README.md"
+version = "0.0.9"
+edition = "2021"
+rust-version = "1.67.0"
+
+[features]
+default = []
+cli = ["dep:clap"]
+
+[[bin]]
+name = "stellar-strkey"
+path = "src/bin/stellar-strkey/main.rs"
+required-features = ["cli"]
+doctest = false
+
+[build_dependencies]
+crate-git-revision = "0.0.6"
+
+[dev-dependencies]
+proptest = "1.0.0"
+
+[dependencies]
+data-encoding = "2.6.0"
+thiserror = "1.0.36"
+clap = { version = "4.2.4", default-features = false, features = ["std", "derive", "usage", "help"], optional = true }

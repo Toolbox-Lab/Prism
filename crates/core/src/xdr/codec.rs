@@ -60,6 +60,34 @@ fn hex_decode(input: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
+/// Trait for convenient XDR encoding/decoding of Stellar XDR types.
+pub trait XdrCodec: Sized {
+    fn from_xdr_bytes(bytes: &[u8]) -> PrismResult<Self>;
+
+    fn to_xdr_bytes(&self) -> PrismResult<Vec<u8>>;
+
+    fn from_xdr_base64(xdr_base64: &str) -> PrismResult<Self> {
+        let bytes = decode_xdr_base64(xdr_base64)?;
+        Self::from_xdr_bytes(&bytes)
+    }
+
+    fn to_xdr_base64(&self) -> PrismResult<String> {
+        Ok(encode_xdr_base64(&self.to_xdr_bytes()?))
+    }
+}
+
+impl XdrCodec for stellar_xdr::LedgerEntry {
+    fn from_xdr_bytes(bytes: &[u8]) -> PrismResult<Self> {
+        stellar_xdr::LedgerEntry::from_xdr(bytes, stellar_xdr::Limits::none())
+            .map_err(|e| PrismError::XdrError(format!("LedgerEntry decode failed: {e}")))
+    }
+
+    fn to_xdr_bytes(&self) -> PrismResult<Vec<u8>> {
+        stellar_xdr::WriteXdr::to_xdr(self, stellar_xdr::Limits::none())
+            .map_err(|e| PrismError::XdrError(format!("LedgerEntry encode failed: {e}")))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,6 +117,54 @@ mod tests {
     fn test_decode_xdr_base64_invalid() {
         let result = decode_xdr_base64("!!!");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ledger_entry_xdr_codec_round_trip() {
+        let data_entry = stellar_xdr::DataEntry {
+            account_id: stellar_xdr::AccountId(stellar_xdr::PublicKey::PublicKeyTypeEd25519(
+                stellar_xdr::Uint256([1u8; 32]),
+            )),
+            data_name: stellar_xdr::String64::try_from(b"test-key".to_vec()).unwrap(),
+            data_value: stellar_xdr::DataValue::try_from(b"test-value".to_vec()).unwrap(),
+            ext: stellar_xdr::DataEntryExt::V0,
+        };
+
+        let entry = stellar_xdr::LedgerEntry {
+            last_modified_ledger_seq: 42,
+            data: stellar_xdr::LedgerEntryData::Data(data_entry),
+            ext: stellar_xdr::LedgerEntryExt::V0,
+        };
+
+        let encoded = entry.to_xdr_bytes().expect("Failed to encode LedgerEntry");
+        let decoded = stellar_xdr::LedgerEntry::from_xdr_bytes(&encoded)
+            .expect("Failed to decode LedgerEntry");
+
+        assert_eq!(entry, decoded);
+    }
+
+    #[test]
+    fn test_ledger_entry_xdr_codec_base64_round_trip() {
+        let data_entry = stellar_xdr::DataEntry {
+            account_id: stellar_xdr::AccountId(stellar_xdr::PublicKey::PublicKeyTypeEd25519(
+                stellar_xdr::Uint256([2u8; 32]),
+            )),
+            data_name: stellar_xdr::String64::try_from(b"test-key".to_vec()).unwrap(),
+            data_value: stellar_xdr::DataValue::try_from(b"test-value".to_vec()).unwrap(),
+            ext: stellar_xdr::DataEntryExt::V0,
+        };
+
+        let entry = stellar_xdr::LedgerEntry {
+            last_modified_ledger_seq: 43,
+            data: stellar_xdr::LedgerEntryData::Data(data_entry),
+            ext: stellar_xdr::LedgerEntryExt::V0,
+        };
+
+        let xdr_base64 = entry.to_xdr_base64().expect("Failed to encode ledger entry to base64");
+        let decoded = stellar_xdr::LedgerEntry::from_xdr_base64(&xdr_base64)
+            .expect("Failed to decode ledger entry from base64");
+
+        assert_eq!(entry, decoded);
     }
 
     #[test]
