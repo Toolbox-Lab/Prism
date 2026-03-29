@@ -101,10 +101,8 @@ enum Commands {
     Clean(commands::clean::CleanArgs),
     /// Manage the error taxonomy database.
     Db(commands::db::DbArgs),
-    /// Start WebSocket server for streaming trace updates.
-    Serve(commands::serve::ServeArgs),
-    /// Run binary, network, and cache self-checks.
-    Diagnostic(commands::diagnostic::DiagnosticArgs),
+    /// Manage API credentials for hosted services.
+    Auth(commands::auth::AuthArgs),
 }
 
 #[tokio::main]
@@ -163,23 +161,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Export(args) => commands::export::run(args, &network, &cli.quiet).await?,
         Commands::Clean(args) => commands::clean::run(args).await?,
         Commands::Db(args) => commands::db::run(args).await?,
-        Commands::Serve(args) => commands::serve::run(args, &network).await?,
-        Commands::Diagnostic(args) => commands::diagnostic::run(args).await?,
-    }
-
-    if let Ok(Ok(Some(newer_version))) =
-        tokio::time::timeout(std::time::Duration::from_millis(50), update_check_handle).await
-    {
-        eprintln!(
-            "\n{}",
-            colored::Colorize::bright_yellow(
-                format!(
-                    "A newer version of Prism is available (v{}). Update to stay current!",
-                    newer_version
-                )
-                .as_str()
-            )
-        );
+        Commands::Auth(args) => commands::auth::run(args).await?,
     }
 
     Ok(())

@@ -34,8 +34,9 @@ futures-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
-reqwest = { workspace = true }
-libc = { workspace = true }
+
+# Security & Credentials
+rpassword = { workspace = true }
 
 # TUI (Tier 3)
 ratatui = { workspace = true }

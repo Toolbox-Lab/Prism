@@ -149,6 +149,57 @@ The primary interface. Every feature is accessible from the command line with hu
 | `Prism serve` | 2 | Start WebSocket server for streaming trace updates |
 | `Prism db update` | — | Update the error taxonomy database |
 
+---
+
+## Authentication
+
+Prism supports storing API credentials for hosted backend services and private RPC providers (e.g., Blockdaemon, NowNodes) so you don't have to pass API keys with every command.
+
+### Storing Credentials
+
+```bash
+# Interactive provider selection
+prism auth login
+
+# Specify provider directly
+prism auth login --provider blockdaemon
+
+# Custom provider name
+prism auth login --provider "my-private-rpc"
+```
+
+You'll be prompted securely for your API key (input is hidden). Credentials are stored using the system keyring when available, with a fallback to an encrypted config file.
+
+### Removing Credentials
+
+```bash
+# Interactive provider selection
+prism auth logout
+
+# Remove specific provider
+prism auth logout --provider blockdaemon
+```
+
+### Credential Storage
+
+- **Primary**: System keyring (secure, platform-native storage)
+- **Fallback**: Config file at `~/.config/prism/auth.toml` (Unix) or `%APPDATA%\prism\config\auth.toml` (Windows)
+
+The config file fallback is less secure than keyring storage and will be used only if the system keyring is unavailable.
+
+### Using Stored Credentials
+
+Other Prism commands automatically retrieve stored credentials when needed. No additional flags are required - if you've stored credentials for a provider, Prism will use them automatically.
+
+### Security Notes
+
+- API keys are never printed or logged
+- Config files have restricted permissions (0o600 on Unix) when using the fallback storage
+- Keyring storage is strongly recommended over config file storage
+- Credentials are stored per-provider and normalized to lowercase with hyphens
+
+---
+
 ### VS Code Extension
 
 Intercepts Soroban errors in test output from `stellar contract test` and `cargo test`. Decoded errors appear as inline annotations and hover tooltips. A dedicated diagnostics panel groups recent failures by error category. Transaction hashes detected in logs or test output get a clickable "Debug This TX" code lens that opens the web debugger. Where possible, VS Code Quick Fixes suggest code-level changes.
