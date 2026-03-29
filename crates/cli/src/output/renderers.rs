@@ -1,9 +1,14 @@
 //! Shared terminal renderers for CLI output.
 
-use prism_core::types::report::{DiagnosticReport, SuggestedFix, TransactionContext};
+#![allow(dead_code)]
+
+use colored::Colorize;
+use prism_core::types::report::TransactionContext;
+use prism_core::types::trace::ResourceProfile;
 use tabled::{Table, Tabled};
 
 const BAR_WIDTH: usize = 10;
+const HEAT_BLOCKS: [&str; 4] = ["░", "▒", "▓", "█"];
 
 /// Render a boxed section header suitable for terminal report sections.
 pub fn render_section_header(title: &str) -> String {
@@ -53,7 +58,7 @@ impl BudgetBar {
         };
 
         let filled = (pct * BAR_WIDTH as f64).round() as usize;
-        let empty = BAR_WIDTH - filled;
+        let empty = BAR_WIDTH.saturating_sub(filled);
         let bar_str = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
 
         let colored_bar = if pct >= 0.9 {
@@ -75,11 +80,6 @@ impl BudgetBar {
     }
 }
 
-
-// Heatmap block characters ordered from coldest to hottest.
-const HEAT_BLOCKS: [&str; 4] = ["░", "▒", "▓", "█"];
-
-/// Map a 0.0–1.0 intensity to a colored block character.
 fn heat_cell(intensity: f64) -> String {
     let block = if intensity >= 0.75 {
         HEAT_BLOCKS[3]
@@ -91,9 +91,8 @@ fn heat_cell(intensity: f64) -> String {
         HEAT_BLOCKS[0]
     };
 
-    // Repeat the block to fill a fixed cell width of 10 chars.
     let filled = (intensity * BAR_WIDTH as f64).round() as usize;
-    let empty = BAR_WIDTH - filled;
+    let empty = BAR_WIDTH.saturating_sub(filled);
     let cell = format!("{}{}", block.repeat(filled), "░".repeat(empty));
 
     if intensity >= 0.75 {
@@ -108,10 +107,6 @@ fn heat_cell(intensity: f64) -> String {
 }
 
 /// Render a resource heatmap grid from a `ResourceProfile`.
-///
-/// Rows = hotspot locations (contract functions).
-/// Columns = CPU, Memory, Reads, Writes.
-/// Cell intensity is relative to the hottest value in each column.
 pub fn render_heatmap(profile: &ResourceProfile) -> String {
     if profile.hotspots.is_empty() {
         return format!(
@@ -121,14 +116,22 @@ pub fn render_heatmap(profile: &ResourceProfile) -> String {
         );
     }
 
-    // Column max values for normalisation.
-    let max_cpu = profile.hotspots.iter().map(|h| h.cpu_instructions).max().unwrap_or(1).max(1);
-    let max_mem = profile.hotspots.iter().map(|h| h.memory_bytes).max().unwrap_or(1).max(1);
-    // Reads/writes aren't on ResourceHotspot yet, so we derive them from the
-    // profile totals split evenly as a placeholder until the type is extended.
+    let max_cpu = profile
+        .hotspots
+        .iter()
+        .map(|h| h.cpu_instructions)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let max_mem = profile
+        .hotspots
+        .iter()
+        .map(|h| h.memory_bytes)
+        .max()
+        .unwrap_or(1)
+        .max(1);
     let total_io = (profile.total_read_bytes + profile.total_write_bytes).max(1);
 
-    // Label column width — pad to the longest location name.
     let label_width = profile
         .hotspots
         .iter()
@@ -137,9 +140,8 @@ pub fn render_heatmap(profile: &ResourceProfile) -> String {
         .unwrap_or(8)
         .max(8);
 
-    let col_width = BAR_WIDTH + 2; // cell + 2 spaces padding
+    let col_width = BAR_WIDTH + 2;
 
-    // Header row.
     let mut out = String::new();
     out.push_str(&render_section_header("Resource Heatmap"));
     out.push('\n');
@@ -158,13 +160,9 @@ pub fn render_heatmap(profile: &ResourceProfile) -> String {
         "-".repeat(label_width + 4 * (col_width + 2) + 6)
     ));
 
-    // Data rows.
     for hotspot in &profile.hotspots {
         let cpu_intensity = hotspot.cpu_instructions as f64 / max_cpu as f64;
         let mem_intensity = hotspot.memory_bytes as f64 / max_mem as f64;
-
-        // Approximate read/write split: use cpu_percentage as a proxy weight
-        // until ResourceHotspot gains dedicated read/write fields.
         let weight = hotspot.cpu_percentage / 100.0;
         let read_intensity = (profile.total_read_bytes as f64 * weight / total_io as f64).min(1.0);
         let write_intensity =
@@ -187,7 +185,6 @@ pub fn render_heatmap(profile: &ResourceProfile) -> String {
         ));
     }
 
-    // Legend.
     out.push('\n');
     out.push_str(&format!(
         "  Legend: {} cold  {} low  {} medium  {} hot\n",
@@ -200,7 +197,6 @@ pub fn render_heatmap(profile: &ResourceProfile) -> String {
     out
 }
 
-/// A single row in the context table representing a decoded argument.
 #[derive(Tabled)]
 struct ArgumentRow {
     #[tabled(rename = "Argument")]
@@ -210,9 +206,6 @@ struct ArgumentRow {
 }
 
 /// Renders decoded contract arguments as a clean table.
-///
-/// Displays arguments in a grid format with columns for Argument and Value.
-/// This makes it much easier to read than nested JSON when viewed in the terminal.
 pub fn render_context_table(context: &TransactionContext) -> String {
     if context.arguments.is_empty() {
         return String::new();
@@ -229,60 +222,45 @@ pub fn render_context_table(context: &TransactionContext) -> String {
         .collect();
 
     let table = Table::new(rows).to_string();
-    
+
     let mut output = String::new();
     if let Some(function_name) = &context.function_name {
         output.push_str(&format!("Function: {}\n", function_name));
     }
     output.push_str("Arguments:\n");
     output.push_str(&table);
-    
+
     output
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use prism_core::types::report::{FeeBreakdown, ResourceSummary, Severity};
+    use super::{
+        render_context_table, render_heatmap, render_section_header, BudgetBar, SectionHeader,
+    };
+    use super::{
+        FeeBreakdown, ResourceHotspot, ResourceProfile, ResourceSummary, TransactionContext,
+    };
+    use prism_core::types::report::{FeeBreakdown, ResourceSummary, TransactionContext};
+    use prism_core::types::trace::{ResourceHotspot, ResourceProfile};
 
-    fn create_test_report() -> DiagnosticReport {
-        DiagnosticReport {
-            error_category: "Budget".to_string(),
-            error_code: 1,
-            error_name: "cpu_limit_exceeded".to_string(),
-            summary: "CPU usage exceeded limit".to_string(),
-            detailed_explanation: "The contract used more CPU than allowed.".to_string(),
-            severity: Severity::Error,
-            root_causes: vec![],
-            suggested_fixes: vec![
-                SuggestedFix {
-                    description: "Reduce the number of loop iterations".to_string(),
-                    difficulty: "easy".to_string(),
-                    requires_upgrade: false,
-                    example: Some("Use for_each instead of iterate".to_string()),
-                },
-                SuggestedFix {
-                    description: "Optimize your contract logic".to_string(),
-                    difficulty: "medium".to_string(),
-                    requires_upgrade: false,
-                    example: None,
-                },
-                SuggestedFix {
-                    description: "Upgrade to a newer contract version".to_string(),
-                    difficulty: "hard".to_string(),
-                    requires_upgrade: true,
-                    example: None,
-                },
-            ],
-            contract_error: None,
-            transaction_context: None,
-            related_errors: vec![],
+    fn make_profile(hotspots: Vec<ResourceHotspot>) -> ResourceProfile {
+        ResourceProfile {
+            total_cpu: hotspots.iter().map(|h| h.cpu_instructions).sum(),
+            cpu_limit: 1_000_000,
+            total_memory: hotspots.iter().map(|h| h.memory_bytes).sum(),
+            memory_limit: 1_000_000,
+            total_read_bytes: 0,
+            total_write_bytes: 0,
+            hotspots,
+            warnings: vec![],
         }
     }
 
     #[test]
     fn section_header_renders_boxed_uppercase_title() {
         let rendered = SectionHeader::new("Transaction Summary").render();
+
         assert!(rendered.contains("TRANSACTION SUMMARY"));
         assert!(rendered.contains("+"));
         assert!(rendered.contains("|"));
@@ -291,20 +269,23 @@ mod tests {
     #[test]
     fn section_header_function_trims_title() {
         let rendered = render_section_header("  network info  ");
+
         assert!(rendered.contains("NETWORK INFO"));
     }
 
     #[test]
     fn budget_bar_renders_with_zero_limit() {
-        let bar = BudgetBar::new("CPU", 0, 0).render();
-        assert!(bar.contains("CPU"));
-        assert!(bar.contains("0%"));
+        let rendered = BudgetBar::new("CPU", 0, 0).render();
+
+        assert!(rendered.contains("CPU"));
+        assert!(rendered.contains("0%"));
     }
 
     #[test]
     fn heatmap_empty_hotspots_shows_no_data_message() {
         let profile = make_profile(vec![]);
         let output = render_heatmap(&profile);
+
         assert!(output.contains("No hotspot data available."));
     }
 
@@ -327,6 +308,7 @@ mod tests {
             },
         ]);
         let output = render_heatmap(&profile);
+
         assert!(output.contains("transfer::invoke"));
         assert!(output.contains("storage::get"));
         assert!(output.contains("CPU"));
@@ -335,7 +317,7 @@ mod tests {
     }
 
     #[test]
-    fn test_render_context_table_with_arguments() {
+    fn render_context_table_with_arguments() {
         let context = TransactionContext {
             tx_hash: "abc123".to_string(),
             ledger_sequence: 12345,
@@ -362,7 +344,7 @@ mod tests {
         };
 
         let output = render_context_table(&context);
-        
+
         assert!(output.contains("Function: transfer"));
         assert!(output.contains("Arguments:"));
         assert!(output.contains("GABC123..."));
@@ -371,7 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn test_render_context_table_empty() {
+    fn render_context_table_empty() {
         let context = TransactionContext {
             tx_hash: "abc123".to_string(),
             ledger_sequence: 12345,
@@ -394,7 +376,7 @@ mod tests {
         };
 
         let output = render_context_table(&context);
-        
+
         assert!(output.is_empty());
     }
 }

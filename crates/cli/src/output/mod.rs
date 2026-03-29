@@ -1,8 +1,10 @@
 //! Output formatting for CLI reports.
 
+#![allow(dead_code)]
+
 use prism_core::types::{
     report::DiagnosticReport,
-    trace::{ DiffChangeType, ExecutionTrace, ResourceProfile, StateDiff },
+    trace::{DiffChangeType, ExecutionTrace, ResourceProfile, StateDiff},
 };
 
 pub mod auth_tree;
@@ -30,7 +32,7 @@ impl OutputMode {
 
 pub fn print_diagnostic_report(
     report: &DiagnosticReport,
-    output_format: &str
+    output_format: &str,
 ) -> anyhow::Result<()> {
     match OutputMode::parse(output_format) {
         OutputMode::Json => json::print_report(report),
@@ -49,7 +51,7 @@ pub fn format_trace(trace: &ExecutionTrace, output_format: &str) -> anyhow::Resu
 
 pub fn print_resource_profile(
     profile: &ResourceProfile,
-    output_format: &str
+    output_format: &str,
 ) -> anyhow::Result<()> {
     match OutputMode::parse(output_format) {
         OutputMode::Json => println!("{}", serde_json::to_string_pretty(profile)?),
@@ -100,19 +102,17 @@ pub fn print_whatif_status(
     tx_hash: &str,
     patch_file: Option<&str>,
     patch_count: Option<usize>,
-    output_format: &str
+    output_format: &str,
 ) -> anyhow::Result<()> {
     match OutputMode::parse(output_format) {
-        OutputMode::Short =>
-            match (patch_file, patch_count) {
-                (Some(path), Some(count)) => {
-                    println!("Status: Ready | Tx: {tx_hash} | Patches: {count} | Source: {path}");
-                }
-                _ => println!("Status: MissingModifyFile | Tx: {tx_hash}"),
+        OutputMode::Short => match (patch_file, patch_count) {
+            (Some(path), Some(count)) => {
+                println!("Status: Ready | Tx: {tx_hash} | Patches: {count} | Source: {path}");
             }
+            _ => println!("Status: MissingModifyFile | Tx: {tx_hash}"),
+        },
         OutputMode::Json => {
-            let payload =
-                serde_json::json!({
+            let payload = serde_json::json!({
                 "tx_hash": tx_hash,
                 "patch_file": patch_file,
                 "patch_count": patch_count,
@@ -120,16 +120,14 @@ pub fn print_whatif_status(
             });
             println!("{}", serde_json::to_string_pretty(&payload)?);
         }
-        OutputMode::Human => {
-            match patch_file {
-                Some(path) => println!("Patches loaded from {path}"),
-                None => {
-                    println!(
-                        "No --modify file provided. Use a JSON patch file to specify modifications."
-                    );
-                }
+        OutputMode::Human => match patch_file {
+            Some(path) => println!("Patches loaded from {path}"),
+            None => {
+                println!(
+                    "No --modify file provided. Use a JSON patch file to specify modifications."
+                );
             }
-        }
+        },
     }
 
     Ok(())
@@ -170,15 +168,9 @@ fn format_state_diff_summary(diff: &StateDiff) -> String {
 
     for entry in &diff.entries {
         match entry.change_type {
-            DiffChangeType::Created => {
-                created += 1;
-            }
-            DiffChangeType::Updated => {
-                updated += 1;
-            }
-            DiffChangeType::Deleted => {
-                deleted += 1;
-            }
+            DiffChangeType::Created => created += 1,
+            DiffChangeType::Updated => updated += 1,
+            DiffChangeType::Deleted => deleted += 1,
             DiffChangeType::Unchanged => {}
         }
     }

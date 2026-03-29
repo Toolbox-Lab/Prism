@@ -226,6 +226,7 @@ impl NetworkConfig {
         }
     }
 }
+use crate::types::config::NetworkConfig;
 
 /// Resolve a network name string to a `NetworkConfig`.
 ///
@@ -236,6 +237,14 @@ pub fn resolve_network(network_str: &str) -> NetworkConfig {
         Err(error) => {
             tracing::warn!(%error, network = network_str, "Unknown network, defaulting to testnet");
             NetworkConfig::testnet()
+    match network_str.to_lowercase().as_str() {
+        "mainnet" | "main" | "pubnet" => NetworkConfig::mainnet(),
+        "testnet" | "test" => NetworkConfig::testnet(),
+        "futurenet" | "future" => NetworkConfig::futurenet(),
+        url if url.starts_with("http") => NetworkConfig::custom(url, ""),
+        _ => {
+            tracing::warn!("Unknown network '{network_str}', defaulting to testnet");
+            default_network()
         }
     }
 }
@@ -251,6 +260,7 @@ pub fn default_network() -> NetworkConfig {
 }
 
 /// Validate that a network configuration is reachable.
+#[allow(dead_code)]
 pub async fn validate_network(config: &NetworkConfig) -> bool {
     let client = reqwest::Client::new();
     client

@@ -2,10 +2,14 @@
 //!
 //! Handles reading and writing user preferences at `~/.prism/config.toml`.
 
+#![allow(dead_code)]
+
 use anyhow::Context;
 use directories::BaseDirs;
 use prism_core::types::config::PrismConfig;
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
 
 /// Reads and writes Prism's global configuration file.
 #[derive(Debug, Clone)]
@@ -24,11 +28,13 @@ impl ConfigManager {
     /// Create a config manager using an explicit config file path.
     ///
     /// Useful for tests and tooling that need an isolated config file.
+    #[cfg(test)]
     pub fn with_path(config_path: PathBuf) -> Self {
         Self { config_path }
     }
 
     /// Return the full path to the config file.
+    #[cfg(test)]
     pub fn path(&self) -> &Path {
         &self.config_path
     }
@@ -54,6 +60,7 @@ impl ConfigManager {
     }
 
     /// Save config to disk in TOML format.
+    #[cfg(test)]
     pub fn save(&self, config: &PrismConfig) -> anyhow::Result<()> {
         if let Some(parent) = self.config_path.parent() {
             std::fs::create_dir_all(parent).with_context(|| {
@@ -111,8 +118,10 @@ mod tests {
         let path = root.join("config.toml");
         let manager = ConfigManager::with_path(path.clone());
 
-        let mut config = PrismConfig::default();
-        config.max_cache_size_mb = 1024;
+        let config = PrismConfig {
+            max_cache_size_mb: 1024,
+            ..PrismConfig::default()
+        };
 
         manager.save(&config).expect("save config");
         let loaded = manager.load().expect("load config");

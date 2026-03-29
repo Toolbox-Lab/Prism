@@ -2,7 +2,7 @@
 
 use crate::replay::sandbox::SandboxResult;
 use crate::types::error::PrismResult;
-use crate::types::trace::{ResourceHotspot, ResourceProfile};
+use crate::types::trace::ResourceProfile;
 
 /// Generate a resource consumption profile from sandbox execution results.
 pub fn generate_profile(result: &SandboxResult) -> PrismResult<ResourceProfile> {

@@ -35,6 +35,7 @@ pub struct CacheStore {
     /// Path to the cache directory.
     cache_dir: PathBuf,
     /// Maximum cache size in bytes.
+    #[allow(dead_code)]
     max_size: u64,
 }
 
@@ -62,6 +63,13 @@ impl CacheStore {
 
     /// Store a value in the cache with a content-addressed key.
     pub fn put(&self, category: CacheCategory, key: &str, value: &[u8]) -> PrismResult<()> {
+        if value.len() as u64 > self.max_size {
+            return Err(PrismError::CacheError(format!(
+                "Cache entry exceeds configured cache size limit of {} bytes",
+                self.max_size
+            )));
+        }
+
         let path = self.entry_path(category, key);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)

@@ -25,6 +25,8 @@ pub enum PrismError {
     ContractNotFound(String),
     /// An invalid network or configuration was provided.
     ConfigError(String),
+    /// An invalid Stellar address was provided.
+    InvalidAddress(String),
     /// Generic internal error.
     Internal(String),
 }
@@ -42,6 +44,7 @@ impl fmt::Display for PrismError {
             Self::TransactionNotFound(hash) => write!(f, "Transaction not found: {hash}"),
             Self::ContractNotFound(id) => write!(f, "Contract not found: {id}"),
             Self::ConfigError(msg) => write!(f, "Config error: {msg}"),
+            Self::InvalidAddress(msg) => write!(f, "Invalid address: {msg}"),
             Self::Internal(msg) => write!(f, "Internal error: {msg}"),
         }
     }

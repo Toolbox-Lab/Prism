@@ -1,7 +1,7 @@
 //! `prism diagnostic` — Health check for binary, network, and cache state.
 
-use std::path::PathBuf;
-use std::time::{ Duration, Instant };
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use colored::Colorize;
@@ -60,15 +60,24 @@ struct Check {
 
 impl Check {
     fn ok(name: impl Into<String>) -> Self {
-        Self { name: name.into(), status: Status::Ok }
+        Self {
+            name: name.into(),
+            status: Status::Ok,
+        }
     }
 
     fn warn(name: impl Into<String>, msg: impl Into<String>) -> Self {
-        Self { name: name.into(), status: Status::Warning(msg.into()) }
+        Self {
+            name: name.into(),
+            status: Status::Warning(msg.into()),
+        }
     }
 
     fn error(name: impl Into<String>, msg: impl Into<String>) -> Self {
-        Self { name: name.into(), status: Status::Error(msg.into()) }
+        Self {
+            name: name.into(),
+            status: Status::Error(msg.into()),
+        }
     }
 }
 
@@ -128,8 +137,14 @@ async fn check_rpc(
 
 async fn check_network() -> Vec<Check> {
     let configs = [
-        ("mainnet", prism_core::network::config::resolve_network("mainnet")),
-        ("testnet", prism_core::network::config::resolve_network("testnet")),
+        (
+            "mainnet",
+            prism_core::network::config::resolve_network("mainnet"),
+        ),
+        (
+            "testnet",
+            prism_core::network::config::resolve_network("testnet"),
+        ),
     ];
 
     let mut checks = Vec::new();
@@ -171,7 +186,10 @@ fn check_cache() -> Vec<Check> {
             checks.push(Check::ok("Cache writability"));
         }
         Err(e) => {
-            checks.push(Check::error("Cache writability", format!("Cannot write — {}", e)));
+            checks.push(Check::error(
+                "Cache writability",
+                format!("Cannot write — {}", e),
+            ));
         }
     }
 
@@ -215,20 +233,20 @@ fn check_cache() -> Vec<Check> {
 }
 
 #[cfg(unix)]
-fn free_bytes(path: &PathBuf) -> Option<u64> {
+fn free_bytes(path: &Path) -> Option<u64> {
     use std::ffi::CString;
     let cpath = CString::new(path.to_string_lossy().as_bytes()).ok()?;
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
     let rc = unsafe { libc::statvfs(cpath.as_ptr(), &mut stat) };
     if rc == 0 {
-        Some(stat.f_bavail * stat.f_frsize as u64)
+        Some(stat.f_bavail * stat.f_frsize)
     } else {
         None
     }
 }
 
 #[cfg(not(unix))]
-fn free_bytes(_path: &PathBuf) -> Option<u64> {
+fn free_bytes(_path: &Path) -> Option<u64> {
     None
 }
 
