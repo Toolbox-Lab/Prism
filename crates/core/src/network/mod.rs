@@ -2,4 +2,5 @@
 
 pub mod archive;
 pub mod config;
+pub mod jsonrpc;
 pub mod rpc;
