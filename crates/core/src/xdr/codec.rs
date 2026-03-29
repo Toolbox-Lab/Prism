@@ -5,6 +5,40 @@
 
 use crate::types::error::{PrismError, PrismResult};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use stellar_xdr::{ReadXdr, WriteXdr, Limits, TransactionMeta, TransactionMetaV1};
+
+/// Trait for types that can be encoded/decoded to/from XDR.
+pub trait XdrCodec: Sized {
+    /// Decode from XDR bytes.
+    fn from_xdr_bytes(bytes: &[u8]) -> PrismResult<Self>;
+
+    /// Encode to XDR bytes.
+    fn to_xdr_bytes(&self) -> PrismResult<Vec<u8>>;
+
+    /// Decode from base64-encoded XDR string.
+    fn from_xdr_base64(base64: &str) -> PrismResult<Self> {
+        let bytes = decode_xdr_base64(base64)?;
+        Self::from_xdr_bytes(&bytes)
+    }
+
+    /// Encode to base64-encoded XDR string.
+    fn to_xdr_base64(&self) -> PrismResult<String> {
+        let bytes = self.to_xdr_bytes()?;
+        Ok(encode_xdr_base64(&bytes))
+    }
+}
+
+impl XdrCodec for TransactionMeta {
+    fn from_xdr_bytes(bytes: &[u8]) -> PrismResult<Self> {
+        TransactionMeta::from_xdr(bytes, Limits::none())
+            .map_err(|e| PrismError::XdrError(format!("Failed to decode TransactionMeta: {e}")))
+    }
+
+    fn to_xdr_bytes(&self) -> PrismResult<Vec<u8>> {
+        self.to_xdr(Limits::none())
+            .map_err(|e| PrismError::XdrError(format!("Failed to encode TransactionMeta: {e}")))
+    }
+}
 
 /// Decode a base64-encoded XDR transaction result.
 ///
@@ -298,5 +332,37 @@ mod tests {
 
         // Verify round-trip produces identical result
         assert_eq!(envelope, decoded);
+    }
+}
+
+#[cfg(test)]
+mod test_xdr_codec {
+    use super::*;
+    use stellar_xdr::TransactionMeta;
+
+    #[test]
+    fn test_transaction_meta_xdr_codec() {
+        // Create a simple TransactionMeta with V1 containing empty changes
+        // TransactionMeta contains ledger changes made during transaction execution
+        let meta = TransactionMeta::V1(TransactionMetaV1 {
+            tx_changes: vec![].try_into().unwrap(),
+            operations: vec![].try_into().unwrap(),
+        });
+
+        // Test encoding to bytes
+        let bytes = meta.to_xdr_bytes().expect("Failed to encode TransactionMeta");
+        assert!(!bytes.is_empty());
+
+        // Test decoding from bytes
+        let decoded = TransactionMeta::from_xdr_bytes(&bytes).expect("Failed to decode TransactionMeta");
+        assert_eq!(meta, decoded);
+
+        // Test encoding to base64
+        let base64 = meta.to_xdr_base64().expect("Failed to encode to base64");
+        assert!(!base64.is_empty());
+
+        // Test decoding from base64
+        let decoded_from_base64 = TransactionMeta::from_xdr_base64(&base64).expect("Failed to decode from base64");
+        assert_eq!(meta, decoded_from_base64);
     }
 }
