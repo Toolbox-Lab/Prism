@@ -15,7 +15,7 @@ pub struct WhatifArgs {
 
 pub async fn run(
     args: WhatifArgs,
-    network: &NetworkConfig,
+    _network: &NetworkConfig,
     output_format: &str,
 ) -> anyhow::Result<()> {
     println!("What-if simulation for {}", args.tx_hash);
@@ -30,33 +30,8 @@ pub async fn run(
             Some(patches.len()),
             output_format,
         )?;
-        Some(patches)
     } else {
         crate::output::print_whatif_status(&args.tx_hash, None, None, output_format)?;
-        None
-    };
-
-    // --- Optional JSON save (--save flag) ---
-    if let Some(path) = save {
-        #[derive(serde::Serialize)]
-        struct WhatIfSavePayload<'a> {
-            tx_hash: &'a str,
-            patch_file: Option<&'a str>,
-            patch_count: Option<usize>,
-            patches: &'a Option<Vec<prism_core::debugger::whatif::WhatIfPatch>>,
-        }
-
-        let payload = WhatIfSavePayload {
-            tx_hash: &args.tx_hash,
-            patch_file: args.modify.as_deref(),
-            patch_count: patches.as_ref().map(|p| p.len()),
-            patches: &patches,
-        };
-
-        let json = serde_json::to_string_pretty(&payload)?;
-        std::fs::write(path, &json)
-            .map_err(|e| anyhow::anyhow!("Failed to write save file '{}': {}", path, e))?;
-        eprintln!("Saved what-if session to {path}");
     }
 
     Ok(())
