@@ -1,5 +1,5 @@
 //! Background version checking for the Prism CLI.
-//! 
+//!
 //! Silently checks GitHub for new releases and caches the result for 24 hours
 //! to avoid rate limits and keep the CLI fast.
 
@@ -35,7 +35,8 @@ pub async fn check_for_updates() -> Option<String> {
 
 /// Internal execution of the update check, returning a `Result` for easy error propagation.
 async fn check_for_updates_internal() -> anyhow::Result<Option<String>> {
-    let cache_path = cache_file_path().ok_or_else(|| anyhow::anyhow!("No cache directory found"))?;
+    let cache_path =
+        cache_file_path().ok_or_else(|| anyhow::anyhow!("No cache directory found"))?;
 
     // 1. Read cache and return early if check happened < 24 hours ago
     if let Ok(content) = fs::read_to_string(&cache_path) {
@@ -60,7 +61,7 @@ async fn check_for_updates_internal() -> anyhow::Result<Option<String>> {
         .error_for_status()?;
 
     let release: GitHubRelease = response.json().await?;
-    
+
     // 3. Process the version tag (strip 'v' prefix if present)
     let latest_version = release.tag_name.trim_start_matches('v').to_string();
 
@@ -68,12 +69,12 @@ async fn check_for_updates_internal() -> anyhow::Result<Option<String>> {
     if let Some(parent) = cache_path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    
+
     let new_cache = VersionCache {
         last_check: Utc::now(),
         latest_version: latest_version.clone(),
     };
-    
+
     if let Ok(serialized) = serde_json::to_string(&new_cache) {
         let _ = fs::write(&cache_path, serialized);
     }
@@ -85,7 +86,7 @@ async fn check_for_updates_internal() -> anyhow::Result<Option<String>> {
 /// Compares the given latest version string with the current binary version.
 fn compare_versions(latest: &str) -> Option<String> {
     let current_version = env!("CARGO_PKG_VERSION");
-    
+
     let current_semver = semver::Version::parse(current_version).ok()?;
     let latest_semver = semver::Version::parse(latest).ok()?;
 

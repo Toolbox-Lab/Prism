@@ -35,6 +35,6 @@ pub fn print_report(report: &DiagnosticReport) -> anyhow::Result<()> {
             .render()
         );
     }
-    
+
     Ok(())
 }

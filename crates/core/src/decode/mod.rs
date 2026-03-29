@@ -71,8 +71,11 @@ pub async fn decode_transaction_with_op_filter(
     op_index: Option<usize>,
 ) -> PrismResult<DiagnosticReport> {
     // 1. Fetch the transaction result
-    let rpc = crate::network::rpc::RpcClient::new(network.clone());
-    let mut tx_data = rpc.get_transaction(tx_hash).await?;
+    let rpc = crate::network::rpc::SorobanRpcClient::new(network);
+    let tx_response = rpc.get_transaction(tx_hash).await?;
+    let mut tx_data = serde_json::to_value(&tx_response).map_err(|e| {
+        crate::types::error::PrismError::RpcError(format!("Serialization error: {e}"))
+    })?;
 
     // 2. Filter by operation index if specified
     if let Some(index) = op_index {

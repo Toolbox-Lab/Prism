@@ -1,5 +1,7 @@
 //! TUI application state management.
 
+#![allow(dead_code)]
+
 /// TUI application state.
 pub struct TuiState {
     pub tx_hash: String,

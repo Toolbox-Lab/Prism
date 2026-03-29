@@ -35,6 +35,7 @@ pub struct CacheStore {
     /// Path to the cache directory.
     cache_dir: PathBuf,
     /// Maximum cache size in bytes.
+    #[allow(dead_code)]
     max_size: u64,
 }
 

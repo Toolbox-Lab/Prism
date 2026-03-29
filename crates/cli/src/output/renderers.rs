@@ -1,6 +1,10 @@
 //! Shared terminal renderers for CLI output.
 
-use prism_core::types::report::{DiagnosticReport, SuggestedFix, TransactionContext};
+#![allow(dead_code)]
+
+use colored::Colorize;
+use prism_core::types::report::TransactionContext;
+use prism_core::types::trace::ResourceProfile;
 use tabled::{Table, Tabled};
 
 const BAR_WIDTH: usize = 10;
@@ -75,7 +79,6 @@ impl BudgetBar {
     }
 }
 
-
 // Heatmap block characters ordered from coldest to hottest.
 const HEAT_BLOCKS: [&str; 4] = ["░", "▒", "▓", "█"];
 
@@ -122,8 +125,20 @@ pub fn render_heatmap(profile: &ResourceProfile) -> String {
     }
 
     // Column max values for normalisation.
-    let max_cpu = profile.hotspots.iter().map(|h| h.cpu_instructions).max().unwrap_or(1).max(1);
-    let max_mem = profile.hotspots.iter().map(|h| h.memory_bytes).max().unwrap_or(1).max(1);
+    let max_cpu = profile
+        .hotspots
+        .iter()
+        .map(|h| h.cpu_instructions)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+    let max_mem = profile
+        .hotspots
+        .iter()
+        .map(|h| h.memory_bytes)
+        .max()
+        .unwrap_or(1)
+        .max(1);
     // Reads/writes aren't on ResourceHotspot yet, so we derive them from the
     // profile totals split evenly as a placeholder until the type is extended.
     let total_io = (profile.total_read_bytes + profile.total_write_bytes).max(1);
@@ -229,21 +244,37 @@ pub fn render_context_table(context: &TransactionContext) -> String {
         .collect();
 
     let table = Table::new(rows).to_string();
-    
+
     let mut output = String::new();
     if let Some(function_name) = &context.function_name {
         output.push_str(&format!("Function: {}\n", function_name));
     }
     output.push_str("Arguments:\n");
     output.push_str(&table);
-    
+
     output
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prism_core::types::report::{FeeBreakdown, ResourceSummary, Severity};
+    use prism_core::types::report::{
+        DiagnosticReport, FeeBreakdown, ResourceSummary, Severity, SuggestedFix,
+    };
+    use prism_core::types::trace::ResourceHotspot;
+
+    fn make_profile(hotspots: Vec<ResourceHotspot>) -> ResourceProfile {
+        ResourceProfile {
+            total_cpu: hotspots.iter().map(|h| h.cpu_instructions).sum(),
+            cpu_limit: 1_000_000,
+            total_memory: hotspots.iter().map(|h| h.memory_bytes).sum(),
+            memory_limit: 1_000_000,
+            total_read_bytes: 0,
+            total_write_bytes: 0,
+            hotspots,
+            warnings: vec![],
+        }
+    }
 
     fn create_test_report() -> DiagnosticReport {
         DiagnosticReport {
@@ -362,7 +393,7 @@ mod tests {
         };
 
         let output = render_context_table(&context);
-        
+
         assert!(output.contains("Function: transfer"));
         assert!(output.contains("Arguments:"));
         assert!(output.contains("GABC123..."));
@@ -394,7 +425,7 @@ mod tests {
         };
 
         let output = render_context_table(&context);
-        
+
         assert!(output.is_empty());
     }
 }
