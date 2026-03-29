@@ -1,4 +1,3 @@
-
 use prism_core::types::trace::{ContractInvocation, ExecutionTrace};
 use std::fmt::Write;
 
@@ -15,6 +14,7 @@ mod icons {
 }
 
 /// Unicode box-drawing characters
+#[allow(dead_code)]
 mod box_chars {
     pub const VERTICAL: &str = "│";
     pub const HORIZONTAL: &str = "─";
@@ -30,7 +30,11 @@ pub fn render_auth_tree(trace: &ExecutionTrace) -> anyhow::Result<String> {
     // Header
     writeln!(output, "{} Authorization Tree", icons::CONTRACT)?;
     writeln!(output, "Transaction: {}", trace.tx_hash)?;
-    writeln!(output, "Network: {} | Ledger: {}", trace.network, trace.ledger_sequence)?;
+    writeln!(
+        output,
+        "Network: {} | Ledger: {}",
+        trace.network, trace.ledger_sequence
+    )?;
     writeln!(output)?;
 
     // Render each root invocation
@@ -50,11 +54,19 @@ fn render_invocation(
     is_last: bool,
 ) -> anyhow::Result<()> {
     let current_prefix = if prefix.is_empty() { "" } else { prefix };
-    let connector = if is_last { box_chars::TOP_RIGHT } else { box_chars::VERTICAL_RIGHT };
+    let connector = if is_last {
+        box_chars::TOP_RIGHT
+    } else {
+        box_chars::VERTICAL_RIGHT
+    };
     let child_prefix = if is_last { "    " } else { "│   " };
 
     // Main invocation line
-    let status_icon = if invocation.is_error { icons::ERROR } else { icons::SUCCESS };
+    let status_icon = if invocation.is_error {
+        icons::ERROR
+    } else {
+        icons::SUCCESS
+    };
     writeln!(
         output,
         "{}{}{} {} {}::{}",
@@ -69,18 +81,24 @@ fn render_invocation(
     // Arguments
     if !invocation.arguments.is_empty() {
         let args_connector = if is_last { "    " } else { "│   " };
-        writeln!(output, "{}{}├─ {} Arguments:", current_prefix, args_connector, icons::FUNCTION)?;
+        writeln!(
+            output,
+            "{}{}├─ {} Arguments:",
+            current_prefix,
+            args_connector,
+            icons::FUNCTION
+        )?;
         for (i, arg) in invocation.arguments.iter().enumerate() {
             let arg_is_last = i == invocation.arguments.len().saturating_sub(1);
-            let arg_connector = if arg_is_last { box_chars::TOP_RIGHT } else { box_chars::VERTICAL_RIGHT };
+            let arg_connector = if arg_is_last {
+                box_chars::TOP_RIGHT
+            } else {
+                box_chars::VERTICAL_RIGHT
+            };
             writeln!(
                 output,
-                "{}{}{}{} {}",
-                current_prefix,
-                args_connector,
-                "│  ",
-                arg_connector,
-                arg
+                "{}{}│  {} {}",
+                current_prefix, args_connector, arg_connector, arg
             )?;
         }
     }
@@ -88,28 +106,46 @@ fn render_invocation(
     // Auth information (this would need to be added to ContractInvocation struct)
     // For now, we'll show placeholder auth info
     let auth_prefix = format!("{}{}", current_prefix, child_prefix);
-    writeln!(output, "{}├─ {} Authorization:", auth_prefix, icons::AUTH_REQUIRED)?;
-    writeln!(output, "{}│  └─ {} Provided: ✓", auth_prefix, icons::AUTH_PROVIDED)?;
-    writeln!(output, "{}│  └─ {} Verified: ✓", auth_prefix, icons::AUTH_PROVIDED)?;
+    writeln!(
+        output,
+        "{}├─ {} Authorization:",
+        auth_prefix,
+        icons::AUTH_REQUIRED
+    )?;
+    writeln!(
+        output,
+        "{}│  └─ {} Provided: ✓",
+        auth_prefix,
+        icons::AUTH_PROVIDED
+    )?;
+    writeln!(
+        output,
+        "{}│  └─ {} Verified: ✓",
+        auth_prefix,
+        icons::AUTH_PROVIDED
+    )?;
 
     // Resource usage
     writeln!(output, "{}├─ ⚡ Resources:", auth_prefix)?;
     writeln!(
         output,
         "{}│  └─ CPU: {} instructions",
-        auth_prefix,
-        invocation.total_cpu_instructions
+        auth_prefix, invocation.total_cpu_instructions
     )?;
     writeln!(
         output,
         "{}│  └─ Memory: {} bytes",
-        auth_prefix,
-        invocation.total_memory_bytes
+        auth_prefix, invocation.total_memory_bytes
     )?;
 
     // Sub-invocations
     if !invocation.sub_invocations.is_empty() {
-        writeln!(output, "{}└─ {} Sub-invocations:", auth_prefix, icons::SUB_INVOCATION)?;
+        writeln!(
+            output,
+            "{}└─ {} Sub-invocations:",
+            auth_prefix,
+            icons::SUB_INVOCATION
+        )?;
         for (i, sub_invocation) in invocation.sub_invocations.iter().enumerate() {
             let sub_is_last = i == invocation.sub_invocations.len().saturating_sub(1);
             let sub_prefix = format!("{}│  ", auth_prefix);
@@ -145,11 +181,19 @@ fn render_auth_invocation(
     prefix: &str,
     is_last: bool,
 ) -> anyhow::Result<()> {
-    let connector = if is_last { box_chars::TOP_RIGHT } else { box_chars::VERTICAL_RIGHT };
+    let connector = if is_last {
+        box_chars::TOP_RIGHT
+    } else {
+        box_chars::VERTICAL_RIGHT
+    };
     let child_prefix = if is_last { "    " } else { "│   " };
 
     // Show contract and function with auth status
-    let auth_status = if invocation.is_error { icons::AUTH_MISSING } else { icons::AUTH_PROVIDED };
+    let auth_status = if invocation.is_error {
+        icons::AUTH_MISSING
+    } else {
+        icons::AUTH_PROVIDED
+    };
     writeln!(
         output,
         "{}{}{} {} {}::{}",
@@ -165,20 +209,44 @@ fn render_auth_invocation(
     let auth_prefix = format!("{}{}", prefix, child_prefix);
 
     // Placeholder for actual auth requirements - this would need auth data
-    writeln!(output, "{}├─ {} Required signatures:", auth_prefix, icons::AUTH_REQUIRED)?;
-    writeln!(output, "{}│  └─ {} Contract authority", auth_prefix, icons::AUTH_PROVIDED)?;
-    writeln!(output, "{}│  └─ {} Function caller", auth_prefix, icons::AUTH_PROVIDED)?;
+    writeln!(
+        output,
+        "{}├─ {} Required signatures:",
+        auth_prefix,
+        icons::AUTH_REQUIRED
+    )?;
+    writeln!(
+        output,
+        "{}│  └─ {} Contract authority",
+        auth_prefix,
+        icons::AUTH_PROVIDED
+    )?;
+    writeln!(
+        output,
+        "{}│  └─ {} Function caller",
+        auth_prefix,
+        icons::AUTH_PROVIDED
+    )?;
 
     // Sub-invocations with their auth requirements
     if !invocation.sub_invocations.is_empty() {
-        writeln!(output, "{}└─ {} Cross-contract calls:", auth_prefix, icons::SUB_INVOCATION)?;
+        writeln!(
+            output,
+            "{}└─ {} Cross-contract calls:",
+            auth_prefix,
+            icons::SUB_INVOCATION
+        )?;
         for (i, sub_invocation) in invocation.sub_invocations.iter().enumerate() {
             let sub_is_last = i == invocation.sub_invocations.len().saturating_sub(1);
             let sub_prefix = format!("{}│  ", auth_prefix);
             render_auth_invocation(output, sub_invocation, &sub_prefix, sub_is_last)?;
         }
     } else {
-        writeln!(output, "{}└─ (no additional auth requirements)", auth_prefix)?;
+        writeln!(
+            output,
+            "{}└─ (no additional auth requirements)",
+            auth_prefix
+        )?;
     }
 
     Ok(())
@@ -187,14 +255,18 @@ fn render_auth_invocation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prism_core::types::trace::{ContractInvocation, HostFunctionCall};
+    use prism_core::types::trace::ContractInvocation;
 
     #[test]
     fn test_render_simple_auth_tree() {
         let invocation = ContractInvocation {
             contract_id: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC".to_string(),
             function_name: "transfer".to_string(),
-            arguments: vec!["from: G...".to_string(), "to: G...".to_string(), "amount: 100".to_string()],
+            arguments: vec![
+                "from: G...".to_string(),
+                "to: G...".to_string(),
+                "amount: 100".to_string(),
+            ],
             return_value: Some("Success".to_string()),
             host_calls: vec![],
             sub_invocations: vec![],

@@ -25,6 +25,7 @@ pub mod types;
 pub mod xdr;
 
 // Re-export key types for convenience
+pub use types::address::Address;
 pub use types::config::NetworkConfig;
 pub use types::error::PrismError;
 pub use types::report::DiagnosticReport;

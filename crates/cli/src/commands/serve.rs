@@ -2,7 +2,7 @@
 
 use anyhow::Context;
 use clap::Args;
-use prism_core::network::rpc::RpcClient;
+use prism_core::network::rpc::SorobanRpcClient;
 use prism_core::types::config::NetworkConfig;
 use prism_core::types::error::PrismError;
 use serde::{Deserialize, Serialize};
@@ -147,13 +147,13 @@ impl ApiBridge {
     async fn get_transaction(&self, params: &Value) -> Result<Value, JsonRpcError> {
         let tx_hash = required_string(params, "txHash")?;
         let network = self.resolve_network(params);
-        let rpc = RpcClient::new(network);
+        let rpc = SorobanRpcClient::new(&network);
         rpc.get_transaction(&tx_hash)
             .await
             .map(|transaction| {
                 json!({
                     "txHash": tx_hash,
-                    "transaction": transaction,
+                    "transaction": serde_json::to_value(transaction).unwrap_or_default(),
                 })
             })
             .map_err(map_prism_error)

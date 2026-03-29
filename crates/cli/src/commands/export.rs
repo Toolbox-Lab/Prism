@@ -17,7 +17,7 @@ pub struct ExportArgs {
     pub output: Option<String>,
 }
 
-pub async fn run(args: ExportArgs, network: &NetworkConfig, quiet: &bool) -> anyhow::Result<()> {
+pub async fn run(args: ExportArgs, _network: &NetworkConfig, quiet: &bool) -> anyhow::Result<()> {
     if !*quiet {
         println!("Exporting {} as {} format...", args.tx_hash, args.format);
     }

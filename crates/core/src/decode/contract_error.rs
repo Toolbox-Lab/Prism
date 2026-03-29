@@ -55,7 +55,7 @@ pub async fn resolve(
 
 /// Fetch a contract's WASM bytecode from the Soroban RPC.
 async fn fetch_contract_wasm(contract_id: &str, network: &NetworkConfig) -> PrismResult<Vec<u8>> {
-    let rpc = crate::network::rpc::RpcClient::new(network.clone());
+    let rpc = crate::network::rpc::SorobanRpcClient::new(network);
 
     // TODO: Build the contract code ledger key and fetch via getLedgerEntries
     let _result = rpc.get_ledger_entries(&[contract_id.to_string()]).await?;

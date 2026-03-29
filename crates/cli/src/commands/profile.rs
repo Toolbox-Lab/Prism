@@ -22,12 +22,9 @@ pub async fn run(
     progress.set_message("Replaying transaction for resource profiling...");
     progress.enable_steady_tick(std::time::Duration::from_millis(100));
 
-        let trace = prism_core::replay::replay_transaction(&args.tx_hash, network).await?;
+    let trace = prism_core::replay::replay_transaction(&args.tx_hash, network).await?;
 
-        progress.finish_and_clear();
-    } else {
-        let trace = prism_core::replay::replay_transaction(&args.tx_hash, network).await?;
-    }
+    progress.finish_and_clear();
 
     // --- Terminal output (always shown) ---
     match output_format {
@@ -49,7 +46,7 @@ pub async fn run(
     }
 
     // --- Optional JSON save (--save flag) ---
-    if let Some(path) = save {
+    if let Some(ref path) = args.output_file {
         let json = serde_json::to_string_pretty(&trace.resource_profile)?;
         std::fs::write(path, &json)
             .map_err(|e| anyhow::anyhow!("Failed to write save file '{}': {}", path, e))?;

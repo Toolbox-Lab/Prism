@@ -75,7 +75,7 @@ fn extract_fee_breakdown(tx_data: &serde_json::Value) -> FeeBreakdown {
 }
 
 /// Extract resource usage summary.
-fn extract_resource_summary(tx_data: &serde_json::Value) -> ResourceSummary {
+fn extract_resource_summary(_tx_data: &serde_json::Value) -> ResourceSummary {
     // TODO: Parse actual resource usage from the transaction result
     ResourceSummary {
         cpu_instructions_used: 0,
