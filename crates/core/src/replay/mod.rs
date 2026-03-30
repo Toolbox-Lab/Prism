@@ -35,7 +35,7 @@ pub async fn replay_transaction(
     Ok(ExecutionTrace {
         tx_hash: tx_hash.to_string(),
         ledger_sequence: ledger_state.ledger_sequence,
-        network: format!("{:?}", network.network),
+        network: network.network.to_string(),
         invocations: trace_tree,
         state_diff,
         resource_profile: profile,

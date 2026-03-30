@@ -7,7 +7,9 @@
 use anyhow::Context;
 use directories::BaseDirs;
 use prism_core::types::config::PrismConfig;
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
 
 /// Reads and writes Prism's global configuration file.
 #[derive(Debug, Clone)]
@@ -26,11 +28,13 @@ impl ConfigManager {
     /// Create a config manager using an explicit config file path.
     ///
     /// Useful for tests and tooling that need an isolated config file.
+    #[cfg(test)]
     pub fn with_path(config_path: PathBuf) -> Self {
         Self { config_path }
     }
 
     /// Return the full path to the config file.
+    #[cfg(test)]
     pub fn path(&self) -> &Path {
         &self.config_path
     }
@@ -56,6 +60,7 @@ impl ConfigManager {
     }
 
     /// Save config to disk in TOML format.
+    #[cfg(test)]
     pub fn save(&self, config: &PrismConfig) -> anyhow::Result<()> {
         if let Some(parent) = self.config_path.parent() {
             std::fs::create_dir_all(parent).with_context(|| {

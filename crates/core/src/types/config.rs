@@ -1,5 +1,6 @@
 //! Network and application configuration types.
 
+pub use crate::network::config::{Network, NetworkConfig};
 use serde::{Deserialize, Serialize};
 
 /// Supported Stellar networks.
@@ -14,12 +15,6 @@ pub enum Network {
     Custom,
 }
 
-impl Default for Network {
-    fn default() -> Self {
-        Self::Testnet
-    }
-}
-
 impl Network {
     /// Returns the default Soroban RPC URL for preset networks.
     pub fn default_rpc_url(&self) -> &str {
@@ -32,7 +27,6 @@ impl Network {
         }
     }
 }
-
 /// Configuration for connecting to a Stellar network.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkConfig {
@@ -132,6 +126,7 @@ impl Default for PrismConfig {
                 NetworkConfig::testnet(),
                 NetworkConfig::mainnet(),
                 NetworkConfig::futurenet(),
+                NetworkConfig::local(),
             ],
             cache_dir: None,
             max_cache_size_mb: 512,
@@ -145,9 +140,18 @@ mod tests {
 
     #[test]
     fn test_default_rpc_url() {
-        assert_eq!(Network::Mainnet.default_rpc_url(), "https://soroban-mainnet.stellar.org");
-        assert_eq!(Network::Testnet.default_rpc_url(), "https://soroban-testnet.stellar.org");
-        assert_eq!(Network::Futurenet.default_rpc_url(), "https://rpc-futurenet.stellar.org");
+        assert_eq!(
+            Network::Mainnet.default_rpc_url(),
+            "https://soroban-mainnet.stellar.org"
+        );
+        assert_eq!(
+            Network::Testnet.default_rpc_url(),
+            "https://soroban-testnet.stellar.org"
+        );
+        assert_eq!(
+            Network::Futurenet.default_rpc_url(),
+            "https://rpc-futurenet.stellar.org"
+        );
         assert_eq!(Network::Standalone.default_rpc_url(), "");
         assert_eq!(Network::Custom.default_rpc_url(), "");
     }
