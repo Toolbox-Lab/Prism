@@ -1,5 +1,6 @@
 //! Network and application configuration types.
 
+pub use crate::network::config::{Network, NetworkConfig};
 use serde::{Deserialize, Serialize};
 
 /// Supported Stellar networks.
@@ -106,6 +107,7 @@ impl Default for PrismConfig {
                 NetworkConfig::testnet(),
                 NetworkConfig::mainnet(),
                 NetworkConfig::futurenet(),
+                NetworkConfig::local(),
             ],
             cache_dir: None,
             max_cache_size_mb: 512,
