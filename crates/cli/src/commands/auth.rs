@@ -55,19 +55,23 @@ impl Default for AuthConfig {
 }
 
 /// Execute the auth command.
-pub async fn run(args: AuthArgs) -> Result<()> {
+pub async fn run(args: AuthArgs, output_format: &str) -> Result<()> {
     match args.command {
         AuthCommands::Login { provider, config_path } => {
-            login(provider, config_path).await
+            login(provider, config_path, output_format).await
         }
         AuthCommands::Logout { provider, config_path } => {
-            logout(provider, config_path).await
+            logout(provider, config_path, output_format).await
         }
     }
 }
 
 /// Handle the login subcommand.
-async fn login(provider_param: Option<String>, config_path: Option<String>) -> Result<()> {
+async fn login(
+    provider_param: Option<String>,
+    config_path: Option<String>,
+    output_format: &str,
+) -> Result<()> {
     // Determine provider name
     let provider = match provider_param {
         Some(p) => p,
@@ -85,7 +89,22 @@ async fn login(provider_param: Option<String>, config_path: Option<String>) -> R
 
     // Store the credential
     match store_credential(&provider, &api_key, config_path).await {
-        Ok(_) => println!("✓ Credentials for {} saved.", provider.green()),
+        Ok(_) => {
+            if matches!(
+                crate::output::OutputFormat::parse(output_format),
+                crate::output::OutputFormat::Json
+            ) {
+                let payload = serde_json::json!({
+                    "status": "ok",
+                    "action": "login",
+                    "provider": provider,
+                    "saved": true,
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+            } else {
+                println!("✓ Credentials for {} saved.", provider.green());
+            }
+        }
         Err(e) => {
             eprintln!("{} {}", "Error:".red(), e);
             std::process::exit(1);
@@ -96,7 +115,11 @@ async fn login(provider_param: Option<String>, config_path: Option<String>) -> R
 }
 
 /// Handle the logout subcommand.
-async fn logout(provider_param: Option<String>, config_path: Option<String>) -> Result<()> {
+async fn logout(
+    provider_param: Option<String>,
+    config_path: Option<String>,
+    output_format: &str,
+) -> Result<()> {
     // Determine provider name
     let provider = match provider_param {
         Some(p) => p,
@@ -105,8 +128,38 @@ async fn logout(provider_param: Option<String>, config_path: Option<String>) -> 
 
     // Remove the credential
     match remove_credential(&provider, config_path).await {
-        Ok(true) => println!("✓ Credentials for {} removed.", provider.green()),
-        Ok(false) => println!("No credentials found for {}.", provider.yellow()),
+        Ok(true) => {
+            if matches!(
+                crate::output::OutputFormat::parse(output_format),
+                crate::output::OutputFormat::Json
+            ) {
+                let payload = serde_json::json!({
+                    "status": "ok",
+                    "action": "logout",
+                    "provider": provider,
+                    "removed": true,
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+            } else {
+                println!("✓ Credentials for {} removed.", provider.green());
+            }
+        }
+        Ok(false) => {
+            if matches!(
+                crate::output::OutputFormat::parse(output_format),
+                crate::output::OutputFormat::Json
+            ) {
+                let payload = serde_json::json!({
+                    "status": "ok",
+                    "action": "logout",
+                    "provider": provider,
+                    "removed": false,
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+            } else {
+                println!("No credentials found for {}.", provider.yellow());
+            }
+        }
         Err(e) => {
             eprintln!("{} {}", "Error:".red(), e);
             std::process::exit(1);

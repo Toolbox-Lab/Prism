@@ -262,8 +262,7 @@ pub fn default_network() -> NetworkConfig {
 /// Validate that a network configuration is reachable.
 #[allow(dead_code)]
 pub async fn validate_network(config: &NetworkConfig) -> bool {
-    let timeout = Duration::from_secs(config.request_timeout_secs);
-    let transport = JsonRpcTransport::new(&config.rpc_url, 0, timeout);
+    let transport = JsonRpcTransport::new(&config.rpc_url, 0);
     let req = JsonRpcRequest::new(1, "getHealth", GetHealthParams {});
     transport
         .call::<_, serde_json::Value>(&req)

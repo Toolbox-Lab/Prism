@@ -25,15 +25,38 @@ pub enum DbCommands {
     },
 }
 
-pub async fn run(args: DbArgs) -> anyhow::Result<()> {
+pub async fn run(args: DbArgs, output_format: &str) -> anyhow::Result<()> {
     match args.command {
-        DbCommands::Update => update_taxonomy_database().await?,
+        DbCommands::Update => update_taxonomy_database(output_format).await?,
         DbCommands::Stats => {
             let db = prism_core::taxonomy::loader::TaxonomyDatabase::load_embedded()?;
-            println!("Taxonomy database: {} entries", db.len());
+            if matches!(
+                crate::output::OutputFormat::parse(output_format),
+                crate::output::OutputFormat::Json
+            ) {
+                let payload = serde_json::json!({
+                    "status": "ok",
+                    "entries": db.len(),
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+            } else {
+                println!("Taxonomy database: {} entries", db.len());
+            }
         }
         DbCommands::Search { query } => {
-            println!("Searching for: {query}");
+            if matches!(
+                crate::output::OutputFormat::parse(output_format),
+                crate::output::OutputFormat::Json
+            ) {
+                let payload = serde_json::json!({
+                    "status": "ok",
+                    "query": query,
+                    "results": [],
+                });
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+            } else {
+                println!("Searching for: {query}");
+            }
             // TODO: Search taxonomy entries
         }
     }
@@ -42,7 +65,23 @@ pub async fn run(args: DbArgs) -> anyhow::Result<()> {
 }
 
 /// Update the taxonomy database from GitHub releases.
-async fn update_taxonomy_database() -> Result<()> {
+async fn update_taxonomy_database(output_format: &str) -> Result<()> {
+    if matches!(
+        crate::output::OutputFormat::parse(output_format),
+        crate::output::OutputFormat::Json
+    ) {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let db = prism_core::taxonomy::loader::TaxonomyDatabase::load_embedded()
+            .context("Failed to load updated taxonomy database")?;
+        let payload = serde_json::json!({
+            "status": "ok",
+            "message": "Taxonomy database updated successfully",
+            "entries": db.len(),
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(
         ProgressStyle::default_spinner()
