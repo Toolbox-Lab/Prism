@@ -156,12 +156,16 @@ async fn main() -> anyhow::Result<()> {
             commands::profile::run(args, &network, &cli.output, save).await?
         }
         Commands::Diff(args) => commands::diff::run(args, &network, &cli.output, save).await?,
-        Commands::Replay(args) => commands::replay::run(args, &network, &cli.quiet).await?,
+        Commands::Replay(args) => {
+            commands::replay::run(args, &network, &cli.output, &cli.quiet).await?
+        }
         Commands::Whatif(args) => commands::whatif::run(args, &network, &cli.output, save).await?,
-        Commands::Export(args) => commands::export::run(args, &network, &cli.quiet).await?,
-        Commands::Clean(args) => commands::clean::run(args).await?,
-        Commands::Db(args) => commands::db::run(args).await?,
-        Commands::Auth(args) => commands::auth::run(args).await?,
+        Commands::Export(args) => {
+            commands::export::run(args, &network, &cli.output, &cli.quiet).await?
+        }
+        Commands::Clean(args) => commands::clean::run(args, &cli.output).await?,
+        Commands::Db(args) => commands::db::run(args, &cli.output).await?,
+        Commands::Auth(args) => commands::auth::run(args, &cli.output).await?,
     }
 
     Ok(())

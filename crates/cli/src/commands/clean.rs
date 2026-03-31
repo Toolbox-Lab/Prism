@@ -7,11 +7,11 @@ use std::path::Path;
 #[derive(Args)]
 pub struct CleanArgs;
 
-pub async fn run(_args: CleanArgs) -> anyhow::Result<()> {
+pub async fn run(_args: CleanArgs, output_format: &str) -> anyhow::Result<()> {
     let cache_dir = prism_cache_dir()?;
 
     if !cache_dir.exists() {
-        println!("Successfully cleared 0MB of cache data");
+        print_clean_result(0, output_format)?;
         return Ok(());
     }
 
@@ -28,10 +28,25 @@ pub async fn run(_args: CleanArgs) -> anyhow::Result<()> {
         )
     })?;
 
-    println!(
-        "Successfully cleared {}MB of cache data",
-        format_mb(total_bytes)
-    );
+    print_clean_result(total_bytes, output_format)?;
+
+    Ok(())
+}
+
+fn print_clean_result(total_bytes: u64, output_format: &str) -> anyhow::Result<()> {
+    if matches!(
+        crate::output::OutputFormat::parse(output_format),
+        crate::output::OutputFormat::Json
+    ) {
+        let payload = serde_json::json!({
+            "status": "ok",
+            "bytes_cleared": total_bytes,
+            "mb_cleared": format_mb(total_bytes),
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!("Successfully cleared {}MB of cache data", format_mb(total_bytes));
+    }
 
     Ok(())
 }

@@ -14,13 +14,13 @@ pub mod json;
 pub mod renderers;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutputMode {
+pub enum OutputFormat {
     Human,
     Json,
     Short,
 }
 
-impl OutputMode {
+impl OutputFormat {
     pub fn parse(value: &str) -> Self {
         match value {
             "json" => Self::Json,
@@ -30,22 +30,24 @@ impl OutputMode {
     }
 }
 
+pub type OutputMode = OutputFormat;
+
 pub fn print_diagnostic_report(
     report: &DiagnosticReport,
     output_format: &str,
 ) -> anyhow::Result<()> {
-    match OutputMode::parse(output_format) {
-        OutputMode::Json => json::print_report(report),
-        OutputMode::Short => compact::print_report(report),
-        OutputMode::Human => human::print_report(report),
+    match OutputFormat::parse(output_format) {
+        OutputFormat::Json => json::print_report(report),
+        OutputFormat::Short => compact::print_report(report),
+        OutputFormat::Human => human::print_report(report),
     }
 }
 
 pub fn format_trace(trace: &ExecutionTrace, output_format: &str) -> anyhow::Result<String> {
-    Ok(match OutputMode::parse(output_format) {
-        OutputMode::Json => serde_json::to_string_pretty(trace)?,
-        OutputMode::Short => format_trace_summary(trace),
-        OutputMode::Human => format!("{trace:#?}"),
+    Ok(match OutputFormat::parse(output_format) {
+        OutputFormat::Json => serde_json::to_string_pretty(trace)?,
+        OutputFormat::Short => format_trace_summary(trace),
+        OutputFormat::Human => format!("{trace:#?}"),
     })
 }
 
@@ -53,10 +55,10 @@ pub fn print_resource_profile(
     profile: &ResourceProfile,
     output_format: &str,
 ) -> anyhow::Result<()> {
-    match OutputMode::parse(output_format) {
-        OutputMode::Json => println!("{}", serde_json::to_string_pretty(profile)?),
-        OutputMode::Short => println!("{}", format_resource_profile_summary(profile)),
-        OutputMode::Human => {
+    match OutputFormat::parse(output_format) {
+        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(profile)?),
+        OutputFormat::Short => println!("{}", format_resource_profile_summary(profile)),
+        OutputFormat::Human => {
             println!("{}", renderers::render_section_header("Resource Profile"));
             println!(
                 "{}",
@@ -78,10 +80,10 @@ pub fn print_resource_profile(
     Ok(())
 }
 pub fn print_state_diff(diff: &StateDiff, output_format: &str) -> anyhow::Result<()> {
-    match OutputMode::parse(output_format) {
-        OutputMode::Json => println!("{}", serde_json::to_string_pretty(diff)?),
-        OutputMode::Short => println!("{}", format_state_diff_summary(diff)),
-        OutputMode::Human => {
+    match OutputFormat::parse(output_format) {
+        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(diff)?),
+        OutputFormat::Short => println!("{}", format_state_diff_summary(diff)),
+        OutputFormat::Human => {
             println!("{}", colored::Colorize::bold("State Diff"));
             for entry in &diff.entries {
                 let symbol = match entry.change_type {
@@ -104,14 +106,14 @@ pub fn print_whatif_status(
     patch_count: Option<usize>,
     output_format: &str,
 ) -> anyhow::Result<()> {
-    match OutputMode::parse(output_format) {
-        OutputMode::Short => match (patch_file, patch_count) {
+    match OutputFormat::parse(output_format) {
+        OutputFormat::Short => match (patch_file, patch_count) {
             (Some(path), Some(count)) => {
                 println!("Status: Ready | Tx: {tx_hash} | Patches: {count} | Source: {path}");
             }
             _ => println!("Status: MissingModifyFile | Tx: {tx_hash}"),
         },
-        OutputMode::Json => {
+        OutputFormat::Json => {
             let payload = serde_json::json!({
                 "tx_hash": tx_hash,
                 "patch_file": patch_file,
@@ -120,7 +122,7 @@ pub fn print_whatif_status(
             });
             println!("{}", serde_json::to_string_pretty(&payload)?);
         }
-        OutputMode::Human => match patch_file {
+        OutputFormat::Human => match patch_file {
             Some(path) => println!("Patches loaded from {path}"),
             None => {
                 println!(
@@ -186,11 +188,11 @@ fn format_state_diff_summary(diff: &StateDiff) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::OutputMode;
+    use super::OutputFormat;
 
     #[test]
     fn parses_short_and_compact_as_short_mode() {
-        assert_eq!(OutputMode::parse("short"), OutputMode::Short);
-        assert_eq!(OutputMode::parse("compact"), OutputMode::Short);
+        assert_eq!(OutputFormat::parse("short"), OutputFormat::Short);
+        assert_eq!(OutputFormat::parse("compact"), OutputFormat::Short);
     }
 }
