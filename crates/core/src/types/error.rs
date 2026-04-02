@@ -13,6 +13,11 @@ pub enum PrismError {
     ArchiveError(String),
     /// Error decoding XDR data.
     XdrError(String),
+    /// XDR base64 decoding failed for a specific type.
+    ///
+    /// Returned by [`crate::xdr::codec::XdrCodec::from_xdr_base64`] when the
+    /// input is malformed or does not match the expected XDR type.
+    XdrDecodingFailed { type_name: &'static str, reason: String },
     /// Error parsing WASM or contract spec data.
     SpecError(String),
     /// Error in the local cache layer.
@@ -42,6 +47,9 @@ impl fmt::Display for PrismError {
             Self::RpcError(msg) => write!(f, "RPC error: {msg}"),
             Self::ArchiveError(msg) => write!(f, "Archive error: {msg}"),
             Self::XdrError(msg) => write!(f, "XDR error: {msg}"),
+            Self::XdrDecodingFailed { type_name, reason } => {
+                write!(f, "XDR decoding failed for {type_name}: {reason}")
+            }
             Self::SpecError(msg) => write!(f, "Spec error: {msg}"),
             Self::CacheError(msg) => write!(f, "Cache error: {msg}"),
             Self::TaxonomyError(msg) => write!(f, "Taxonomy error: {msg}"),
