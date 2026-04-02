@@ -12,6 +12,7 @@ pub mod compact;
 pub mod human;
 pub mod json;
 pub mod renderers;
+pub mod theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -69,8 +70,9 @@ pub fn print_resource_profile(
                 renderers::BudgetBar::new("Memory", profile.total_memory, profile.memory_limit)
                     .render()
             );
+            let palette = theme::ColorPalette::default();
             for warning in &profile.warnings {
-                println!("{} {warning}", colored::Colorize::yellow("⚠"));
+                println!("{} {warning}", palette.warning_text("⚠"));
             }
             println!();
             print!("{}", renderers::render_heatmap(profile));
@@ -84,13 +86,14 @@ pub fn print_state_diff(diff: &StateDiff, output_format: &str) -> anyhow::Result
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(diff)?),
         OutputFormat::Short => println!("{}", format_state_diff_summary(diff)),
         OutputFormat::Human => {
-            println!("{}", colored::Colorize::bold("State Diff"));
+            let palette = theme::ColorPalette::default();
+            println!("{}", palette.accent_text("State Diff"));
             for entry in &diff.entries {
                 let symbol = match entry.change_type {
-                    DiffChangeType::Created => colored::Colorize::green("+"),
-                    DiffChangeType::Deleted => colored::Colorize::red("-"),
-                    DiffChangeType::Updated => colored::Colorize::yellow("~"),
-                    DiffChangeType::Unchanged => colored::Colorize::dimmed(" "),
+                    DiffChangeType::Created => palette.success_text("+"),
+                    DiffChangeType::Deleted => palette.error_text("-"),
+                    DiffChangeType::Updated => palette.warning_text("~"),
+                    DiffChangeType::Unchanged => palette.muted_text(" "),
                 };
                 println!("{symbol} {}", entry.key);
             }

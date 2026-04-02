@@ -1,8 +1,7 @@
 //! `prism login` and `prism logout` — Manage API credentials for hosted services.
 
-use clap::{Args, Subcommand};
 use anyhow::{Result, anyhow};
-use colored::Colorize;
+use clap::{Args, Subcommand};
 use dialoguer::Select;
 use rpassword::prompt_password;
 use serde::{Deserialize, Serialize};
@@ -72,6 +71,8 @@ async fn login(
     config_path: Option<String>,
     output_format: &str,
 ) -> Result<()> {
+    let palette = crate::output::theme::ColorPalette::default();
+
     // Determine provider name
     let provider = match provider_param {
         Some(p) => p,
@@ -79,11 +80,14 @@ async fn login(
     };
 
     // Prompt for API key securely
-    let prompt = format!("Enter your API key for {}: ", provider.green());
+    let prompt = format!(
+        "Enter your API key for {}: ",
+        palette.success_text(&provider)
+    );
     let api_key = prompt_password(&prompt)?;
     
     if api_key.trim().is_empty() {
-        eprintln!("{}", "API key cannot be empty.".red());
+        eprintln!("{}", palette.error_text("API key cannot be empty."));
         std::process::exit(1);
     }
 
@@ -102,11 +106,11 @@ async fn login(
                 });
                 println!("{}", serde_json::to_string_pretty(&payload)?);
             } else {
-                println!("✓ Credentials for {} saved.", provider.green());
+                println!("✓ Credentials for {} saved.", palette.success_text(&provider));
             }
         }
         Err(e) => {
-            eprintln!("{} {}", "Error:".red(), e);
+            eprintln!("{} {}", palette.error_text("Error:"), e);
             std::process::exit(1);
         }
     }
@@ -120,6 +124,8 @@ async fn logout(
     config_path: Option<String>,
     output_format: &str,
 ) -> Result<()> {
+    let palette = crate::output::theme::ColorPalette::default();
+
     // Determine provider name
     let provider = match provider_param {
         Some(p) => p,
@@ -141,7 +147,7 @@ async fn logout(
                 });
                 println!("{}", serde_json::to_string_pretty(&payload)?);
             } else {
-                println!("✓ Credentials for {} removed.", provider.green());
+                println!("✓ Credentials for {} removed.", palette.success_text(&provider));
             }
         }
         Ok(false) => {
@@ -157,11 +163,11 @@ async fn logout(
                 });
                 println!("{}", serde_json::to_string_pretty(&payload)?);
             } else {
-                println!("No credentials found for {}.", provider.yellow());
+                println!("No credentials found for {}.", palette.warning_text(&provider));
             }
         }
         Err(e) => {
-            eprintln!("{} {}", "Error:".red(), e);
+            eprintln!("{} {}", palette.error_text("Error:"), e);
             std::process::exit(1);
         }
     }

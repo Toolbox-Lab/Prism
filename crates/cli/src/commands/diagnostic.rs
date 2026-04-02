@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use colored::Colorize;
 use directories::ProjectDirs;
+use crate::output::theme::ColorPalette;
 
 // ─── Args ────────────────────────────────────────────────────────────────────
 
@@ -42,11 +42,12 @@ impl Status {
         }
     }
 
-    fn label(&self) -> colored::ColoredString {
+    fn label(&self) -> String {
+        let palette = ColorPalette::default();
         match self {
-            Self::Ok => "  OK   ".green().bold(),
-            Self::Warning(_) => " WARN  ".yellow().bold(),
-            Self::Error(_) => " ERROR ".red().bold(),
+            Self::Ok => palette.success_text("  OK   "),
+            Self::Warning(_) => palette.warning_text(" WARN  "),
+            Self::Error(_) => palette.error_text(" ERROR "),
         }
     }
 }
@@ -264,9 +265,10 @@ fn dir_size_mib(path: &PathBuf) -> Result<u64> {
 // ─── Report ───────────────────────────────────────────────────────────────────
 
 fn print_report(checks: &[Check], quiet: bool) {
+    let palette = ColorPalette::default();
     let sep = "─".repeat(58);
-    println!("\n  {}", "Prism Diagnostic Report".bold());
-    println!("  {}\n", sep.dimmed());
+    println!("\n  {}", palette.accent_text("Prism Diagnostic Report"));
+    println!("  {}\n", palette.muted_text(&sep));
 
     for check in checks {
         if quiet && check.status.is_ok() {
@@ -274,11 +276,15 @@ fn print_report(checks: &[Check], quiet: bool) {
         }
         println!("  [{}]  {}", check.status.label(), check.name);
         if let Some(detail) = check.status.detail() {
-            println!("           {} {}", "└─".dimmed(), detail.dimmed());
+            println!(
+                "           {} {}",
+                palette.muted_text("└─"),
+                palette.muted_text(detail)
+            );
         }
     }
 
-    println!("\n  {}", sep.dimmed());
+    println!("\n  {}", palette.muted_text(&sep));
 
     let warnings = checks
         .iter()
@@ -287,12 +293,12 @@ fn print_report(checks: &[Check], quiet: bool) {
     let errors = checks.iter().filter(|c| c.status.is_error()).count();
 
     if errors == 0 && warnings == 0 {
-        println!("  {}\n", "All checks passed.".green().bold());
+        println!("  {}\n", palette.success_text("All checks passed."));
     } else {
         println!(
             "  {} warning(s), {} error(s).\n",
-            warnings.to_string().yellow(),
-            errors.to_string().red()
+            palette.warning_text(&warnings.to_string()),
+            palette.error_text(&errors.to_string())
         );
     }
 }
@@ -300,7 +306,8 @@ fn print_report(checks: &[Check], quiet: bool) {
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 pub async fn run(args: DiagnosticArgs) -> Result<()> {
-    println!("{}", "Running diagnostics…".dimmed());
+    let palette = ColorPalette::default();
+    println!("{}", palette.muted_text("Running diagnostics..."));
 
     let mut checks: Vec<Check> = Vec::new();
 

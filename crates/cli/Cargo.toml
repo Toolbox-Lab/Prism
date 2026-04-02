@@ -20,6 +20,7 @@ clap = { workspace = true }
 clap_complete = "4"
 anyhow = { workspace = true }
 colored = { workspace = true }
+owo-colors = "4"
 indicatif = { workspace = true }
 dialoguer = { workspace = true }
 tabled = { workspace = true }

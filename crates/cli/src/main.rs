@@ -77,6 +77,10 @@ struct Cli {
     /// Suppress non-essential output.
     #[arg(long, short, global = true)]
     quiet: bool,
+
+    /// Disable ANSI colors in terminal output.
+    #[arg(long, global = true)]
+    no_color: bool,
 }
 
 #[derive(Subcommand)]
@@ -128,9 +132,12 @@ async fn main() -> anyhow::Result<()> {
         output = %cli.output,
         network_arg = %cli.network,
         verbose = cli.verbose,
+        no_color = cli.no_color,
         config_loaded = loaded_config.is_some(),
         "CLI arguments parsed"
     );
+
+    output::theme::set_color_enabled(!cli.no_color);
 
     let mut network = prism_core::network::config::resolve_network(&cli.network);
     if let Some(ref rpc_url) = cli.rpc_url {

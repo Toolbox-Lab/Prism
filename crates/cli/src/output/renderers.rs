@@ -2,10 +2,10 @@
 
 #![allow(dead_code)]
 
-use colored::Colorize;
 use prism_core::types::report::TransactionContext;
 use prism_core::types::trace::ResourceProfile;
 use tabled::{Table, Tabled};
+use crate::output::theme::ColorPalette;
 
 const BAR_WIDTH: usize = 10;
 const HEAT_BLOCKS: [&str; 4] = ["░", "▒", "▓", "█"];
@@ -31,8 +31,9 @@ impl<'a> SectionHeader<'a> {
         let border = format!("+{}+", "-".repeat(inner.chars().count()));
         let middle = format!("|{}|", inner);
 
-        let border = border.cyan().bold().to_string();
-        let middle = middle.white().bold().to_string();
+        let palette = ColorPalette::default();
+        let border = palette.metadata_text(&border);
+        let middle = palette.accent_text(&middle);
 
         format!("{}\n{}\n{}", border, middle, border)
     }
@@ -61,12 +62,13 @@ impl BudgetBar {
         let empty = BAR_WIDTH.saturating_sub(filled);
         let bar_str = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
 
+        let palette = ColorPalette::default();
         let colored_bar = if pct >= 0.9 {
-            bar_str.red().bold().to_string()
+            palette.error_text(&bar_str)
         } else if pct >= 0.7 {
-            bar_str.yellow().to_string()
+            palette.warning_text(&bar_str)
         } else {
-            bar_str.green().to_string()
+            palette.success_text(&bar_str)
         };
 
         format!(
@@ -95,24 +97,26 @@ fn heat_cell(intensity: f64) -> String {
     let empty = BAR_WIDTH.saturating_sub(filled);
     let cell = format!("{}{}", block.repeat(filled), "░".repeat(empty));
 
+    let palette = ColorPalette::default();
     if intensity >= 0.75 {
-        cell.red().bold().to_string()
+        palette.error_text(&cell)
     } else if intensity >= 0.5 {
-        cell.yellow().to_string()
+        palette.warning_text(&cell)
     } else if intensity >= 0.25 {
-        cell.cyan().to_string()
+        palette.metadata_text(&cell)
     } else {
-        cell.dimmed().to_string()
+        palette.muted_text(&cell)
     }
 }
 
 /// Render a resource heatmap grid from a `ResourceProfile`.
 pub fn render_heatmap(profile: &ResourceProfile) -> String {
     if profile.hotspots.is_empty() {
+        let palette = ColorPalette::default();
         return format!(
             "{}\n  {}\n",
             render_section_header("Resource Heatmap"),
-            "No hotspot data available.".dimmed()
+            palette.muted_text("No hotspot data available.")
         );
     }
 
@@ -186,12 +190,13 @@ pub fn render_heatmap(profile: &ResourceProfile) -> String {
     }
 
     out.push('\n');
+    let palette = ColorPalette::default();
     out.push_str(&format!(
         "  Legend: {} cold  {} low  {} medium  {} hot\n",
-        "░░░░░░░░░░".dimmed(),
-        "▒▒▒▒▒▒▒▒▒▒".cyan(),
-        "▓▓▓▓▓▓▓▓▓▓".yellow(),
-        "██████████".red().bold(),
+        palette.muted_text("░░░░░░░░░░"),
+        palette.metadata_text("▒▒▒▒▒▒▒▒▒▒"),
+        palette.warning_text("▓▓▓▓▓▓▓▓▓▓"),
+        palette.error_text("██████████"),
     ));
 
     out
