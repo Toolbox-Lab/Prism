@@ -5,7 +5,9 @@ mod tui;
 mod ui;
 mod version_check;
 
-use clap::{ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{
+    ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand,
+};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 use url::Url;
@@ -13,7 +15,7 @@ use url::Url;
 const BUILD_HASH: &str = env!("GRAT_BUILD_HASH");
 
 #[derive(Parser)]
-#[command(name = "grat", version = env!("CARGO_PKG_VERSION"), about, long_about = None)]
+#[command(name = "grat", version = env!("CARGO_PACKAGE_VERSION"), about, long_about = None)]
 #[command(propagate_version = true)]
 #[command(before_help = ui::logo::GRAT_LOGO)]
 struct Cli {
@@ -48,6 +50,9 @@ struct Cli {
 
     #[arg(long, global = true, help = "Disable network requests for updates")]
     offline: bool,
+
+    #[arg(long, global = true, help = "Bypass local cache and query network providers")]
+    no_cache: bool,
 }
 
 #[derive(Subcommand)]
@@ -120,6 +125,7 @@ async fn main() -> anyhow::Result<()> {
         network_arg = %cli.network,
         verbose = cli.verbose,
         no_color = cli.no_color,
+        no_cache = cli.no_cache,
         config_loaded = loaded_config.is_some(),
         "CLI arguments parsed"
     );
@@ -130,11 +136,13 @@ async fn main() -> anyhow::Result<()> {
     if let Some(ref rpc_url) = cli.rpc_url {
         network.rpc_url = rpc_url.clone();
     }
+    network.no_cache = cli.no_cache;
 
     tracing::debug!(
         resolved_network = ?network.network,
         rpc_url = %network.rpc_url,
         archive_url_count = network.archive_urls.len(),
+        no_cache = network.no_cache,
         "Resolved network configuration"
     );
 
@@ -261,8 +269,7 @@ mod tests {
 
     #[test]
     fn parses_trace_output_file_flag_with_positional_tx_hash() {
-        let cli = Cli::try_parse_from(["grat", "trace", "abc123", "--output-file", "trace.json"])
-            .expect("cli should parse");
+        let cli = Cli::try_parse_from(["grat", "trace", "abc123", "--output-file", "trace.json"]).expect("cli should parse");
 
         match cli.command {
             Commands::Trace(args) => {
@@ -303,6 +310,17 @@ mod tests {
         let cli = Cli::try_parse_from(["grat", "trace", &tx_hash, "--save", "out.json"])
             .expect("--save after subcommand should parse");
         assert_eq!(cli.save.as_deref(), Some("out.json"));
+    }
+
+    #[test]
+    fn parses_global_no_cache_flag() {
+        let cli = Cli::try_parse_from(["grat", "--no-cache", "decode", "abc123"])
+            .expect("--no-cache before subcommand should parse");
+        assert!(cli.no_cache);
+
+        let cli = Cli::try_parse_from(["grat", "decode", "abc123", "--no-cache"])
+            .expect("--no-cache after subcommand should parse");
+        assert!(cli.no_cache);
     }
 
     #[test]

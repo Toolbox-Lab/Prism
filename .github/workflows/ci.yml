@@ -1,84 +1,33 @@
 name: CI
-on:  push:
+on:
+  push:
     branches: ["main", "master"]
   pull_request:
     branches: ["main", "master"]
 env:
   CARGO_TERM_COLOR: always
 jobs:
-  rust_checks:
-    name: Rust Checks
+  checks:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "rust-cache"
-
-      - name: Format code
-        run: cargo fmt --all
-
-      - name: Check formatting
-        run: cargo fmt --all
-
-      - name: Build
-        run: cargo build --workspace --all-targets --all-features
-
-      - name: Lint taxonomy TOML
-        run: bash scripts/lint_taxonomy.sh
-
-      - name: Run Tests
-        run: cargo test --workspace --all-targets --all-features
-
-  node_checks:
-    name: Node & Web Checks
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - run: cargo fmt --all -- --check
+      - run: cargo build --workspace --all-targets --all-features
+      - run: bash scripts/lint_taxonomy.sh
+      - run: cargo test --workspace --all-targets --all-features
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v4
         with:
           version: 9
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_EN
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: $ { env.STORE_PATH }
-          key: $) { runner.os }}-pnpm-store-$) { hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            $) { runner.os }}-pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm lint
-      - name: Typecheck
-        run: pnpm typecheck
-      - name: Build Web
-        run: pnpm run build:web
-      - name: Build Server
-        run: pnpm run build:server
-      - name: Build VSCode Extension
-        run: pnpm run build:vscode
-        continue-on-error: true # Might require vsce or specific environment
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm run build:web
+      - run: pnpm run build:server
+      - run: pnpm run build:vscode
+        continue-on-error: true
