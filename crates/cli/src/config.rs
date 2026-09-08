@@ -127,4 +127,56 @@ mod tests {
         let path = manager.path().to_string_lossy();
         assert!(path.ends_with(".grat/config.toml") || path.ends_with(".grat\\config.toml"));
     }
+
+    #[test]
+    fn load_strict_errors_when_file_missing() {
+        let path = unique_path("strict_missing").join("no_such_file.toml");
+        let manager = ConfigManager::with_path(path.clone());
+
+        let result = manager.load_strict();
+
+        assert!(result.is_err(), "expected Err when file does not exist");
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(
+            msg.contains(&path.to_string_lossy().to_string()),
+            "error message should contain the path; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn load_strict_errors_on_invalid_toml() {
+        let path = unique_path("strict_bad_toml");
+        std::fs::write(&path, b"not valid toml ]][\n").expect("write bad toml");
+
+        let manager = ConfigManager::with_path(path.clone());
+        let result = manager.load_strict();
+
+        let _ = std::fs::remove_file(&path);
+
+        assert!(result.is_err(), "expected Err for invalid TOML");
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(
+            msg.contains(&path.to_string_lossy().to_string()),
+            "error message should contain the path; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn load_strict_succeeds_on_valid_toml() {
+        let path = unique_path("strict_valid_toml.toml");
+        let toml_content = r#"
+default_network = "testnet"
+max_cache_size_mb = 256
+networks = []
+"#;
+        std::fs::write(&path, toml_content).expect("write valid toml");
+
+        let manager = ConfigManager::with_path(path.clone());
+        let result = manager.load_strict();
+
+        let _ = std::fs::remove_file(&path);
+
+        let config = result.expect("load_strict should succeed on valid TOML");
+        assert_eq!(config.max_cache_size_mb, 256);
+    }
 }
