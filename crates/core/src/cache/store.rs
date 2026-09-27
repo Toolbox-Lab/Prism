@@ -1,5 +1,7 @@
 use crate::error::{GratError, GratResult};
 
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+
 use std::cmp::Ordering;
 
 use std::path::{Path, PathBuf};
@@ -28,6 +30,12 @@ impl CacheCategory {
     }
 }
 
+static CACHE_BYPASS: AtomicBool = AtomicBool::new(false);
+
+pub fn set_bypass(enabled: bool) {
+    CACHE_BYPASS.store(enabled, AtomicOrdering::Relaxed);
+}
+
 pub struct CacheStore {
     cache_dir: PathBuf,
     max_size: u64,
@@ -39,8 +47,10 @@ impl CacheStore {
     }
 
     pub fn with_max_size_bytes(cache_dir: PathBuf, max_size_bytes: u64) -> GratResult<Self> {
-        std::fs::create_dir_all(&cache_dir)
-            .map_err(|e| GratError::CacheError(format!("Failed to create cache dir: {e}")))?;
+        if !CACHE_BYPASS.load(AtomicOrdering::Relaxed) {
+            std::fs::create_dir_all(&cache_dir)
+                .map_err(|e| GratError::CacheError(format!("Failed to create cache dir: {}", e)))?;
+        }
 
         Ok(Self {
             cache_dir,
@@ -58,6 +68,10 @@ impl CacheStore {
     }
 
     pub fn put(&self, category: CacheCategory, key: &str, value: &[u8]) -> GratResult<()> {
+        if CACHE_BYPASS.load(AtomicOrdering::Relaxed) {
+            return Ok(());
+        }
+
         let new_size = value.len() as u64;
         if new_size > self.max_size {
             return Err(GratError::CacheError(format!(
@@ -68,6 +82,7 @@ impl CacheStore {
 
         // Ensure we can fit the new entry by evicting least-recently-used files.
         let current_size = self.total_cache_size()?;
+
         if current_size.saturating_add(new_size) > self.max_size {
             self.evict_lru_to_fit(new_size)?;
         }
@@ -75,15 +90,19 @@ impl CacheStore {
         let path = self.entry_path(category, key);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| GratError::CacheError(format!("Failed to create dir: {e}")))?;
+                .map_err(|e| GratError::CacheError(format!("Failed to create dir: {}", e)))?;
         }
 
         std::fs::write(&path, value)
-            .map_err(|e| GratError::CacheError(format!("Failed to write cache entry: {e}")))?;
+            .map_err(|e| GratError::CacheError(format!("Failed to write cache entry: {}", e)))?;
         Ok(())
     }
 
     pub fn get(&self, category: CacheCategory, key: &str) -> GratResult<Option<Vec<u8>>> {
+        if CACHE_BYPASS.load(AtomicOrdering::Relaxed) {
+            return Ok(None);
+        }
+
         let path = self.entry_path(category, key);
         if path.exists() {
             // Explicitly update access metadata to ensure LRU eviction works even if atime is disabled.
@@ -96,7 +115,7 @@ impl CacheStore {
                 );
             }
             let data = std::fs::read(&path)
-                .map_err(|e| GratError::CacheError(format!("Failed to read cache entry: {e}")))?;
+                .map_err(|e| GratError::CacheError(format!("Failed to read cache entry: {}", e)))?;
             Ok(Some(data))
         } else {
             Ok(None)
@@ -104,24 +123,35 @@ impl CacheStore {
     }
 
     pub fn contains(&self, category: CacheCategory, key: &str) -> bool {
+        if CACHE_BYPASS.load(AtomicOrdering::Relaxed) {
+            return false;
+        }
         self.entry_path(category, key).exists()
     }
 
     pub fn remove(&self, category: CacheCategory, key: &str) -> GratResult<()> {
+        if CACHE_BYPASS.load(AtomicOrdering::Relaxed) {
+            return Ok(());
+        }
+
         let path = self.entry_path(category, key);
         if path.exists() {
             std::fs::remove_file(&path)
-                .map_err(|e| GratError::CacheError(format!("Failed to remove cache entry: {e}")))?;
+                .map_err(|e| GratError::CacheError(format!("Failed to remove cache entry: {}", e)))?;
         }
         Ok(())
     }
 
     pub fn clear(&self) -> GratResult<()> {
+        if CACHE_BYPASS.load(AtomicOrdering::Relaxed) {
+            return Ok(());
+        }
+
         if self.cache_dir.exists() {
             std::fs::remove_dir_all(&self.cache_dir)
-                .map_err(|e| GratError::CacheError(format!("Failed to clear cache: {e}")))?;
+                .map_err(|e| GratError::CacheError(format!("Failed to clear cache: {}", e)))?;
             std::fs::create_dir_all(&self.cache_dir)
-                .map_err(|e| GratError::CacheError(format!("Failed to recreate cache dir: {e}")))?;
+                .map_err(|e| GratError::CacheError(format!("Failed to recreate cache dir: {}", e)))?;
         }
         Ok(())
     }
@@ -137,11 +167,11 @@ impl CacheStore {
             return Ok(0);
         }
 
-        for entry in walk_dir_files(&self.cache_dir) {
+        for entry in wall_dir_files(&self.cache_dir) {
             let size = entry
                 .metadata()
                 .map_err(|e| {
-                    GratError::CacheError(format!("Failed to read cache file metadata: {e}"))
+                    GratError::CacheError(format!("Failed to read cache file metadata: {}", e))
                 })?
                 .len();
             total = total.saturating_add(size);
@@ -160,12 +190,15 @@ impl CacheStore {
 
             let mut files = Vec::new();
             if self.cache_dir.exists() {
-                for entry in walk_dir_files(&self.cache_dir) {
+                for entry in wall_dir_files(&self.cache_dir) {
                     let meta = entry.metadata().map_err(|e| {
-                        GratError::CacheError(format!("Failed to read cache file metadata: {e}"))
+                        GratError::CacheError(format!("Failed to read cache file metadata: {}", e))
                     })?;
 
-                    let accessed = meta.accessed().unwrap_or(SystemTime::UNIX_EPOCH);
+                    let accessed = meta
+                        .accessed()
+                        .or_else(|_| meta.modified())
+                        .unwrap_or(SystemTime::UNIX_EPOCH);
                     let modified = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
                     let last_used = std::cmp::max(accessed, modified);
 
@@ -183,10 +216,10 @@ impl CacheStore {
 
             // Oldest first => delete until we create headroom.
             files.sort_by(|a, b| {
-                let ord = a.0.cmp(&b.0);
+                let ord = a.0.cmp(b.0);
                 if ord == Ordering::Equal {
                     // Stable tie-breaker: delete longer ago deterministically.
-                    a.1.path().cmp(&b.1.path())
+                    a.1.path().cmp(b.1.path())
                 } else {
                     ord
                 }
@@ -195,11 +228,13 @@ impl CacheStore {
             let (oldest_ts, oldest_file) = files.into_iter().next().expect("checked empty");
 
             let path = oldest_file.path();
+
             // Best-effort delete.
             std::fs::remove_file(&path).map_err(|e| {
                 GratError::CacheError(format!(
-                    "Failed to evict cache file {}: {e}",
-                    path.display()
+                    "Failed to evict cache file {}: {}",
+                    path.display(),
+                    e
                 ))
             })?;
 
@@ -209,7 +244,7 @@ impl CacheStore {
     }
 }
 
-fn walk_dir_files(dir: &Path) -> Vec<std::fs::DirEntry> {
+fn wall_dir_files(dir: &Path) -> Vec<std::fs::DirEntry> {
     fn visit_dir(dir: &Path, out: &mut Vec<std::fs::DirEntry>) {
         if let Ok(read_dir) = std::fs::read_dir(dir) {
             for e in read_dir.flatten() {
@@ -268,6 +303,25 @@ mod tests {
         assert!(store.contains(CacheCategory::WasmBlob, "key1"));
         assert!(!store.contains(CacheCategory::WasmBlob, "key2"));
         assert!(store.contains(CacheCategory::WasmBlob, "key3"));
+
+        store.clear().unwrap();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_cache_bypass_returns_miss() {
+        let dir = std::env::temp_dir().join("grat_test_bypass");
+        let store = CacheStore::new(dir.clone(), 10).unwrap();
+        store.put(CacheCategory::WasmBlob, "key", b"data").unwrap();
+
+        set_bypass(true);
+        let result = store.get(CacheCategory::WasmBlob, "key").unwrap();
+        assert_eq!(result, None);
+        assert!(!store.contains(CacheCategory::WasmBlob, "key"));
+
+        set_bypass(false);
+        let result = store.get(CacheCategory::WasmBlob, "key").unwrap();
+        assert_eq!(result, Some(b"data".to_vec()));
 
         store.clear().unwrap();
         let _ = std::fs::remove_dir_all(dir);

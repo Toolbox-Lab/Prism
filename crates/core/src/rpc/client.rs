@@ -87,6 +87,7 @@ pub struct SorobanRpcClient {
     client: reqwest::Client,
 
     rpc_url: String,
+    no_cache: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -129,6 +130,7 @@ impl SorobanRpcClient {
         Self {
             client,
             rpc_url: config.rpc_url.clone(),
+            no_cache: config.no_cache,
         }
     }
 
@@ -142,6 +144,15 @@ impl SorobanRpcClient {
             .build()
             .expect("Failed to build reqwest client");
         self
+    }
+
+    pub fn with_no_cache(mut self, no_cache: bool) -> Self {
+        self.no_cache = no_cache;
+        self
+    }
+
+    pub fn no_cache(&self) -> bool {
+        self.no_cache
     }
 
     pub async fn get_transaction(&self, tx_hash: &str) -> GratResult<GetTransactionResponse> {
@@ -250,7 +261,12 @@ impl SorobanRpcClient {
             let started = Instant::now();
             tracing::debug!(method, endpoint = %self.rpc_url, attempt, "Sending RPC request");
 
-            match self.client.post(&self.rpc_url).json(&request).send().await {
+            let mut http_request = self.client.post(&self.rpc_url).json(&request);
+            if self.no_cache {
+                http_request = http_request.header("Cache-Control", "no-cache");
+            }
+
+            match http_request.send().await {
                 Ok(response) => {
                     let status = response.status();
                     let elapsed_ms = started.elapsed().as_millis();
@@ -326,49 +342,28 @@ impl SorobanRpcClient {
                         .map_err(|e| GratError::RpcError(format!("Response parse error: {e}")))?;
 
                     if let Some(err) = rpc_response.error {
-                        tracing::debug!(
-                            method,
-                            endpoint = %self.rpc_url,
-                            attempt,
-                            error = %err.message,
-                            code = err.code,
-                            "RPC returned an error response"
-                        );
-                        return Err(GratError::JsonRpc(err));
+                        return Err(GratError::RpcError(format!("JSON-RPC error: {err:?}")));
                     }
 
-                    return rpc_response
-                        .result
-                        .ok_or_else(|| GratError::RpcError("Empty result in RPC response".into()));
+                    if let Some(result) = rpc_response.result {
+                        return Ok(result);
+                    }
+
+                    return Err(GratError::RpcError("RPC response missing result".to_string()));
                 }
                 Err(e) => {
-                    let elapsed_ms = started.elapsed().as_millis();
-                    let duration_secs = started.elapsed().as_secs_f64();
-                    crate::rpc::record_rpc_duration(&self.rpc_url, method, duration_secs);
-                    tracing::info!(
-                        method,
-                        endpoint = %self.rpc_url,
-                        attempt,
-                        elapsed_ms,
-                        error = %e,
-                        "RPC request latency"
-                    );
-                    tracing::debug!(
-                        method,
-                        endpoint = %self.rpc_url,
-                        attempt,
-                        elapsed_ms,
-                        error = %e,
-                        "RPC request failed"
-                    );
-                    last_error = Some(GratError::RpcError(format!("HTTP request failed: {e}")));
+                    tracing::error!(error = %e, "Network error sending RPC request");
+                    last_error = Some(GratError::RpcError(format!("Network error: {e}")));
+                    continue;
                 }
             }
         }
-
-        Err(last_error.unwrap_or_else(|| GratError::RpcError("Unknown RPC error".into())))
+        Err(last_error.unwrap_or_else(|| {
+            GratError::RpcError("RPC request failed after all retries".to_string())
+        }))
     }
 }
+
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,5 @@
 use crate::error::{GratError, GratResult};
-use crate::rpc::jsonrpc::{GetHealthParams, JsonRpcRequest, JsonRpcTransport};
+use crate::rpc::jsonrp::{GetHealthParams, JsonRpRequest, JsonRpTransport};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -45,9 +45,8 @@ impl Network {
             "testnet" | "test" => Self::Testnet,
             "futurenet" | "future" => Self::Futurenet,
             "local" | "localhost" | "standalone" => Self::Custom(Self::LOCAL.to_string()),
-            _ if trimmed.starts_with("http://") || trimmed.starts_with("https://") => {
-                Self::Custom(trimmed.to_string())
-            }
+            _ if trimmed.starts_with("http://") || trimmed.starts_with("https://") =>
+                Self::Custom(trimmed.to_string()),
             _ => Self::Custom(trimmed.to_string()),
         };
 
@@ -91,7 +90,7 @@ impl Network {
 }
 
 impl fmt::Display for Network {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(self.as_key())
     }
 }
@@ -119,6 +118,7 @@ impl<'de> Deserialize<'de> for Network {
         D: serde::Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
+
         Self::parse(&value).map_err(serde::de::Error::custom)
     }
 }
@@ -136,6 +136,9 @@ pub struct NetworkConfig {
     pub api_key: Option<String>,
 
     pub request_timeout_secs: u64,
+
+    #[serde(default)]
+    pub no_cache: bool,
 }
 
 impl NetworkConfig {
@@ -146,10 +149,11 @@ impl NetworkConfig {
             network_passphrase: TESTNET_PASSPHRASE.to_string(),
             archive_urls: TESTNET_ARCHIVE_URLS
                 .iter()
-                .map(|url| (*url).to_string())
+                .map(|url| url.to_string())
                 .collect(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -160,10 +164,11 @@ impl NetworkConfig {
             network_passphrase: MAINNET_PASSPHRASE.to_string(),
             archive_urls: MAINNET_ARCHIVE_URLS
                 .iter()
-                .map(|url| (*url).to_string())
+                .map(|url| url.to_string())
                 .collect(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -174,10 +179,11 @@ impl NetworkConfig {
             network_passphrase: FUTURENET_PASSPHRASE.to_string(),
             archive_urls: FUTURENET_ARCHIVE_URLS
                 .iter()
-                .map(|url| (*url).to_string())
+                .map(|url| url.to_string())
                 .collect(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -189,6 +195,7 @@ impl NetworkConfig {
             archive_urls: Vec::new(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -204,6 +211,7 @@ impl NetworkConfig {
             archive_urls: Vec::new(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -220,9 +228,9 @@ impl NetworkConfig {
             Network::Custom(name) if name.eq_ignore_ascii_case(Network::LOCAL) => Self::local(),
             Network::Custom(name)
                 if name.starts_with("http://") || name.starts_with("https://") =>
-            {
-                Self::custom(name.clone(), name, "")
-            }
+                {
+                    Self::custom(name.clone(), name, "")
+                },
             Network::Custom(name) => Self::custom(name, "", ""),
         }
     }
@@ -248,8 +256,8 @@ pub fn default_network() -> NetworkConfig {
 
 #[allow(dead_code)]
 pub async fn validate_network(config: &NetworkConfig) -> bool {
-    let transport = JsonRpcTransport::new(&config.rpc_url, 0);
-    let req = JsonRpcRequest::new(1, "getHealth", GetHealthParams {});
+    let transport = JsonRpTransport::new(&config.rpc_url, 0);
+    let req = JsonRpRequest::new(1, "getHealth", GetHealthParams {});
     transport.call::<_, serde_json::Value>(&req).await.is_ok()
 }
 
