@@ -7,6 +7,7 @@
 //! module renders any `ScVal` into plain JSON.
 
 use crate::decode::auth::scaddress_to_strkey;
+use crate::decode::recursive_decoder::TypeRef;
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use stellar_xdr::curr::{
@@ -29,7 +30,11 @@ const MAX_SCVAL_DEPTH: usize = 100;
 /// The conversion never fails and never panics: unsupported combinations
 /// simply degrade to a best-effort JSON representation, and nesting beyond
 /// [`MAX_SCVAL_DEPTH`] is truncated in place rather than recursed into.
-pub fn scval_to_json(val: &ScVal) -> Value {
+pub fn scval_to_json(val: &ScVal, type_ref: Option<TypeRef<'_>>) -> Value {
+    if let Some(type_ref) = type_ref {
+        return crate::decode::recursive_decoder::RecursiveTypeDecoder::new()
+            .decode(val, Some(type_ref));
+    }
     convert(val, 0)
 }
 
@@ -257,6 +262,10 @@ mod tests {
 
     fn sym(s: &str) -> ScVal {
         ScVal::Symbol(ScSymbol(StringM::try_from(s.as_bytes().to_vec()).unwrap()))
+    }
+
+    fn scval_to_json(val: &ScVal) -> Value {
+        super::scval_to_json(val, None)
     }
 
     #[test]
