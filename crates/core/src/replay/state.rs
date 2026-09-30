@@ -1,12 +1,9 @@
-
-
-use crate::types::config::NetworkConfig;
 use crate::error::{PrismError, PrismResult};
+use crate::types::config::NetworkConfig;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct LedgerState {
-
     pub ledger_sequence: u32,
 
     pub entries: HashMap<String, Vec<u8>>,
@@ -16,7 +13,6 @@ pub struct LedgerState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReconstructionPath {
-
     HotPath,
 
     ColdPath,
@@ -28,9 +24,9 @@ pub async fn reconstruct_state(tx_hash: &str, network: &NetworkConfig) -> PrismR
     let rpc = crate::rpc::SorobanRpcClient::new(network);
 
     let tx_data = rpc.get_transaction(tx_hash).await?;
-    let tx_ledger = tx_data
-        .ledger
-        .ok_or_else(|| PrismError::ReplayError("Cannot determine transaction ledger".to_string()))?;
+    let tx_ledger = tx_data.ledger.ok_or_else(|| {
+        PrismError::ReplayError("Cannot determine transaction ledger".to_string())
+    })?;
 
     let latest: serde_json::Value = rpc.get_latest_ledger().await?;
     let latest_ledger = latest

@@ -1,5 +1,3 @@
-
-
 pub use crate::network::config::{Network, NetworkConfig};
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +5,6 @@ pub const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrismConfig {
-
     pub default_network: Network,
 
     pub networks: Vec<NetworkConfig>,
@@ -51,6 +48,9 @@ mod tests {
             Network::Futurenet.default_rpc_url(),
             "https://rpc-futurenet.stellar.org"
         );
-        assert_eq!(Network::Custom("local".to_string()).default_rpc_url(), "http://127.0.0.1:8000/rpc");
+        assert_eq!(
+            Network::Custom("local".to_string()).default_rpc_url(),
+            "http://127.0.0.1:8000/rpc"
+        );
     }
 }

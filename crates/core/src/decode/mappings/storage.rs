@@ -1,10 +1,7 @@
-
-
 use crate::types::report::Severity;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageErrorDetail {
-
     pub code: u32,
 
     pub name: &'static str,
@@ -48,7 +45,9 @@ pub const STORAGE_ERROR_DETAILS: &[StorageErrorDetail] = &[
 ];
 
 pub fn lookup(code: u32) -> Option<&'static StorageErrorDetail> {
-    STORAGE_ERROR_DETAILS.iter().find(|detail| detail.code == code)
+    STORAGE_ERROR_DETAILS
+        .iter()
+        .find(|detail| detail.code == code)
 }
 
 #[cfg(test)]

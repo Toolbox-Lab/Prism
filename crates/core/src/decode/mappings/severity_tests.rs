@@ -215,7 +215,10 @@ mod tests {
         for entry in BUDGET_ERROR_DETAILS {
             let sev: Severity = entry.severity.clone().into();
             assert!(
-                matches!(sev, Severity::Fatal | Severity::Error | Severity::Warning | Severity::Info),
+                matches!(
+                    sev,
+                    Severity::Fatal | Severity::Error | Severity::Warning | Severity::Info
+                ),
                 "Unexpected severity for budget code {}: {:?}",
                 entry.code,
                 sev
@@ -230,7 +233,10 @@ mod tests {
         for entry in VALUE_ERROR_DETAILS {
             let sev: Severity = entry.severity.clone().into();
             assert!(
-                matches!(sev, Severity::Fatal | Severity::Error | Severity::Warning | Severity::Info),
+                matches!(
+                    sev,
+                    Severity::Fatal | Severity::Error | Severity::Warning | Severity::Info
+                ),
                 "Unexpected severity for value code {}: {:?}",
                 entry.code,
                 sev
@@ -244,7 +250,10 @@ mod tests {
 
         for entry in STORAGE_ERROR_DETAILS {
             assert!(
-                matches!(entry.severity, Severity::Fatal | Severity::Error | Severity::Warning | Severity::Info),
+                matches!(
+                    entry.severity,
+                    Severity::Fatal | Severity::Error | Severity::Warning | Severity::Info
+                ),
                 "Unexpected severity for storage code {}: {:?}",
                 entry.code,
                 entry.severity
@@ -258,7 +267,10 @@ mod tests {
 
         for entry in CONTEXT_ERROR_DETAILS {
             assert!(
-                matches!(entry.severity, Severity::Fatal | Severity::Error | Severity::Warning | Severity::Info),
+                matches!(
+                    entry.severity,
+                    Severity::Fatal | Severity::Error | Severity::Warning | Severity::Info
+                ),
                 "Unexpected severity for context code {}: {:?}",
                 entry.code,
                 entry.severity
@@ -272,7 +284,10 @@ mod tests {
 
         for entry in AUTH_ERROR_DETAILS {
             assert!(
-                matches!(entry.severity, Severity::Fatal | Severity::Error | Severity::Warning | Severity::Info),
+                matches!(
+                    entry.severity,
+                    Severity::Fatal | Severity::Error | Severity::Warning | Severity::Info
+                ),
                 "Unexpected severity for auth code {}: {:?}",
                 entry.code,
                 entry.severity

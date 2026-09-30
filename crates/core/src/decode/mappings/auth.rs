@@ -1,10 +1,7 @@
-
-
 use crate::types::report::Severity;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthErrorDetail {
-
     pub code: u32,
 
     pub name: &'static str,

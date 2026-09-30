@@ -1,8 +1,6 @@
-
-
+use crate::error::PrismResult;
 use crate::replay::sandbox::SandboxResult;
 use crate::replay::state::LedgerState;
-use crate::error::PrismResult;
 use crate::types::trace::{DiffChangeType, LedgerEntryDiff, StateDiff};
 
 pub fn compute_diff(pre_state: &LedgerState, result: &SandboxResult) -> PrismResult<StateDiff> {

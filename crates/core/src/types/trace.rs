@@ -1,11 +1,8 @@
-
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostFunctionCall {
-
     pub function_name: String,
 
     pub arguments: Vec<String>,
@@ -23,7 +20,6 @@ pub struct HostFunctionCall {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractInvocation {
-
     pub contract_id: String,
 
     pub function_name: String,
@@ -45,7 +41,6 @@ pub struct ContractInvocation {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LedgerEntryDiff {
-
     pub key: String,
 
     pub before: Option<String>,
@@ -65,13 +60,11 @@ pub enum DiffChangeType {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StateDiff {
-
     pub entries: Vec<LedgerEntryDiff>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceHotspot {
-
     pub location: String,
 
     pub cpu_instructions: u64,
@@ -85,7 +78,6 @@ pub struct ResourceHotspot {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ResourceProfile {
-
     pub total_cpu: u64,
 
     pub cpu_limit: u64,
@@ -105,7 +97,6 @@ pub struct ResourceProfile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiagnosticEvent {
-
     pub event_type: String,
 
     pub topics: Vec<String>,
@@ -117,7 +108,6 @@ pub struct DiagnosticEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionTrace {
-
     pub tx_hash: String,
 
     pub ledger_sequence: u32,

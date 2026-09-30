@@ -1,5 +1,3 @@
-
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -10,7 +8,6 @@ const BUCKETS: &[f64] = &[
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Histogram {
-
     bucket_counts: Vec<u64>,
 
     count: u64,
@@ -73,7 +70,6 @@ pub struct RpcMetricsRegistry {
 }
 
 impl RpcMetricsRegistry {
-
     pub fn record(&mut self, method: &str, duration_secs: f64, success: bool) {
         let outcome = if success { "success" } else { "error" };
         let key = format!("{method}:{outcome}");
@@ -96,9 +92,7 @@ impl RpcMetricsRegistry {
 
         for key in keys {
             let hist = &self.histograms[key];
-            let (method, outcome) = key
-                .split_once(':')
-                .unwrap_or((key.as_str(), "unknown"));
+            let (method, outcome) = key.split_once(':').unwrap_or((key.as_str(), "unknown"));
             hist.render(method, outcome, &mut out);
         }
 
@@ -181,16 +175,16 @@ mod tests {
         let mut h = Histogram::new();
         h.observe(0.08);
 
-        let idx_005  = 0;
-        let idx_01   = 1;
-        let idx_025  = 2;
-        let idx_05   = 3;
+        let idx_005 = 0;
+        let idx_01 = 1;
+        let idx_025 = 2;
+        let idx_05 = 3;
         let idx_01_s = 4; // 0.1
 
-        assert_eq!(h.bucket_counts[idx_005],  0);
-        assert_eq!(h.bucket_counts[idx_01],   0);
-        assert_eq!(h.bucket_counts[idx_025],  0);
-        assert_eq!(h.bucket_counts[idx_05],   0);
+        assert_eq!(h.bucket_counts[idx_005], 0);
+        assert_eq!(h.bucket_counts[idx_01], 0);
+        assert_eq!(h.bucket_counts[idx_025], 0);
+        assert_eq!(h.bucket_counts[idx_05], 0);
         assert_eq!(h.bucket_counts[idx_01_s], 1);
     }
 

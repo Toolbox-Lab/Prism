@@ -1,5 +1,3 @@
-
-
 use crate::types::report::Severity;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,7 +21,6 @@ impl From<ErrorSeverity> for Severity {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BudgetErrorDetail {
-
     pub code: u32,
 
     pub name: &'static str,
@@ -61,7 +58,9 @@ pub const BUDGET_ERROR_DETAILS: &[BudgetErrorDetail] = &[
 ];
 
 pub fn lookup(code: u32) -> Option<&'static BudgetErrorDetail> {
-    BUDGET_ERROR_DETAILS.iter().find(|detail| detail.code == code)
+    BUDGET_ERROR_DETAILS
+        .iter()
+        .find(|detail| detail.code == code)
 }
 
 #[cfg(test)]

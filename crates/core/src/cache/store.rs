@@ -1,11 +1,8 @@
-
-
 use crate::error::{PrismError, PrismResult};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheCategory {
-
     WasmBlob,
 
     ContractSpec,

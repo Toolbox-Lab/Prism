@@ -1,11 +1,8 @@
-
-
-use crate::replay::state::LedgerState;
 use crate::error::{PrismError, PrismResult};
+use crate::replay::state::LedgerState;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct TraceEvent {
-
     pub event_type: TraceEventType,
 
     pub timestamp_us: u64,
@@ -15,7 +12,6 @@ pub struct TraceEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum TraceEventType {
-
     InvocationStart,
 
     InvocationEnd,
@@ -37,7 +33,6 @@ pub enum TraceEventType {
 
 #[derive(Debug)]
 pub struct SandboxResult {
-
     pub success: bool,
 
     pub events: Vec<TraceEvent>,
@@ -53,7 +48,6 @@ pub async fn execute_with_tracing(
     _state: &LedgerState,
     _tx_hash: &str,
 ) -> PrismResult<SandboxResult> {
-
     tracing::info!("Sandbox execution with tracing — not yet implemented");
 
     Err(PrismError::ReplayError(

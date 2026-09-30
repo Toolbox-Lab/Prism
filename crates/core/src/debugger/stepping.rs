@@ -1,10 +1,7 @@
-
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StepCommand {
-
     StepInto,
 
     StepOver,
@@ -18,7 +15,6 @@ pub enum StepCommand {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PauseState {
-
     pub trace_position: usize,
 
     pub current_contract: String,
@@ -37,14 +33,12 @@ pub struct PauseState {
 }
 
 pub struct ExecutionStepper {
-
     current_state: Option<PauseState>,
 
     is_paused: bool,
 }
 
 impl ExecutionStepper {
-
     pub fn new() -> Self {
         Self {
             current_state: None,

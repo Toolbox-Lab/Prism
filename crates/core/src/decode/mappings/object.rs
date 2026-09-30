@@ -55,7 +55,9 @@ pub const OBJECT_ERROR_DETAILS: &[ObjectErrorDetail] = &[
 ];
 
 pub fn lookup(code: u32) -> Option<&'static ObjectErrorDetail> {
-    OBJECT_ERROR_DETAILS.iter().find(|detail| detail.code == code)
+    OBJECT_ERROR_DETAILS
+        .iter()
+        .find(|detail| detail.code == code)
 }
 
 #[cfg(test)]
@@ -66,7 +68,10 @@ mod tests {
     fn lookup_returns_vec_index_out_of_bound_detail() {
         let detail = lookup(5).expect("vec index out of bound detail");
         assert_eq!(detail.name, "VecIndexOutOfBound");
-        assert!(detail.summary.contains("index out of bounds") || detail.summary.contains("index out of bounds"));
+        assert!(
+            detail.summary.contains("index out of bounds")
+                || detail.summary.contains("index out of bounds")
+        );
     }
 
     #[test]

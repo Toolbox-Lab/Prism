@@ -1,5 +1,3 @@
-
-
 use serde::Serialize;
 use stellar_xdr::curr::{
     InvokeHostFunctionResult, OperationResult, OperationResultTr, TransactionResult,
@@ -13,27 +11,49 @@ use crate::xdr::codec::XdrCodec;
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "category", rename_all = "snake_case")]
 pub enum HostError {
-    Budget { code: u32 },
-    Storage { code: u32 },
-    Auth { code: u32 },
-    Context { code: u32 },
-    Value { code: u32 },
-    Object { code: u32 },
-    Crypto { code: u32 },
-    Contract { code: u32 },
-    Wasm { code: u32 },
-    Events { code: u32 },
+    Budget {
+        code: u32,
+    },
+    Storage {
+        code: u32,
+    },
+    Auth {
+        code: u32,
+    },
+    Context {
+        code: u32,
+    },
+    Value {
+        code: u32,
+    },
+    Object {
+        code: u32,
+    },
+    Crypto {
+        code: u32,
+    },
+    Contract {
+        code: u32,
+    },
+    Wasm {
+        code: u32,
+    },
+    Events {
+        code: u32,
+    },
 
     ContractSpecific {
         contract_id: Option<String>,
         code: u32,
     },
 
-    Unknown { type_code: u32, sub_code: u32 },
+    Unknown {
+        type_code: u32,
+        sub_code: u32,
+    },
 }
 
 impl HostError {
-
     pub fn category_name(&self) -> &str {
         match self {
             Self::Budget { .. } => "Budget",
@@ -161,15 +181,11 @@ pub fn from_transaction_result(tx_result: TransactionResult) -> PrismResult<Clas
 
     let (category, error_code, is_contract_error) = match ihf_result {
         InvokeHostFunctionResult::Success(_) => return Err(PrismError::TransactionSucceeded),
-        InvokeHostFunctionResult::Trapped => {
-
-            (ErrorCategory::Contract, 0u32, false)
-        }
+        InvokeHostFunctionResult::Trapped => (ErrorCategory::Contract, 0u32, false),
         InvokeHostFunctionResult::ResourceLimitExceeded => (ErrorCategory::Budget, 0, false),
         InvokeHostFunctionResult::EntryArchived => (ErrorCategory::Storage, 0, false),
-        InvokeHostFunctionResult::Malformed | InvokeHostFunctionResult::InsufficientRefundableFee => {
-            (ErrorCategory::Context, 0, false)
-        }
+        InvokeHostFunctionResult::Malformed
+        | InvokeHostFunctionResult::InsufficientRefundableFee => (ErrorCategory::Context, 0, false),
     };
 
     Ok(ClassifiedError {
@@ -259,11 +275,19 @@ mod tests {
         assert_eq!(HostError::Wasm { code: 0 }.category_name(), "Wasm");
         assert_eq!(HostError::Events { code: 0 }.category_name(), "Events");
         assert_eq!(
-            HostError::ContractSpecific { contract_id: None, code: 42 }.category_name(),
+            HostError::ContractSpecific {
+                contract_id: None,
+                code: 42
+            }
+            .category_name(),
             "ContractSpecific"
         );
         assert_eq!(
-            HostError::Unknown { type_code: 99, sub_code: 1 }.category_name(),
+            HostError::Unknown {
+                type_code: 99,
+                sub_code: 1
+            }
+            .category_name(),
             "Unknown"
         );
     }
@@ -282,7 +306,10 @@ mod tests {
 
     #[test]
     fn test_unknown_variant() {
-        let err = HostError::Unknown { type_code: 7, sub_code: 255 };
+        let err = HostError::Unknown {
+            type_code: 7,
+            sub_code: 255,
+        };
         let json = serde_json::to_value(&err).unwrap();
         assert_eq!(json["category"], "unknown");
         assert_eq!(json["type_code"], 7);
@@ -292,7 +319,10 @@ mod tests {
     #[test]
     fn test_parse_error_category() {
         assert_eq!(parse_error_category("budget"), Some(ErrorCategory::Budget));
-        assert_eq!(parse_error_category("STORAGE"), Some(ErrorCategory::Storage));
+        assert_eq!(
+            parse_error_category("STORAGE"),
+            Some(ErrorCategory::Storage)
+        );
         assert_eq!(parse_error_category("unknown_xyz"), None);
     }
 
@@ -369,7 +399,11 @@ mod tests {
 
     #[test]
     fn test_summary_unknown_variant() {
-        let s = HostError::Unknown { type_code: 9, sub_code: 42 }.summary();
+        let s = HostError::Unknown {
+            type_code: 9,
+            sub_code: 42,
+        }
+        .summary();
         assert!(s.contains("9"));
         assert!(s.contains("42"));
         assert!(s.contains("not recognised"));
@@ -377,7 +411,6 @@ mod tests {
 
     #[test]
     fn test_summary_unknown_codes_fallback() {
-
         let s = HostError::Budget { code: 99 }.summary();
         assert!(s.contains("99"));
         assert!(s.contains("Budget") || s.contains("budget"));
@@ -385,7 +418,6 @@ mod tests {
 
     #[test]
     fn test_summary_under_120_chars() {
-
         let errors = vec![
             HostError::Budget { code: 0 },
             HostError::Storage { code: 0 },

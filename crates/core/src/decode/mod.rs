@@ -1,27 +1,27 @@
-
 pub mod auth;
 pub mod auth_signature;
 pub mod context;
 pub mod contract_error;
 pub mod cross_contract;
+pub mod decode_context;
 pub mod diagnostic;
 pub mod host_error;
 pub mod mappings;
 pub mod report;
 pub mod walker;
 
-pub use auth::{
-    AddressCredential, AuthChain, AuthCredential, AuthFunctionKind, AuthInvocation,
-};
+pub use auth::{AddressCredential, AuthChain, AuthCredential, AuthFunctionKind, AuthInvocation};
 pub use walker::{
-    walk_diagnostic_events, DiagnosticEventKind, DiagnosticEventWalker,
-    StructuredDiagnosticEvent,
+    walk_diagnostic_events, DiagnosticEventKind, DiagnosticEventWalker, StructuredDiagnosticEvent,
 };
 
 use crate::error::{PrismError, PrismResult};
 use crate::types::report::DiagnosticReport;
 use crate::xdr::codec::XdrCodec;
-use stellar_xdr::curr::{ScVal, SorobanTransactionMetaExt, TransactionMeta, TransactionResult, TransactionEnvelope, FeeBumpTransactionInnerTx};
+use stellar_xdr::curr::{
+    ScVal, SorobanTransactionMetaExt,
+    TransactionMeta, TransactionResult,
+};
 
 /// Decode `resultMetaXdr` as `TransactionMeta` and, if it is V3, inject the
 /// Soroban contract events, diagnostic events, and return value into the JSON
@@ -41,12 +41,11 @@ fn parse_v3_metadata(tx_data: &mut serde_json::Value) -> PrismResult<()> {
         None => return Ok(()),
     };
 
-    let meta = TransactionMeta::from_xdr_base64(&meta_b64).map_err(|e| {
-        PrismError::XdrDecodingFailed {
+    let meta =
+        TransactionMeta::from_xdr_base64(&meta_b64).map_err(|e| PrismError::XdrDecodingFailed {
             type_name: "TransactionMeta",
             reason: e.to_string(),
-        }
-    })?;
+        })?;
 
     if let TransactionMeta::V3(v3) = meta {
         let soroban_meta = match v3.soroban_meta {
@@ -148,10 +147,12 @@ pub async fn decode_transaction_with_op_filter(
     parse_v3_metadata(&mut base_tx_data)?;
 
     // Decode the envelope XDR to determine the number of operations in the transaction.
-    let num_ops = if let Some(envelope_str) = base_tx_data.get("envelopeXdr").and_then(|v| v.as_str()) {
+    let num_ops = if let Some(envelope_str) =
+        base_tx_data.get("envelopeXdr").and_then(|v| v.as_str())
+    {
         // Use the XDR codec to parse the envelope.
         let envelope = <stellar_xdr::curr::TransactionEnvelope as crate::xdr::codec::XdrCodec>::from_xdr_base64(envelope_str)
-            .map_err(|e| crate::error::PrismError::Internal(format!("Failed to decode envelope XDR: {}", e)))?;
+            .map_err(|e| crate::error::PrismError::Internal(format!("Failed to decode envelope XDR: {e}")))?;
         match envelope {
             stellar_xdr::curr::TransactionEnvelope::TxV0(v0) => v0.tx.operations.len(),
             stellar_xdr::curr::TransactionEnvelope::Tx(v1) => v1.tx.operations.len(),
@@ -181,10 +182,11 @@ pub async fn decode_transaction_with_op_filter(
         let mut report = report::build_report(&error_info)?;
 
         if error_info.is_contract_error {
+            let ctx = crate::decode::decode_context::DecodeContextBuilder::from(network).build();
             if let Ok(contract_info) = contract_error::resolve(
                 &error_info.contract_id.unwrap_or_default(),
                 error_info.error_code,
-                network,
+                &ctx,
             )
             .await
             {

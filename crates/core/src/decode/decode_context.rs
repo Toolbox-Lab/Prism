@@ -1,4 +1,4 @@
-use crate::network::config::{Network, NetworkConfig};
+use crate::types::config::NetworkConfig;
 
 /// Output format for diagnostic reports.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -89,6 +89,7 @@ impl From<&NetworkConfig> for DecodeContextBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::network::config::Network;
 
     #[test]
     fn builder_defaults_to_testnet() {

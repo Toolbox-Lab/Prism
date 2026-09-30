@@ -1,7 +1,5 @@
-
-
-use crate::replay::sandbox::{SandboxResult, TraceEventType};
 use crate::error::PrismResult;
+use crate::replay::sandbox::{SandboxResult, TraceEventType};
 use crate::types::trace::{ContractInvocation, HostFunctionCall};
 
 pub fn build_trace_tree(result: &SandboxResult) -> PrismResult<Vec<ContractInvocation>> {
@@ -62,8 +60,7 @@ pub fn build_trace_tree(result: &SandboxResult) -> PrismResult<Vec<ContractInvoc
                     current.host_calls.push(call);
                 }
             }
-            _ => {
-            }
+            _ => {}
         }
     }
 

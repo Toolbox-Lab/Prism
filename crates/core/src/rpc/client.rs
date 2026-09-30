@@ -1,5 +1,3 @@
-
-
 use crate::error::{PrismError, PrismResult};
 use crate::network::NetworkConfig;
 use crate::rpc::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
@@ -9,10 +7,9 @@ use std::time::{Duration, Instant};
 
 const BASE_DELAY_MS: u64 = 100;
 
-const MAX_DELAY_MS: u64 = 10_000; 
+const MAX_DELAY_MS: u64 = 10_000;
 
 fn backoff_duration(attempt: u32) -> Duration {
-
     let ms = BASE_DELAY_MS.saturating_mul(2u64.saturating_pow(attempt));
     Duration::from_millis(ms.min(MAX_DELAY_MS))
 }
@@ -85,7 +82,6 @@ impl SimulateTransactionResponse {
 
 #[derive(Debug, Clone)]
 pub struct SorobanRpcClient {
-
     client: reqwest::Client,
 
     rpc_url: String,
@@ -117,7 +113,6 @@ pub struct GetTransactionResponse {
 }
 
 impl SorobanRpcClient {
-
     pub fn new(config: &NetworkConfig) -> Self {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -238,9 +233,14 @@ impl SorobanRpcClient {
                     // Retry on 429 Too Many Requests.
                     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                         crate::rpc::record_rpc_duration(method, duration_secs, false);
-                        tracing::warn!(method, attempt, "Rate limited by RPC node (429), will retry");
-                        last_error =
-                            Some(PrismError::RpcError(format!("Rate limited (attempt {attempt})")));
+                        tracing::warn!(
+                            method,
+                            attempt,
+                            "Rate limited by RPC node (429), will retry"
+                        );
+                        last_error = Some(PrismError::RpcError(format!(
+                            "Rate limited (attempt {attempt})"
+                        )));
                         continue;
                     }
 
@@ -281,8 +281,8 @@ impl SorobanRpcClient {
                         )));
                     }
 
-                    let rpc_response: JsonRpcResponse<T> = serde_json::from_str(&body)
-                        .map_err(|e| {
+                    let rpc_response: JsonRpcResponse<T> =
+                        serde_json::from_str(&body).map_err(|e| {
                             crate::rpc::record_rpc_duration(method, duration_secs, false);
                             PrismError::RpcError(format!("Response parse error: {e}"))
                         })?;
@@ -349,7 +349,10 @@ mod tests {
     /// connections than responses the last entry is repeated.
     /// Returns the bound local socket address.
     async fn spawn_mock_server(responses: Vec<String>) -> std::net::SocketAddr {
-        use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
         use tokio::io::AsyncReadExt;
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -359,7 +362,9 @@ mod tests {
 
         tokio::spawn(async move {
             loop {
-                let Ok((mut stream, _)) = listener.accept().await else { break };
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
                 let responses = Arc::clone(&responses);
                 let counter = Arc::clone(&counter);
                 tokio::spawn(async move {
@@ -415,7 +420,6 @@ mod tests {
 
     #[test]
     fn backoff_is_capped_at_max_delay() {
-
         assert_eq!(backoff_duration(7), Duration::from_millis(MAX_DELAY_MS));
 
         assert_eq!(backoff_duration(63), Duration::from_millis(MAX_DELAY_MS));
@@ -609,7 +613,10 @@ mod tests {
         ];
         let addr = spawn_mock_server(responses).await;
         let result = make_client(addr).get_latest_ledger().await;
-        assert!(result.is_ok(), "Expected success after retry, got: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Expected success after retry, got: {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -639,7 +646,10 @@ mod tests {
         ];
         let addr = spawn_mock_server(responses).await;
         let result = make_client(addr).get_latest_ledger().await;
-        assert!(result.is_ok(), "Expected success after retrying 503s, got: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Expected success after retrying 503s, got: {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -650,7 +660,10 @@ mod tests {
         ];
         let addr = spawn_mock_server(responses).await;
         let result = make_client(addr).get_latest_ledger().await;
-        assert!(result.is_ok(), "Expected success after retrying 502, got: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Expected success after retrying 502, got: {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -661,12 +674,14 @@ mod tests {
         ];
         let addr = spawn_mock_server(responses).await;
         let result = make_client(addr).get_latest_ledger().await;
-        assert!(result.is_ok(), "Expected success after retrying 429, got: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Expected success after retrying 429, got: {result:?}"
+        );
     }
 
     #[tokio::test]
     async fn does_not_retry_on_4xx_client_error() {
-
         let bad_body =
             r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"Invalid request"}}"#;
         let responses = vec![http_response(400, "Bad Request", bad_body)];
@@ -678,8 +693,7 @@ mod tests {
 
     #[tokio::test]
     async fn returns_immediately_on_jsonrpc_error_in_200() {
-        let rpc_err =
-            r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"not found"}}"#;
+        let rpc_err = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"not found"}}"#;
         let responses = vec![http_response(200, "OK", rpc_err)];
         let addr = spawn_mock_server(responses).await;
         let result = make_client(addr).get_latest_ledger().await;
@@ -717,7 +731,10 @@ mod tests {
             socket.write_all(response.as_bytes()).await.unwrap();
         });
 
-        let result = client.get_ledger_entries(&["key1".to_string()]).await.unwrap();
+        let result = client
+            .get_ledger_entries(&["key1".to_string()])
+            .await
+            .unwrap();
         assert_eq!(result["entries"].as_array().unwrap().len(), 0);
         assert_eq!(result["latestLedger"], 123);
     }
@@ -808,7 +825,8 @@ mod tests {
 
         tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
-            let body = r#"{"jsonrpc":"2.0","id":1,"result":{"latestLedger":100,"error":"contract trap"}}"#;
+            let body =
+                r#"{"jsonrpc":"2.0","id":1,"result":{"latestLedger":100,"error":"contract trap"}}"#;
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
                 body.len(),

@@ -1,5 +1,3 @@
-
-
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use stellar_strkey::{ed25519::PublicKey, Contract, Strkey};
@@ -8,7 +6,6 @@ use crate::error::{PrismError, PrismResult};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Address {
-
     pub bytes: Vec<u8>,
 
     pub address_type: AddressType,
@@ -16,14 +13,12 @@ pub struct Address {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AddressType {
-
     Account,
 
     Contract,
 }
 
 impl Address {
-
     pub fn new(bytes: Vec<u8>, address_type: AddressType) -> Self {
         Self {
             bytes,

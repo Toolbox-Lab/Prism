@@ -1,35 +1,28 @@
-
-
 use crate::error::PrismResult;
 use crate::types::trace::ExecutionTrace;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WhatIfPatch {
-
     ModifyArgument {
-
         index: usize,
 
         new_value: String,
     },
 
     ModifyLedgerEntry {
-
         key: String,
 
         new_value: String,
     },
 
     ModifyResourceLimits {
-
         cpu_limit: Option<u64>,
 
         memory_limit: Option<u64>,
     },
 
     ModifyAuth {
-
         add_signer: Option<String>,
 
         remove_signer: Option<String>,
@@ -38,7 +31,6 @@ pub enum WhatIfPatch {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WhatIfResult {
-
     pub original: ExecutionTrace,
 
     pub modified: ExecutionTrace,
@@ -53,7 +45,6 @@ pub async fn simulate_whatif(
     _patches: &[WhatIfPatch],
     _network: &crate::types::config::NetworkConfig,
 ) -> PrismResult<WhatIfResult> {
-
     Err(crate::error::PrismError::Internal(
         "What-if simulation not yet implemented".to_string(),
     ))

@@ -1,12 +1,9 @@
-
-
 use crate::error::{PrismError, PrismResult};
 use serde::{Deserialize, Serialize};
-use stellar_xdr::curr::{ScSpecEntry, ScSpecTypeDef, Limits, ReadXdr, Limited};
+use stellar_xdr::curr::{Limited, Limits, ReadXdr, ScSpecEntry, ScSpecTypeDef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractErrorEntry {
-
     pub code: u32,
 
     pub name: String,
@@ -16,7 +13,6 @@ pub struct ContractErrorEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractFunction {
-
     pub name: String,
 
     pub params: Vec<(String, String)>,
@@ -28,7 +24,6 @@ pub struct ContractFunction {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractSpec {
-
     pub errors: Vec<ContractErrorEntry>,
 
     pub functions: Vec<ContractFunction>,
@@ -81,7 +76,7 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> PrismResult<ContractSpec> {
             ScSpecEntry::UdtErrorEnumV0(err_enum) => {
                 let enum_name = err_enum.name.to_string();
                 for case in err_enum.cases.iter() {
-                    let case_name = format!("{}::{}", enum_name, case.name.to_string());
+                    let case_name = format!("{}::{}", enum_name, case.name);
                     let doc = if case.doc.is_empty() {
                         None
                     } else {
@@ -129,9 +124,17 @@ fn format_type_def(type_def: &ScSpecTypeDef) -> String {
         ScSpecTypeDef::Symbol => "Symbol".to_string(),
         ScSpecTypeDef::Address => "Address".to_string(),
         ScSpecTypeDef::Option(opt) => format!("Option<{}>", format_type_def(&opt.value_type)),
-        ScSpecTypeDef::Result(res) => format!("Result<{}, {}>", format_type_def(&res.ok_type), format_type_def(&res.error_type)),
+        ScSpecTypeDef::Result(res) => format!(
+            "Result<{}, {}>",
+            format_type_def(&res.ok_type),
+            format_type_def(&res.error_type)
+        ),
         ScSpecTypeDef::Vec(vec) => format!("Vec<{}>", format_type_def(&vec.element_type)),
-        ScSpecTypeDef::Map(map) => format!("Map<{}, {}>", format_type_def(&map.key_type), format_type_def(&map.value_type)),
+        ScSpecTypeDef::Map(map) => format!(
+            "Map<{}, {}>",
+            format_type_def(&map.key_type),
+            format_type_def(&map.value_type)
+        ),
         ScSpecTypeDef::Tuple(tuple) => {
             let elements: Vec<String> = tuple.value_types.iter().map(format_type_def).collect();
             format!("({})", elements.join(", "))
@@ -143,7 +146,6 @@ fn format_type_def(type_def: &ScSpecTypeDef) -> String {
 pub struct SpecParser;
 
 impl SpecParser {
-
     pub fn extract_spec(wasm_bytes: &[u8]) -> PrismResult<Vec<u8>> {
         let parser = wasmparser::Parser::new(0);
         for payload in parser.parse_all(wasm_bytes) {
@@ -198,7 +200,7 @@ mod tests {
         custom_payload.extend_from_slice(section_name.as_bytes());
         custom_payload.extend_from_slice(&section_data);
 
-        wasm.push(0); 
+        wasm.push(0);
         wasm.push(custom_payload.len() as u8);
         wasm.extend(custom_payload);
 

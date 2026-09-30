@@ -1,7 +1,5 @@
-
-
 use crate::error::{PrismError, PrismResult};
-use crate::rpc::jsonrpc::{JsonRpcTransport, JsonRpcRequest, GetHealthParams};
+use crate::rpc::jsonrpc::{GetHealthParams, JsonRpcRequest, JsonRpcTransport};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -21,8 +19,7 @@ const TESTNET_ARCHIVE_URLS: [&str; 1] =
     ["https://history.stellar.org/prd/core-testnet/core_testnet_001"];
 const FUTURENET_ARCHIVE_URLS: [&str; 1] = ["https://history-futurenet.stellar.org"];
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum Network {
     Mainnet,
     #[default]
@@ -32,7 +29,6 @@ pub enum Network {
 }
 
 impl Network {
-
     pub const LOCAL: &str = "local";
 
     pub fn parse(value: &str) -> PrismResult<Self> {
@@ -129,7 +125,6 @@ impl<'de> Deserialize<'de> for Network {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkConfig {
-
     pub network: Network,
 
     pub rpc_url: String,
@@ -144,7 +139,6 @@ pub struct NetworkConfig {
 }
 
 impl NetworkConfig {
-
     pub fn testnet() -> Self {
         Self {
             network: Network::Testnet,
@@ -256,10 +250,7 @@ pub fn default_network() -> NetworkConfig {
 pub async fn validate_network(config: &NetworkConfig) -> bool {
     let transport = JsonRpcTransport::new(&config.rpc_url, 0);
     let req = JsonRpcRequest::new(1, "getHealth", GetHealthParams {});
-    transport
-        .call::<_, serde_json::Value>(&req)
-        .await
-        .is_ok()
+    transport.call::<_, serde_json::Value>(&req).await.is_ok()
 }
 
 #[cfg(test)]

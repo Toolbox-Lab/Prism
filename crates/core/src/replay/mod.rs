@@ -1,13 +1,11 @@
-
-
 pub mod differ;
 pub mod profiler;
 pub mod sandbox;
 pub mod state;
 pub mod trace;
 
-use crate::types::config::NetworkConfig;
 use crate::error::PrismResult;
+use crate::types::config::NetworkConfig;
 use crate::types::trace::ExecutionTrace;
 
 pub async fn replay_transaction(

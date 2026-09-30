@@ -4,9 +4,7 @@
 //! chain that emitted a failure event, attributing the error to that contract
 //! rather than the top-level invoker.
 
-use stellar_xdr::curr::{
-    ContractEventBody, ContractEventType, DiagnosticEvent, Hash, ScVal,
-};
+use stellar_xdr::curr::{ContractEventBody, ContractEventType, DiagnosticEvent, Hash, ScVal};
 
 use crate::error::PrismResult;
 use crate::types::report::{DiagnosticReport, FailureAttribution};
@@ -73,9 +71,7 @@ fn process_event(
 ) {
     // Only care about system-emitted diagnostic events (in_successful_contract_call == false
     // means the surrounding call failed, but we want the frame itself).
-    let v0 = match &event.event.body {
-        ContractEventBody::V0(v) => v,
-    };
+    let ContractEventBody::V0(v0) = &event.event.body;
 
     let contract_address = match &event.event.contract_id {
         Some(hash) => hash_to_string(hash),
@@ -83,7 +79,7 @@ fn process_event(
     };
 
     let topics: Vec<String> = v0.topics.iter().filter_map(scval_to_string).collect();
-    let first_topic = topics.first().map(|s| s.as_str()).unwrap_or("");
+    let first_topic = topics.first().map_or("", std::string::String::as_str);
 
     match first_topic {
         // fn_call / fn_return are emitted by the host for every cross-contract
@@ -117,8 +113,7 @@ fn process_event(
         _ => {
             // For non-system event types that arrive while in_successful_contract_call
             // is false we treat the emitting contract as the failure origin.
-            if event.event.type_ == ContractEventType::System
-                && !event.in_successful_contract_call
+            if event.event.type_ == ContractEventType::System && !event.in_successful_contract_call
             {
                 let frame = call_stack.last().cloned().unwrap_or(CallFrame {
                     contract_address,

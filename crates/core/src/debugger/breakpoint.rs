@@ -1,10 +1,7 @@
-
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Breakpoint {
-
     pub id: u32,
 
     pub condition: BreakpointCondition,
@@ -18,7 +15,6 @@ pub struct Breakpoint {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BreakpointCondition {
-
     FunctionEntry {
         contract_id: Option<String>,
         function_name: String,
@@ -29,24 +25,30 @@ pub enum BreakpointCondition {
         function_name: String,
     },
 
-    HostFunction { function_name: String },
+    HostFunction {
+        function_name: String,
+    },
 
-    ContractCall { target_contract_id: String },
+    ContractCall {
+        target_contract_id: String,
+    },
 
-    BudgetThreshold { cpu_instructions: u64 },
+    BudgetThreshold {
+        cpu_instructions: u64,
+    },
 
-    StorageAccess { ledger_key: String },
+    StorageAccess {
+        ledger_key: String,
+    },
 }
 
 pub struct BreakpointController {
-
     breakpoints: Vec<Breakpoint>,
 
     next_id: u32,
 }
 
 impl BreakpointController {
-
     pub fn new() -> Self {
         Self {
             breakpoints: Vec::new(),

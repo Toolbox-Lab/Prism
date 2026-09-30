@@ -1,12 +1,9 @@
-
-
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Error)]
 #[error("JSON-RPC error (code: {code}): {message}")]
 pub struct JsonRpcError {
-
     pub code: i64,
 
     pub message: String,
@@ -14,7 +11,6 @@ pub struct JsonRpcError {
 
 #[derive(Debug, Error)]
 pub enum ArchiveErrorKind {
-
     #[error("checksum mismatch for '{file}': expected {expected}, got {actual}")]
     ChecksumMismatch {
         file: String,
@@ -34,7 +30,6 @@ pub enum ArchiveErrorKind {
 
 #[derive(Debug, Error)]
 pub enum PrismError {
-
     #[error("RPC request timed out after {timeout_secs}s (method: {method})")]
     NetworkTimeout { method: String, timeout_secs: u64 },
 

@@ -32,9 +32,7 @@
 
 use serde::{Deserialize, Serialize};
 use stellar_strkey::Contract as StrkeyContract;
-use stellar_xdr::curr::{
-    ContractEventBody, ContractEventType, DiagnosticEvent, Hash, ScVal,
-};
+use stellar_xdr::curr::{ContractEventBody, ContractEventType, DiagnosticEvent, Hash, ScVal};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -196,7 +194,7 @@ impl DiagnosticEventWalker {
         let contract_id = inner
             .contract_id
             .as_ref()
-            .map(|hash| Self::hash_to_strkey(hash));
+            .map(Self::hash_to_strkey);
 
         // Extract topics and data from the event body.
         match &inner.body {
@@ -235,9 +233,7 @@ impl Default for DiagnosticEventWalker {
 ///
 /// Convenience wrapper; prefer constructing the walker explicitly when you
 /// need to call it multiple times in a hot path.
-pub fn walk_diagnostic_events(
-    events: &[DiagnosticEvent],
-) -> Vec<StructuredDiagnosticEvent> {
+pub fn walk_diagnostic_events(events: &[DiagnosticEvent]) -> Vec<StructuredDiagnosticEvent> {
     DiagnosticEventWalker::new().walk(events.iter())
 }
 
@@ -377,7 +373,10 @@ mod tests {
             true,
         );
         let result = DiagnosticEventWalker::new().walk(std::iter::once(&event));
-        assert_eq!(result[0].contract_id.as_deref(), Some(expected_strkey.as_str()));
+        assert_eq!(
+            result[0].contract_id.as_deref(),
+            Some(expected_strkey.as_str())
+        );
         // Stellar contract strkeys start with 'C'
         assert!(result[0].contract_id.as_ref().unwrap().starts_with('C'));
     }
@@ -503,13 +502,7 @@ mod tests {
 
     #[test]
     fn event_with_empty_topics_is_accepted() {
-        let event = make_event(
-            ContractEventType::System,
-            None,
-            vec![],
-            ScVal::Void,
-            true,
-        );
+        let event = make_event(ContractEventType::System, None, vec![], ScVal::Void, true);
         let result = DiagnosticEventWalker::new().walk(std::iter::once(&event));
         assert_eq!(result[0].topics.len(), 0);
         assert_eq!(result[0].data, ScVal::Void);
@@ -529,21 +522,55 @@ mod tests {
                     1 => ContractEventType::System,
                     _ => ContractEventType::Diagnostic,
                 };
-                make_event(kind, Some(contract_hash(i as u8)), vec![sym("topic")], ScVal::Void, i % 2 == 0)
+                make_event(
+                    kind,
+                    Some(contract_hash(i as u8)),
+                    vec![sym("topic")],
+                    ScVal::Void,
+                    i % 2 == 0,
+                )
             })
             .collect();
 
         let result = DiagnosticEventWalker::new().walk(events.iter());
-        assert_eq!(result.len(), n, "output count must match input count exactly");
+        assert_eq!(
+            result.len(),
+            n,
+            "output count must match input count exactly"
+        );
     }
 
     #[test]
     fn output_count_equals_input_count_for_mixed_batch() {
         let events = vec![
-            make_event(ContractEventType::Contract, Some(contract_hash(1)), vec![sym("a")], u32_val(1), true),
-            make_event(ContractEventType::System, None, vec![sym("b")], ScVal::Void, true),
-            make_event(ContractEventType::Diagnostic, None, vec![sym("c"), sym("d")], ScVal::Bool(false), false),
-            make_event(ContractEventType::Contract, Some(contract_hash(2)), vec![], ScVal::Void, true),
+            make_event(
+                ContractEventType::Contract,
+                Some(contract_hash(1)),
+                vec![sym("a")],
+                u32_val(1),
+                true,
+            ),
+            make_event(
+                ContractEventType::System,
+                None,
+                vec![sym("b")],
+                ScVal::Void,
+                true,
+            ),
+            make_event(
+                ContractEventType::Diagnostic,
+                None,
+                vec![sym("c"), sym("d")],
+                ScVal::Bool(false),
+                false,
+            ),
+            make_event(
+                ContractEventType::Contract,
+                Some(contract_hash(2)),
+                vec![],
+                ScVal::Void,
+                true,
+            ),
         ];
 
         let result = DiagnosticEventWalker::new().walk(events.iter());
@@ -560,8 +587,20 @@ mod tests {
     #[test]
     fn walk_diagnostic_events_convenience_fn_matches_walker_output() {
         let events = vec![
-            make_event(ContractEventType::Contract, Some(contract_hash(10)), vec![sym("transfer")], u32_val(99), true),
-            make_event(ContractEventType::System, None, vec![sym("host_fn")], ScVal::Void, true),
+            make_event(
+                ContractEventType::Contract,
+                Some(contract_hash(10)),
+                vec![sym("transfer")],
+                u32_val(99),
+                true,
+            ),
+            make_event(
+                ContractEventType::System,
+                None,
+                vec![sym("host_fn")],
+                ScVal::Void,
+                true,
+            ),
         ];
         let via_fn = walk_diagnostic_events(&events);
         let via_walker = DiagnosticEventWalker::new().walk(events.iter());
@@ -583,9 +622,27 @@ mod tests {
     #[test]
     fn output_ordering_mirrors_input_ordering() {
         let events = vec![
-            make_event(ContractEventType::Contract, Some(contract_hash(10)), vec![sym("first")], u32_val(1), true),
-            make_event(ContractEventType::System, None, vec![sym("second")], u32_val(2), true),
-            make_event(ContractEventType::Diagnostic, None, vec![sym("third")], u32_val(3), false),
+            make_event(
+                ContractEventType::Contract,
+                Some(contract_hash(10)),
+                vec![sym("first")],
+                u32_val(1),
+                true,
+            ),
+            make_event(
+                ContractEventType::System,
+                None,
+                vec![sym("second")],
+                u32_val(2),
+                true,
+            ),
+            make_event(
+                ContractEventType::Diagnostic,
+                None,
+                vec![sym("third")],
+                u32_val(3),
+                false,
+            ),
         ];
 
         let result = DiagnosticEventWalker::new().walk(events.iter());
@@ -601,9 +658,21 @@ mod tests {
 
     #[test]
     fn all_kind_variants_are_reachable_from_xdr_type() {
-        let contract_event = make_event(ContractEventType::Contract, Some(contract_hash(20)), vec![], ScVal::Void, true);
+        let contract_event = make_event(
+            ContractEventType::Contract,
+            Some(contract_hash(20)),
+            vec![],
+            ScVal::Void,
+            true,
+        );
         let system_event = make_event(ContractEventType::System, None, vec![], ScVal::Void, true);
-        let debug_event = make_event(ContractEventType::Diagnostic, None, vec![], ScVal::Void, true);
+        let debug_event = make_event(
+            ContractEventType::Diagnostic,
+            None,
+            vec![],
+            ScVal::Void,
+            true,
+        );
 
         let events = vec![contract_event, system_event, debug_event];
         let result = DiagnosticEventWalker::new().walk(events.iter());
@@ -635,11 +704,7 @@ mod tests {
 
     #[test]
     fn multiple_topics_of_mixed_types_survive_round_trip() {
-        let topics = vec![
-            sym("transfer"),
-            ScVal::U32(1_234_567),
-            ScVal::Bool(true),
-        ];
+        let topics = vec![sym("transfer"), ScVal::U32(1_234_567), ScVal::Bool(true)];
         let event = make_event(
             ContractEventType::Contract,
             Some(contract_hash(31)),
@@ -660,7 +725,13 @@ mod tests {
 
     #[test]
     fn default_walker_behaves_identically_to_new() {
-        let event = make_event(ContractEventType::Contract, Some(contract_hash(99)), vec![sym("x")], ScVal::Void, true);
+        let event = make_event(
+            ContractEventType::Contract,
+            Some(contract_hash(99)),
+            vec![sym("x")],
+            ScVal::Void,
+            true,
+        );
         let a = DiagnosticEventWalker::new().walk(std::iter::once(&event));
         let b = DiagnosticEventWalker::default().walk(std::iter::once(&event));
         assert_eq!(a[0].kind, b[0].kind);

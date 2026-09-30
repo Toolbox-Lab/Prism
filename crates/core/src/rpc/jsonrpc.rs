@@ -1,12 +1,10 @@
-
-
-use crate::error::{PrismError, PrismResult, JsonRpcError};
+use crate::error::{JsonRpcError, PrismError, PrismResult};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
 const BASE_DELAY_MS: u64 = 100;
 
-const MAX_DELAY_MS: u64 = 10_000; 
+const MAX_DELAY_MS: u64 = 10_000;
 
 fn backoff_duration(attempt: u32) -> Duration {
     let ms = BASE_DELAY_MS.saturating_mul(2u64.saturating_pow(attempt));
@@ -22,9 +20,13 @@ pub struct JsonRpcRequest<T: Serialize> {
 }
 
 impl<T: Serialize> JsonRpcRequest<T> {
-
     pub fn new(id: u64, method: &'static str, params: T) -> Self {
-        Self { jsonrpc: "2.0", id, method, params }
+        Self {
+            jsonrpc: "2.0",
+            id,
+            method,
+            params,
+        }
     }
 }
 
@@ -124,7 +126,12 @@ impl JsonRpcTransport {
         for attempt in 0..=self.max_retries {
             if attempt > 0 {
                 let delay = backoff_duration(attempt);
-                tracing::debug!(attempt, method, delay_ms = delay.as_millis(), "backing off before retry");
+                tracing::debug!(
+                    attempt,
+                    method,
+                    delay_ms = delay.as_millis(),
+                    "backing off before retry"
+                );
                 tokio::time::sleep(delay).await;
                 tracing::debug!(attempt, method, "retrying RPC request");
             }
@@ -151,7 +158,9 @@ impl JsonRpcTransport {
                     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                         crate::rpc::record_rpc_duration(method, duration_secs, false);
                         tracing::warn!(method, attempt, "rate limited by RPC endpoint, will retry");
-                        last_error = Some(PrismError::RpcError(format!("rate limited (attempt {attempt})")));
+                        last_error = Some(PrismError::RpcError(format!(
+                            "rate limited (attempt {attempt})"
+                        )));
                         continue;
                     }
 

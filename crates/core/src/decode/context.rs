@@ -1,5 +1,3 @@
-
-
 use crate::decode::auth_signature::decode_auth_entry_signatures;
 use crate::error::PrismResult;
 use crate::types::report::{DiagnosticReport, FeeBreakdown, ResourceSummary, TransactionContext};
@@ -14,7 +12,10 @@ pub fn enrich_report(
         .unwrap_or("unknown")
         .to_string();
 
-    let ledger_sequence = tx_data.get("ledger").and_then(serde_json::Value::as_u64).unwrap_or(0) as u32;
+    let ledger_sequence = tx_data
+        .get("ledger")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0) as u32;
 
     let context = TransactionContext {
         tx_hash,
@@ -58,7 +59,7 @@ fn extract_return_value(tx_data: &serde_json::Value) -> Option<String> {
 
 fn extract_fee_breakdown(tx_data: &serde_json::Value) -> FeeBreakdown {
     use crate::xdr::codec::XdrCodec;
-    use stellar_xdr::curr::{TransactionEnvelope, TransactionResult, TransactionMeta};
+    use stellar_xdr::curr::{TransactionEnvelope, TransactionMeta, TransactionResult};
 
     // 1. Get total fee from resultXdr
     let mut total_fee = 0;
@@ -74,13 +75,13 @@ fn extract_fee_breakdown(tx_data: &serde_json::Value) -> FeeBreakdown {
         if let Ok(tx_envelope) = TransactionEnvelope::from_xdr_base64(envelope_xdr_b64) {
             match tx_envelope {
                 TransactionEnvelope::Tx(v1) => {
-                    bid_fee = Some(v1.tx.fee as i64);
+                    bid_fee = Some(i64::from(v1.tx.fee));
                 }
                 TransactionEnvelope::TxFeeBump(fee_bump) => {
-                    bid_fee = Some(fee_bump.tx.fee as i64);
+                    bid_fee = Some(fee_bump.tx.fee);
                 }
                 TransactionEnvelope::TxV0(v0) => {
-                    bid_fee = Some(v0.tx.fee as i64);
+                    bid_fee = Some(i64::from(v0.tx.fee));
                 }
             }
         }
@@ -94,21 +95,18 @@ fn extract_fee_breakdown(tx_data: &serde_json::Value) -> FeeBreakdown {
 
     if let Some(meta_xdr_b64) = tx_data.get("resultMetaXdr").and_then(|v| v.as_str()) {
         if let Ok(tx_meta) = TransactionMeta::from_xdr_base64(meta_xdr_b64) {
-            match tx_meta {
-                TransactionMeta::V3(v3) => {
-                    if let Some(soroban_meta) = v3.soroban_meta {
-                        match soroban_meta.ext {
-                            stellar_xdr::curr::SorobanTransactionMetaExt::V0 => {}
-                            stellar_xdr::curr::SorobanTransactionMetaExt::V1(v1) => {
-                                non_refundable_fee = v1.total_non_refundable_resource_fee_charged;
-                                refundable_fee = v1.total_refundable_resource_fee_charged;
-                                rent_fee = v1.rent_fee_charged;
-                                has_soroban_meta = true;
-                            }
+            if let TransactionMeta::V3(v3) = tx_meta {
+                if let Some(soroban_meta) = v3.soroban_meta {
+                    match soroban_meta.ext {
+                        stellar_xdr::curr::SorobanTransactionMetaExt::V0 => {}
+                        stellar_xdr::curr::SorobanTransactionMetaExt::V1(v1) => {
+                            non_refundable_fee = v1.total_non_refundable_resource_fee_charged;
+                            refundable_fee = v1.total_refundable_resource_fee_charged;
+                            rent_fee = v1.rent_fee_charged;
+                            has_soroban_meta = true;
                         }
                     }
                 }
-                _ => {}
             }
         }
     }
@@ -166,10 +164,10 @@ mod tests {
     use super::*;
     use crate::xdr::codec::XdrCodec;
     use stellar_xdr::curr::{
-        Memo, MuxedAccount, Preconditions, SequenceNumber, Transaction, TransactionEnvelope,
-        TransactionExt, TransactionResult, TransactionResultResult, TransactionV1Envelope, Uint256,
-        TransactionMeta, TransactionMetaV3, SorobanTransactionMeta, SorobanTransactionMetaExt,
-        SorobanTransactionMetaExtV1, ExtensionPoint,
+        ExtensionPoint, Memo, MuxedAccount, Preconditions, SequenceNumber, SorobanTransactionMeta,
+        SorobanTransactionMetaExt, SorobanTransactionMetaExtV1, Transaction, TransactionEnvelope,
+        TransactionExt, TransactionMeta, TransactionMetaV3, TransactionResult,
+        TransactionResultResult, TransactionV1Envelope, Uint256,
     };
 
     #[test]

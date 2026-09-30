@@ -1,13 +1,11 @@
-
-
-use crate::replay::sandbox::SandboxResult;
 use crate::error::PrismResult;
+use crate::replay::sandbox::SandboxResult;
 use crate::types::trace::ResourceProfile;
 
 pub fn generate_profile(result: &SandboxResult) -> PrismResult<ResourceProfile> {
     let mut profile = ResourceProfile {
         total_cpu: result.total_cpu,
-        cpu_limit: 0, 
+        cpu_limit: 0,
         total_memory: result.total_memory,
         memory_limit: 0,
         total_read_bytes: 0,

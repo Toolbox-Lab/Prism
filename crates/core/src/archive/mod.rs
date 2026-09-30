@@ -1,10 +1,7 @@
-
-
-use crate::network::NetworkConfig;
 use crate::error::{ArchiveErrorKind, PrismResult};
+use crate::network::NetworkConfig;
 
 pub struct ArchiveClient {
-
     #[allow(dead_code)]
     client: reqwest::Client,
 
@@ -14,7 +11,6 @@ pub struct ArchiveClient {
 
 #[derive(Debug)]
 pub struct ArchiveCheckpoint {
-
     pub ledger_sequence: u32,
 
     pub ledger_header: Vec<u8>,
@@ -25,7 +21,6 @@ pub struct ArchiveCheckpoint {
 }
 
 impl ArchiveClient {
-
     pub fn new(config: &NetworkConfig) -> Self {
         Self {
             client: reqwest::Client::new(),

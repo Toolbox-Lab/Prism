@@ -1,6 +1,3 @@
-
-
-use crate::decode::decode_context::DecodeContext;
 use crate::error::{PrismError, PrismResult};
 use crate::spec::decoder;
 use crate::types::address::Address;
@@ -10,7 +7,7 @@ use crate::types::report::ContractErrorInfo;
 pub async fn resolve(
     contract_id: &str,
     error_code: u32,
-    ctx: &DecodeContext,
+    ctx: &crate::decode::decode_context::DecodeContext,
 ) -> PrismResult<ContractErrorInfo> {
     resolve_with_network(contract_id, error_code, &ctx.network).await
 }

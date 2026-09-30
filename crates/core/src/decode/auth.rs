@@ -100,7 +100,9 @@ impl AuthChain {
 fn parse_credential(credentials: &SorobanCredentials) -> AuthCredential {
     match credentials {
         SorobanCredentials::SourceAccount => AuthCredential::SourceAccount,
-        SorobanCredentials::Address(addr) => AuthCredential::Address(parse_address_credential(addr)),
+        SorobanCredentials::Address(addr) => {
+            AuthCredential::Address(parse_address_credential(addr))
+        }
     }
 }
 
@@ -162,7 +164,9 @@ mod tests {
     use stellar_xdr::curr::{InvokeContractArgs, ScSymbol};
 
     fn account_address(seed: u8) -> ScAddress {
-        ScAddress::Account(AccountId(PublicKey::PublicKeyTypeEd25519(Uint256([seed; 32]))))
+        ScAddress::Account(AccountId(PublicKey::PublicKeyTypeEd25519(Uint256(
+            [seed; 32],
+        ))))
     }
 
     fn contract_address(seed: u8) -> ScAddress {
@@ -248,7 +252,10 @@ mod tests {
                 signature_expiration_ledger: 0,
                 signature: ScVal::Void,
             }),
-            root_invocation: invocation(contract_fn(contract_address(2), "f", vec![]), empty_subs()),
+            root_invocation: invocation(
+                contract_fn(contract_address(2), "f", vec![]),
+                empty_subs(),
+            ),
         };
 
         let chain = AuthChain::from_entry(&entry);
@@ -261,9 +268,16 @@ mod tests {
     #[test]
     fn nested_invocations_are_flattened_depth_first() {
         // root -> [child_a -> [grandchild], child_b]
-        let grandchild = invocation(contract_fn(contract_address(30), "gc", vec![]), empty_subs());
+        let grandchild = invocation(
+            contract_fn(contract_address(30), "gc", vec![]),
+            empty_subs(),
+        );
         let child_a = invocation(
-            contract_fn(contract_address(20), "a", vec![ScVal::U32(1), ScVal::U32(2)]),
+            contract_fn(
+                contract_address(20),
+                "a",
+                vec![ScVal::U32(1), ScVal::U32(2)],
+            ),
             vec![grandchild],
         );
         let child_b = invocation(contract_fn(contract_address(21), "b", vec![]), empty_subs());
@@ -284,10 +298,7 @@ mod tests {
             .map(|i| (i.depth, i.function.as_deref().unwrap()))
             .collect();
 
-        assert_eq!(
-            steps,
-            vec![(0, "root"), (1, "a"), (2, "gc"), (1, "b")]
-        );
+        assert_eq!(steps, vec![(0, "root"), (1, "a"), (2, "gc"), (1, "b")]);
         // Arg counts are preserved per step.
         assert_eq!(chain.invocations[1].arg_count, 2);
     }
