@@ -226,17 +226,18 @@ impl ReturnValueDecoder {
             },
             ScSpecTypeDef::Tuple(tuple_spec) => match val {
                 ScVal::Vec(Some(v)) => {
-                    let items: Vec<Value> = v
-                        .iter()
-                        .enumerate()
-                        .map(|(i, item)| {
-                            let elem_td = tuple_spec.value_types.get(i);
-                            Self::decode_value(item, elem_td, contract_spec)
-                        })
-                        .collect();
-                    Value::Array(items)
+                    match TupleDecoder.decode_vec(
+                        v,
+                        &tuple_spec.value_types,
+                        |item, type_def| {
+                            Self::decode_value(item, Some(type_def), contract_spec)
+                        },
+                    ) {
+                        Ok(items) => Value::Array(items),
+                        Err(error) => json!({ "error": error.to_string() }),
+                    }
                 }
-                _ => Self::decode_dynamic(val),
+                _ => json!({ "error": "expected an SCVec for tuple decoding" }),
             },
             ScSpecTypeDef::Udt(udt_spec) => {
                 let udt_name = udt_spec.name.to_string();
