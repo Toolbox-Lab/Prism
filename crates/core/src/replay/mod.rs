@@ -8,15 +8,16 @@ use crate::decode::auth::scval_to_readable_string;
 use crate::decode::walk_diagnostic_events;
 use crate::error::GratResult;
 use crate::types::config::NetworkConfig;
-use crate::types::trace::{DiagnosticEvent, ExecutionTrace};
+use crate::types::trace::{DiagnosticEvent, ExecutionTrace, TraceId};
 
 pub async fn replay_transaction(
     tx_hash: &str,
     network: &NetworkConfig,
 ) -> GratResult<ExecutionTrace> {
     let ledger_state = state::reconstruct_state(tx_hash, network).await?;
+    let trace_id = TraceId::new();
 
-    let raw_trace = sandbox::execute_with_tracing(&ledger_state, tx_hash).await?;
+    let raw_trace = sandbox::execute_with_tracing(&ledger_state, tx_hash, trace_id).await?;
 
     let trace_tree = trace::build_trace_tree(&raw_trace)?;
 

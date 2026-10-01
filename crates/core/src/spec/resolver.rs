@@ -32,6 +32,7 @@ pub struct SCSpecResolver {
     /// Tracks ongoing fetch operations to prevent duplicate network requests
     #[allow(clippy::type_complexity)]
     pending_fetches: Arc<Mutex<HashMap<ContractId, Arc<Mutex<Option<ContractSpec>>>>>>,
+    no_cache: bool,
 }
 
 impl SCSpecResolver {
@@ -45,6 +46,7 @@ impl SCSpecResolver {
             rpc_client,
             memory_cache: Arc::new(Mutex::new(HashMap::new())),
             pending_fetches: Arc::new(Mutex::new(HashMap::new())),
+            no_cache: config.no_cache,
         })
     }
 
@@ -61,6 +63,7 @@ impl SCSpecResolver {
             rpc_client,
             memory_cache: Arc::new(Mutex::new(HashMap::new())),
             pending_fetches: Arc::new(Mutex::new(HashMap::new())),
+            no_cache: config.no_cache,
         })
     }
 
@@ -70,27 +73,32 @@ impl SCSpecResolver {
     /// Multiple concurrent requests for the same contract will coalesce into a single
     /// network request.
     pub async fn resolve(&self, contract_id: &ContractId) -> GratResult<ContractSpec> {
-        // Check memory cache first (fastest path)
-        {
-            let mem_cache = self.memory_cache.lock().await;
-            if let Some(spec) = mem_cache.get(contract_id) {
-                tracing::debug!(contract_id, "SCSpec resolved from memory cache");
-                return Ok(spec.clone());
+        if !self.no_cache {
+            // Check memory cache first (fastest path)
+            {
+                let mem_cache = self.memory_cache.lock().await;
+                if let Some(spec) = mem_cache.get(contract_id) {
+                    tracing::debug!(contract_id, "SCSpec resolved from memory cache");
+                    return Ok(spec.clone());
+                }
+            }
+
+            // Check persistent cache
+            if let Some(cached_bytes) = self
+                .cache
+                .get(CacheCategory::ContractSpec, contract_id, None)?
+            {
+                if let Ok(spec) = bincode::deserialize::<ContractSpec>(&cached_bytes) {
+                    // Update memory cache
+                    let mut mem_cache = self.memory_cache.lock().await;
+                    mem_cache.insert(contract_id.clone(), spec.clone());
+                    tracing::debug!(contract_id, "SCSpec resolved from persistent cache");
+                    return Ok(spec);
+                }
             }
         }
 
-        // Check persistent cache
-        if let Some(cached_bytes) = self.cache.get(CacheCategory::ContractSpec, contract_id)? {
-            if let Ok(spec) = bincode::deserialize::<ContractSpec>(&cached_bytes) {
-                // Update memory cache
-                let mut mem_cache = self.memory_cache.lock().await;
-                mem_cache.insert(contract_id.clone(), spec.clone());
-                tracing::debug!(contract_id, "SCSpec resolved from persistent cache");
-                return Ok(spec);
-            }
-        }
-
-        // Cache miss - need to fetch from network
+        // Cache miss (or bypass) - need to fetch from network
         self.fetch_and_cache(contract_id).await
     }
 
@@ -166,7 +174,7 @@ impl SCSpecResolver {
             .map_err(|e| GratError::SpecError(format!("Failed to serialize spec: {e}")))?;
 
         self.cache
-            .put(CacheCategory::ContractSpec, contract_id, &serialized)?;
+            .put(CacheCategory::ContractSpec, contract_id, &serialized, None)?;
 
         // Update memory cache
         let mut mem_cache = self.memory_cache.lock().await;
@@ -241,7 +249,7 @@ impl SCSpecResolver {
             .map_err(|e| GratError::SpecError(format!("Failed to serialize spec: {e}")))?;
 
         self.cache
-            .put(CacheCategory::ContractSpec, &contract_id, &serialized)?;
+            .put(CacheCategory::ContractSpec, &contract_id, &serialized, None)?;
 
         let mut mem_cache = self.memory_cache.lock().await;
         mem_cache.insert(contract_id, spec);
@@ -252,7 +260,7 @@ impl SCSpecResolver {
     /// Clears both memory and persistent cache for a specific contract.
     pub fn clear_contract(&self, contract_id: &ContractId) -> GratResult<()> {
         self.cache
-            .remove(CacheCategory::ContractSpec, contract_id)?;
+            .remove(CacheCategory::ContractSpec, contract_id, None)?;
         Ok(())
     }
 
@@ -293,5 +301,51 @@ mod tests {
         };
         assert_eq!(stats.memory_cache_size, 10);
         assert_eq!(stats.pending_fetches, 2);
+    }
+
+    fn empty_spec() -> ContractSpec {
+        ContractSpec {
+            errors: Vec::new(),
+            functions: Vec::new(),
+            structs: Vec::new(),
+            enums: Vec::new(),
+            unions: Vec::new(),
+            name: Some("cached".to_string()),
+            version: None,
+            metadata: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn no_cache_skips_lookup_even_when_entry_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let contract_id = "CACHED_CONTRACT".to_string();
+
+        let cached_config = NetworkConfig::testnet();
+        assert!(!cached_config.no_cache);
+        let cached_resolver =
+            SCSpecResolver::with_cache_dir(&cached_config, dir.path().to_path_buf()).unwrap();
+        cached_resolver
+            .preload(contract_id.clone(), empty_spec())
+            .await
+            .unwrap();
+
+        // Cached resolver hits local storage without network.
+        let hit = cached_resolver.resolve(&contract_id).await.unwrap();
+        assert_eq!(hit.name.as_deref(), Some("cached"));
+
+        // Same persistent entry must be ignored when no_cache is set.
+        let mut bypass_config = NetworkConfig::custom("test", "http://127.0.0.1:1", "");
+        bypass_config.request_timeout_secs = 1;
+        bypass_config.no_cache = true;
+        let bypass_resolver =
+            SCSpecResolver::with_cache_dir(&bypass_config, dir.path().to_path_buf()).unwrap();
+        assert!(bypass_resolver.no_cache);
+
+        let result = bypass_resolver.resolve(&contract_id).await;
+        assert!(
+            result.is_err(),
+            "expected live network fetch (failure), not a cache hit"
+        );
     }
 }

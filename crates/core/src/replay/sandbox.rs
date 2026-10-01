@@ -1,5 +1,6 @@
 use crate::error::{GratError, GratResult};
 use crate::replay::state::{encode_xdr, LedgerState};
+use crate::types::trace::TraceId;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use sha2::{Digest, Sha256};
 use soroban_env_host::budget::Budget;
@@ -41,6 +42,8 @@ pub enum TraceEventType {
 
 #[derive(Debug)]
 pub struct SandboxResult {
+    pub trace_id: TraceId,
+
     pub success: bool,
 
     pub events: Vec<TraceEvent>,
@@ -63,7 +66,7 @@ pub struct SandboxResult {
 const MEM_BYTES_CEILING: u64 = 500 * 1024 * 1024;
 
 #[allow(clippy::too_many_lines)]
-pub async fn execute_with_tracing(state: &LedgerState, tx_hash: &str) -> GratResult<SandboxResult> {
+pub async fn execute_with_tracing(state: &LedgerState, tx_hash: &str, trace_id: TraceId) -> GratResult<SandboxResult> {
     let inv = &state.invocation;
 
     let budget = Budget::try_from_configs(
@@ -186,6 +189,7 @@ pub async fn execute_with_tracing(state: &LedgerState, tx_hash: &str) -> GratRes
     };
 
     Ok(SandboxResult {
+        trace_id,
         success,
         events,
         final_state,

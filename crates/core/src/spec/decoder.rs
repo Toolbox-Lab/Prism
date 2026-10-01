@@ -129,6 +129,10 @@ pub struct ContractSpec {
 
     pub version: Option<String>,
 
+    /// Metadata embedded in the WASM `contractmetav0` section.
+    #[serde(default, skip_serializing_if = "crate::spec::metadata::is_empty")]
+    pub metadata: crate::spec::metadata::ContractMetadata,
+
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub enums: Vec<ContractEnumDef>,
 
@@ -138,6 +142,7 @@ pub struct ContractSpec {
 
 #[allow(clippy::too_many_lines)]
 pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
+    let metadata = crate::spec::metadata::extract_contract_metadata(wasm_bytes).unwrap_or_default();
     let Ok(raw_spec) = SpecParser::extract_spec(wasm_bytes) else {
         return Ok(ContractSpec {
             errors: Vec::new(),
@@ -146,7 +151,8 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
             enums: Vec::new(),
             unions: Vec::new(),
             name: None,
-            version: None,
+            version: metadata.version(),
+            metadata,
         });
     };
 
@@ -308,7 +314,8 @@ pub fn decode_contract_spec(wasm_bytes: &[u8]) -> GratResult<ContractSpec> {
         enums,
         unions,
         name: None,
-        version: None,
+        version: metadata.version(),
+        metadata,
     })
 }
 
@@ -544,6 +551,7 @@ mod tests {
             unions: Vec::new(),
             name: None,
             version: None,
+            metadata: crate::spec::metadata::ContractMetadata::default(),
         };
         assert!(resolve_error_code(&spec, 99).is_none());
         assert!(resolve_error_code(&spec, 1).is_some());

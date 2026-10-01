@@ -7,12 +7,14 @@
 //! module renders any `ScVal` into plain JSON.
 
 use crate::decode::auth::scaddress_to_strkey;
-use crate::decode::recursive_decoder::TypeRef;
+use crate::decode::return_decoder::ReturnValueDecoder;
+use crate::decode::struct_decoder::StructDecoder;
+use crate::spec::decoder::ContractSpec;
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use stellar_xdr::curr::{
     ContractExecutable, Int128Parts, Int256Parts, ScContractInstance, ScError, ScErrorCode, ScMap,
-    ScVal, UInt128Parts, UInt256Parts,
+    ScSpecTypeDef, ScVal, UInt128Parts, UInt256Parts,
 };
 
 /// Maximum `ScVal` nesting depth the converter will descend into.
@@ -36,6 +38,66 @@ pub fn scval_to_json(val: &ScVal, type_ref: Option<TypeRef<'_>>) -> Value {
             .decode(val, Some(type_ref));
     }
     convert(val, 0)
+}
+
+/// Convert an [`ScVal`] into JSON using a contract type definition.
+///
+/// Unlike [`scval_to_json`], this entry point can resolve UDTs, including
+/// simple integer enums and complex symbol-headed enum values, when the
+/// corresponding definitions are present in `contract_spec`.
+pub fn scval_to_json_with_spec(
+    val: &ScVal,
+    type_def: Option<&ScSpecTypeDef>,
+    contract_spec: Option<&ContractSpec>,
+) -> Value {
+    ReturnValueDecoder::new().decode(val, type_def, contract_spec)
+}
+
+/// Convert an [`ScVal`] into JSON, resolving struct values via layout lookup.
+///
+/// [`scval_to_json`] has no type information, so every `ScVal::Map` is rendered
+/// as a generic dictionary and the declared field names, order and types of a
+/// `#[contracttype] struct` are all lost. This entry point intercepts
+/// `ScVal::Map` and asks [`StructDecoder`] which struct in `contract_spec` the
+/// keys match, rendering the value as that struct.
+///
+/// A map that does not match a declared struct is rendered exactly as
+/// [`scval_to_json`] would render it, so a plain `Map` value, a
+/// `ContractInstance`'s storage, or a payload from a newer contract than the
+/// spec describes all keep their current output.
+pub fn scval_to_json_with_contract_spec(val: &ScVal, contract_spec: &ContractSpec) -> Value {
+    convert_with_spec(val, 0, contract_spec)
+}
+
+fn convert_with_spec(val: &ScVal, depth: usize, contract_spec: &ContractSpec) -> Value {
+    if depth > MAX_SCVAL_DEPTH {
+        return depth_exceeded_marker();
+    }
+
+    // Intercept maps before the generic renderer sees them, so a struct value
+    // is decoded with its field types and the rest is untouched.
+    if let ScVal::Map(Some(entries)) = val {
+        let decoder = StructDecoder::new();
+        if let Some(struct_def) = decoder.lookup(entries, contract_spec) {
+            return decoder.decode(val, struct_def, contract_spec);
+        }
+    }
+
+    match val {
+        ScVal::Vec(Some(items)) => Value::Array(
+            items
+                .iter()
+                .map(|item| convert_with_spec(item, depth + 1, contract_spec))
+                .collect(),
+        ),
+        ScVal::Map(Some(entries)) => {
+            scmap_to_json_with_spec(entries, depth + 1, Some(contract_spec))
+        }
+        ScVal::ContractInstance(instance) => {
+            contract_instance_to_json_with_spec(instance, depth, Some(contract_spec))
+        }
+        other => convert(other, depth),
+    }
 }
 
 fn depth_exceeded_marker() -> Value {
@@ -93,11 +155,27 @@ fn convert(val: &ScVal, depth: usize) -> Value {
 /// `[{"key": ..., "value": ...}, ...]` array, where both `key` and `value`
 /// are full recursive JSON (not stringified).
 fn scmap_to_json(entries: &ScMap, depth: usize) -> Value {
+    scmap_to_json_with_spec(entries, depth, None)
+}
+
+/// Renders an `ScMap` as JSON, optionally decoding struct payloads.
+///
+/// See [`scval_to_json_with_contract_spec`] for why a spec-aware map render is
+/// useful; a map that matches no declared struct is rendered generically
+/// either way.
+fn scmap_to_json_with_spec(
+    entries: &ScMap,
+    depth: usize,
+    contract_spec: Option<&ContractSpec>,
+) -> Value {
     let mut converted: Vec<(String, Value, Value)> = Vec::with_capacity(entries.len());
     for entry in entries.iter() {
         let key_json = convert(&entry.key, depth);
         let key_string = key_string_from_value(&key_json);
-        let value_json = convert(&entry.val, depth);
+        let value_json = match contract_spec {
+            Some(spec) => convert_with_spec(&entry.val, depth, spec),
+            None => convert(&entry.val, depth),
+        };
         converted.push((key_string, key_json, value_json));
     }
 
@@ -149,6 +227,14 @@ fn scerror_to_json(err: &ScError) -> Value {
 }
 
 fn contract_instance_to_json(instance: &ScContractInstance, depth: usize) -> Value {
+    contract_instance_to_json_with_spec(instance, depth, None)
+}
+
+fn contract_instance_to_json_with_spec(
+    instance: &ScContractInstance,
+    depth: usize,
+    contract_spec: Option<&ContractSpec>,
+) -> Value {
     let executable = match &instance.executable {
         ContractExecutable::Wasm(hash) => {
             json!({ "type": "Wasm", "wasmHash": bytes_to_hex(&hash.0) })
@@ -157,7 +243,7 @@ fn contract_instance_to_json(instance: &ScContractInstance, depth: usize) -> Val
     };
 
     let storage = match &instance.storage {
-        Some(entries) => scmap_to_json(entries, depth + 1),
+        Some(entries) => scmap_to_json_with_spec(entries, depth + 1, contract_spec),
         None => Value::Null,
     };
 
@@ -255,17 +341,147 @@ fn i256_to_decimal(parts: &Int256Parts) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spec::decoder::{ContractSpec, ContractStructDef, ContractStructField};
     use stellar_xdr::curr::{
-        Duration, Hash, ScAddress, ScBytes, ScErrorCode, ScMap, ScMapEntry, ScNonceKey, ScString,
-        ScSymbol, ScVec, StringM, TimePoint,
+        Duration, Hash, ScAddress, ScBytes, ScErrorCode, ScMap, ScMapEntry, ScNonceKey,
+        ScSpecTypeDef, ScString, ScSymbol, ScVec, StringM, TimePoint,
     };
 
     fn sym(s: &str) -> ScVal {
         ScVal::Symbol(ScSymbol(StringM::try_from(s.as_bytes().to_vec()).unwrap()))
     }
 
-    fn scval_to_json(val: &ScVal) -> Value {
-        super::scval_to_json(val, None)
+    fn spec_field(name: &str, type_def: ScSpecTypeDef) -> ContractStructField {
+        ContractStructField {
+            name: name.to_string(),
+            type_name: "T".to_string(),
+            doc: None,
+            type_def: Some(type_def),
+        }
+    }
+
+    fn spec_with_structs(structs: Vec<ContractStructDef>) -> ContractSpec {
+        ContractSpec {
+            errors: vec![],
+            functions: vec![],
+            structs,
+            name: None,
+            version: None,
+            metadata: crate::spec::metadata::ContractMetadata::default(),
+            enums: vec![],
+            unions: vec![],
+        }
+    }
+
+    fn counter_spec() -> ContractSpec {
+        spec_with_structs(vec![ContractStructDef {
+            name: "Counter".to_string(),
+            fields: vec![
+                spec_field("count", ScSpecTypeDef::U64),
+                spec_field("label", ScSpecTypeDef::String),
+            ],
+            doc: None,
+        }])
+    }
+
+    fn sym_map(entries: Vec<(&str, ScVal)>) -> ScVal {
+        ScVal::Map(Some(
+            entries
+                .into_iter()
+                .map(|(key, val)| ScMapEntry { key: sym(key), val })
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
+        ))
+    }
+
+    #[test]
+    fn spec_aware_render_resolves_a_map_to_its_declared_struct() {
+        // Without a spec this is an anonymous `{count, label}` dictionary; with
+        // one, the same bytes render as the declared struct with typed fields.
+        let val = sym_map(vec![("label", sym("hits")), ("count", ScVal::U64(3))]);
+
+        assert_eq!(scval_to_json(&val), json!({ "label": "hits", "count": 3 }));
+        assert_eq!(
+            scval_to_json_with_contract_spec(&val, &counter_spec()),
+            json!({ "count": 3, "label": "hits" })
+        );
+    }
+
+    #[test]
+    fn spec_aware_render_leaves_a_non_struct_map_alone() {
+        // A genuine `Map` value with non-symbol keys must keep its generic
+        // rendering rather than be coerced into some struct.
+        let val = ScVal::Map(Some(
+            vec![ScMapEntry {
+                key: ScVal::U32(1),
+                val: ScVal::Bool(true),
+            }]
+            .try_into()
+            .unwrap(),
+        ));
+
+        let spec = counter_spec();
+        assert_eq!(
+            scval_to_json_with_contract_spec(&val, &spec),
+            scval_to_json(&val)
+        );
+    }
+
+    #[test]
+    fn spec_aware_render_recurses_into_vecs_and_maps() {
+        let inner = sym_map(vec![("count", ScVal::U64(1)), ("label", sym("a"))]);
+        let val = ScVal::Vec(Some(ScVec(vec![inner.clone(), inner].try_into().unwrap())));
+
+        assert_eq!(
+            scval_to_json_with_contract_spec(&val, &counter_spec()),
+            json!([
+                { "count": 1, "label": "a" },
+                { "count": 1, "label": "a" }
+            ])
+        );
+    }
+
+    #[test]
+    fn spec_aware_render_resolves_structs_inside_contract_storage() {
+        let instance = ScVal::ContractInstance(ScContractInstance {
+            executable: ContractExecutable::StellarAsset,
+            storage: Some(
+                vec![ScMapEntry {
+                    key: sym("state"),
+                    val: sym_map(vec![("count", ScVal::U64(9)), ("label", sym("total"))]),
+                }]
+                .try_into()
+                .unwrap(),
+            ),
+        });
+
+        assert_eq!(
+            scval_to_json_with_contract_spec(&instance, &counter_spec())["storage"]["state"],
+            json!({ "count": 9, "label": "total" })
+        );
+    }
+
+    #[test]
+    fn spec_aware_render_respects_the_recursion_limit() {
+        let mut current = sym_map(vec![("count", ScVal::U64(1)), ("label", sym("deep"))]);
+        for _ in 0..(MAX_SCVAL_DEPTH + 50) {
+            current = ScVal::Vec(Some(ScVec(vec![current].try_into().unwrap())));
+        }
+
+        let result = scval_to_json_with_contract_spec(&current, &counter_spec());
+
+        let mut node = &result;
+        for _ in 0..(MAX_SCVAL_DEPTH + 50) {
+            if node.get("__truncated__").is_some() {
+                return;
+            }
+            match node.as_array().and_then(|a| a.first()) {
+                Some(next) => node = next,
+                None => break,
+            }
+        }
+        panic!("expected truncation marker in nested spec-aware output");
     }
 
     #[test]

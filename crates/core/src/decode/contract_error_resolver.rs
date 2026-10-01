@@ -44,17 +44,25 @@ impl ContractErrorResolver {
         // Validate Contract ID
         Address::validate_contract_id(contract_id)?;
 
-        // Try local cache first
+        // Try local cache first (skipped when no_cache is set)
         let cache = CacheStore::default_location()?;
         let cache_key = format!("{contract_id}_spec");
 
-        let wasm_bytes = if let Some(cached) = cache.get(CacheCategory::WasmBlob, &cache_key)? {
-            cached
+        let wasm_bytes = if !self.network.no_cache {
+            if let Some(cached) = cache.get(CacheCategory::WasmBlob, &cache_key, None)? {
+                cached
+            } else {
+                // Fetch WASM from the network
+                let fetched = self.fetch_wasm_from_network(contract_id).await?;
+                // Cache it
+                let _ = cache.put(CacheCategory::WasmBlob, &cache_key, &fetched, None);
+                fetched
+            }
         } else {
-            // Fetch WASM from the network
+            // Bypass cache lookup and always fetch live network data
             let fetched = self.fetch_wasm_from_network(contract_id).await?;
-            // Cache it
-            let _ = cache.put(CacheCategory::WasmBlob, &cache_key, &fetched);
+            // Still write fresh data for subsequent cached runs
+            let _ = cache.put(CacheCategory::WasmBlob, &cache_key, &fetched, None);
             fetched
         };
 
@@ -218,7 +226,7 @@ mod tests {
         let cache = CacheStore::default_location().unwrap();
         let cache_key = format!("{contract_id}_spec");
         cache
-            .put(CacheCategory::WasmBlob, &cache_key, &wasm)
+            .put(CacheCategory::WasmBlob, &cache_key, &wasm, None)
             .unwrap();
 
         let resolver = ContractErrorResolver::new(NetworkConfig::testnet());
@@ -231,6 +239,6 @@ mod tests {
         assert_eq!(doc_fb, None);
 
         // Cleanup cache
-        let _ = cache.remove(CacheCategory::WasmBlob, &cache_key);
+        let _ = cache.remove(CacheCategory::WasmBlob, &cache_key, None);
     }
 }

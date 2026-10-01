@@ -8,6 +8,7 @@ export interface TraceStreamMessage {
     | "state_diff_entry"
     | "trace_completed"
     | "trace_error";
+  trace_id?: string;
   [key: string]: any;
 }
 

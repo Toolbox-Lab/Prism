@@ -440,6 +440,7 @@ mod tests {
             archive_urls: vec![],
             api_key: None,
             request_timeout_secs: 5,
+            no_cache: false,
         };
         SorobanRpcClient::new(&config)
     }
@@ -814,6 +815,7 @@ mod tests {
             archive_urls: vec![],
             api_key: None,
             request_timeout_secs: 1,
+            no_cache: false,
         };
         let client = SorobanRpcClient::new(&config);
 

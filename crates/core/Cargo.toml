@@ -46,6 +46,7 @@ sled = { workspace = true }
 dashmap = { workspace = true }
 directories = { workspace = true }
 flate2 = { workspace = true }
+xz2 = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
@@ -59,6 +60,7 @@ thiserror = { workspace = true }
 
 # URL parsing (for taxonomy linter documentation_url validation)
 url = { workspace = true }
+uuid = { version = "1.26.1", features = ["serde", "v4"] }
 
 [[bin]]
 name = "taxonomy_linter"

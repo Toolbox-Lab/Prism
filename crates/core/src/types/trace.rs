@@ -1,5 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use uuid::Uuid;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TraceId(pub String);
+
+impl TraceId {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self(Uuid::new_v4().to_string())
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostFunctionCall {
@@ -20,6 +31,8 @@ pub struct HostFunctionCall {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractInvocation {
+    pub trace_id: TraceId,
+
     pub contract_id: String,
 
     pub function_name: String,

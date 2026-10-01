@@ -1,4 +1,5 @@
-use crate::decode::recursive_decoder::{RecursiveTypeDecoder, TypeRef};
+use crate::decode::enum_decoder::EnumDecoder;
+use crate::decode::struct_decoder::StructDecoder;
 use crate::spec::decoder::{ContractFunction, ContractSpec, ContractStructDef};
 use serde_json::{json, Value};
 use stellar_xdr::curr::{ScSpecTypeDef, ScVal};
@@ -52,7 +53,7 @@ impl ReturnValueDecoder {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn decode_value(
+    pub(crate) fn decode_value(
         val: &ScVal,
         type_def: Option<&ScSpecTypeDef>,
         contract_spec: Option<&ContractSpec>,
@@ -228,17 +229,18 @@ impl ReturnValueDecoder {
             },
             ScSpecTypeDef::Tuple(tuple_spec) => match val {
                 ScVal::Vec(Some(v)) => {
-                    let items: Vec<Value> = v
-                        .iter()
-                        .enumerate()
-                        .map(|(i, item)| {
-                            let elem_td = tuple_spec.value_types.get(i);
-                            Self::decode_value(item, elem_td, contract_spec)
-                        })
-                        .collect();
-                    Value::Array(items)
+                    match TupleDecoder.decode_vec(
+                        v,
+                        &tuple_spec.value_types,
+                        |item, type_def| {
+                            Self::decode_value(item, Some(type_def), contract_spec)
+                        },
+                    ) {
+                        Ok(items) => Value::Array(items),
+                        Err(error) => json!({ "error": error.to_string() }),
+                    }
                 }
-                _ => Self::decode_dynamic(val),
+                _ => json!({ "error": "expected an SCVec for tuple decoding" }),
             },
             ScSpecTypeDef::Udt(udt_spec) => {
                 let udt_name = udt_spec.name.to_string();
@@ -249,7 +251,7 @@ impl ReturnValueDecoder {
                     }
                     // 2. Check enums
                     if let Some(enum_def) = cs.enums.iter().find(|e| e.name == udt_name) {
-                        return Self::decode_enum(val, enum_def);
+                        return EnumDecoder::new().decode(val, enum_def);
                     }
                     // 3. Check unions
                     if let Some(union_def) = cs.unions.iter().find(|u| u.name == udt_name) {
@@ -263,63 +265,7 @@ impl ReturnValueDecoder {
     }
 
     fn decode_struct(val: &ScVal, struct_def: &ContractStructDef, cs: &ContractSpec) -> Value {
-        match val {
-            ScVal::Map(Some(m)) => {
-                let mut map_obj = serde_json::Map::new();
-                for field in &struct_def.fields {
-                    let matching_entry = m.iter().find(|entry| match &entry.key {
-                        ScVal::Symbol(s) => s.to_string() == field.name,
-                        ScVal::String(s) => s.to_string() == field.name,
-                        _ => false,
-                    });
-
-                    let field_value = match matching_entry {
-                        Some(entry) => {
-                            Self::decode_value(&entry.val, field.type_def.as_ref(), Some(cs))
-                        }
-                        None => Value::Null,
-                    };
-                    map_obj.insert(field.name.clone(), field_value);
-                }
-                Value::Object(map_obj)
-            }
-            ScVal::Vec(Some(v)) => {
-                let mut map_obj = serde_json::Map::new();
-                for (i, field) in struct_def.fields.iter().enumerate() {
-                    let field_value = match v.get(i) {
-                        Some(item) => Self::decode_value(item, field.type_def.as_ref(), Some(cs)),
-                        None => Value::Null,
-                    };
-                    map_obj.insert(field.name.clone(), field_value);
-                }
-                Value::Object(map_obj)
-            }
-            _ => Self::decode_dynamic(val),
-        }
-    }
-
-    fn decode_enum(val: &ScVal, enum_def: &crate::spec::decoder::ContractEnumDef) -> Value {
-        match val {
-            ScVal::Symbol(sym) => json!(sym.to_string()),
-            ScVal::String(s) => json!(s.to_string()),
-            ScVal::U32(u) => {
-                if let Some(case) = enum_def.cases.iter().find(|c| c.value == *u) {
-                    json!(case.name.clone())
-                } else {
-                    json!(*u)
-                }
-            }
-            ScVal::I32(i) if *i >= 0 => {
-                #[allow(clippy::cast_sign_loss)]
-                let u = *i as u32;
-                if let Some(case) = enum_def.cases.iter().find(|c| c.value == u) {
-                    json!(case.name.clone())
-                } else {
-                    json!(*i)
-                }
-            }
-            _ => Self::decode_dynamic(val),
-        }
+        StructDecoder::new().decode(val, struct_def, cs)
     }
 
     fn decode_union(
@@ -505,6 +451,7 @@ mod tests {
             structs: vec![struct_def],
             name: None,
             version: None,
+            metadata: crate::spec::metadata::ContractMetadata::default(),
             enums: vec![],
             unions: vec![],
         };

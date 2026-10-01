@@ -2,6 +2,7 @@ use crate::error::{ArchiveErrorKind, GratError, GratResult};
 use crate::network::NetworkConfig;
 use flate2::read::GzDecoder;
 use std::io::Read;
+use std::path::Path;
 use stellar_xdr::curr::{LedgerHeader, LedgerHeaderHistoryEntry, Limits, ReadXdr};
 
 #[derive(Debug)]
@@ -39,16 +40,70 @@ impl ArchiveCategory {
 }
 
 pub fn format_archive_path(category: ArchiveCategory, checkpoint_seq: u32) -> String {
+    format_archive_path_for(category, checkpoint_seq, CompressionFormat::Gzip)
+}
+
+fn format_archive_path_for(
+    category: ArchiveCategory,
+    checkpoint_seq: u32,
+    compression: CompressionFormat,
+) -> String {
     let hex = format!("{checkpoint_seq:08x}");
     let sub_dir = format!("{}/{}/{}", &hex[0..2], &hex[2..4], &hex[4..6]);
     let cat = category.as_str();
-    format!("{cat}/{sub_dir}/{cat}-{hex}.xdr.gz")
+    format!("{cat}/{sub_dir}/{cat}-{hex}.xdr.{}", compression.extension())
 }
 
 fn join_url(base: &str, path: &str) -> String {
     let base = base.trim_end_matches('/');
     let path = path.trim_start_matches('/');
     format!("{base}/{path}")
+}
+
+/// Compression format of a history archive file, inferred from its file extension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompressionFormat {
+    Gzip,
+    Xz,
+}
+
+impl CompressionFormat {
+    /// Infers the compression format from a URL's file extension.
+    ///
+    /// Gzip is the historical Stellar history archive convention (`.xdr.gz`), so any URL
+    /// that is not explicitly suffixed with `.xz` is treated as gzip.
+    fn from_url(url: &str) -> Self {
+        let path = url.split(['?', '#']).next().unwrap_or(url);
+        match Path::new(path).extension().and_then(|ext| ext.to_str()) {
+            Some("xz") => Self::Xz,
+            _ => Self::Gzip,
+        }
+    }
+
+    /// File extension used by this compression format in archive paths
+    /// (i.e. `gz` for `ledger-0000003f.xdr.gz`).
+    fn extension(self) -> &'static str {
+        match self {
+            Self::Gzip => "gz",
+            Self::Xz => "xz",
+        }
+    }
+
+    fn decompress(self, bytes: &[u8], file_name: &str) -> Result<Vec<u8>, ArchiveErrorKind> {
+        let mut decompressed = Vec::new();
+
+        let result = match self {
+            Self::Gzip => GzDecoder::new(bytes).read_to_end(&mut decompressed),
+            Self::Xz => xz2::read::XzDecoder::new(bytes).read_to_end(&mut decompressed),
+        };
+
+        result.map_err(|e| ArchiveErrorKind::DecompressionFailed {
+            file: file_name.to_string(),
+            reason: e.to_string(),
+        })?;
+
+        Ok(decompressed)
+    }
 }
 
 async fn fetch_and_decompress(
@@ -80,16 +135,7 @@ async fn fetch_and_decompress(
             reason: format!("failed to read response bytes: {e}"),
         })?;
 
-    let mut decoder = GzDecoder::new(&bytes[..]);
-    let mut decompressed = Vec::new();
-    decoder
-        .read_to_end(&mut decompressed)
-        .map_err(|e| ArchiveErrorKind::DecompressionFailed {
-            file: file_name.to_string(),
-            reason: e.to_string(),
-        })?;
-
-    Ok(decompressed)
+    CompressionFormat::from_url(url).decompress(&bytes, file_name)
 }
 
 impl ArchiveClient {
@@ -114,50 +160,62 @@ impl ArchiveClient {
     pub async fn fetch_checkpoint(&self, ledger_sequence: u32) -> GratResult<ArchiveCheckpoint> {
         let checkpoint_seq = get_checkpoint_seq(ledger_sequence);
 
-        let ledger_rel_path = format_archive_path(ArchiveCategory::Ledger, checkpoint_seq);
-        let tx_rel_path = format_archive_path(ArchiveCategory::Transactions, checkpoint_seq);
-        let results_rel_path = format_archive_path(ArchiveCategory::Results, checkpoint_seq);
-
         let mut last_error = None;
 
         for base_url in &self.archive_urls {
-            let ledger_url = join_url(base_url, &ledger_rel_path);
-            let tx_url = join_url(base_url, &tx_rel_path);
-            let results_url = join_url(base_url, &results_rel_path);
+            // Stellar history archives historically serve gzip-compressed files (`.xdr.gz`),
+            // but alternative hosts may use xz (`.xdr.xz`). Try each format for the whole
+            // checkpoint so a host that only serves `.xz` still works, without mixing
+            // compression formats or archive hosts within a single checkpoint.
+            for compression in [CompressionFormat::Gzip, CompressionFormat::Xz] {
+                let ledger_path =
+                    format_archive_path_for(ArchiveCategory::Ledger, checkpoint_seq, compression);
+                let tx_path = format_archive_path_for(
+                    ArchiveCategory::Transactions,
+                    checkpoint_seq,
+                    compression,
+                );
+                let results_path =
+                    format_archive_path_for(ArchiveCategory::Results, checkpoint_seq, compression);
 
-            let ledger_header =
-                match fetch_and_decompress(&self.client, &ledger_url, &ledger_rel_path).await {
-                    Ok(bytes) => bytes,
-                    Err(e) => {
-                        last_error = Some(e);
-                        continue;
-                    }
-                };
+                let ledger_url = join_url(base_url, &ledger_path);
+                let tx_url = join_url(base_url, &tx_path);
+                let results_url = join_url(base_url, &results_path);
 
-            let transaction_set =
-                match fetch_and_decompress(&self.client, &tx_url, &tx_rel_path).await {
-                    Ok(bytes) => bytes,
-                    Err(e) => {
-                        last_error = Some(e);
-                        continue;
-                    }
-                };
+                let ledger_header =
+                    match fetch_and_decompress(&self.client, &ledger_url, &ledger_path).await {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            last_error = Some(e);
+                            continue;
+                        }
+                    };
 
-            let transaction_results =
-                match fetch_and_decompress(&self.client, &results_url, &results_rel_path).await {
-                    Ok(bytes) => bytes,
-                    Err(e) => {
-                        last_error = Some(e);
-                        continue;
-                    }
-                };
+                let transaction_set =
+                    match fetch_and_decompress(&self.client, &tx_url, &tx_path).await {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            last_error = Some(e);
+                            continue;
+                        }
+                    };
 
-            return Ok(ArchiveCheckpoint {
-                ledger_sequence: checkpoint_seq,
-                ledger_header,
-                transaction_set,
-                transaction_results,
-            });
+                let transaction_results =
+                    match fetch_and_decompress(&self.client, &results_url, &results_path).await {
+                        Ok(bytes) => bytes,
+                        Err(e) => {
+                            last_error = Some(e);
+                            continue;
+                        }
+                    };
+
+                return Ok(ArchiveCheckpoint {
+                    ledger_sequence: checkpoint_seq,
+                    ledger_header,
+                    transaction_set,
+                    transaction_results,
+                });
+            }
         }
 
         let reason = match last_error {
@@ -345,6 +403,12 @@ mod tests {
         encoder.finish().unwrap()
     }
 
+    fn xz_compress(data: &[u8]) -> Vec<u8> {
+        let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 6);
+        encoder.write_all(data).unwrap();
+        encoder.finish().unwrap()
+    }
+
     async fn start_recording_mock_server<F>(
         recorded_paths: Arc<Mutex<Vec<String>>>,
         handler: F,
@@ -463,6 +527,136 @@ mod tests {
             format_archive_path(ArchiveCategory::Results, 63),
             "results/00/00/00/results-0000003f.xdr.gz"
         );
+    }
+
+    #[test]
+    fn test_archive_path_formatting_with_compression() {
+        assert_eq!(
+            format_archive_path_for(ArchiveCategory::Ledger, 63, CompressionFormat::Xz),
+            "ledger/00/00/00/ledger-0000003f.xdr.xz"
+        );
+        assert_eq!(
+            format_archive_path_for(ArchiveCategory::Transactions, 65535, CompressionFormat::Gzip),
+            "transactions/00/00/ff/transactions-0000ffff.xdr.gz"
+        );
+        assert_eq!(
+            format_archive_path_for(ArchiveCategory::Results, 127, CompressionFormat::Xz),
+            "results/00/00/00/results-0000007f.xdr.xz"
+        );
+        // The public helper keeps emitting the historical gzip paths.
+        assert_eq!(
+            format_archive_path(ArchiveCategory::Ledger, 63),
+            format_archive_path_for(ArchiveCategory::Ledger, 63, CompressionFormat::Gzip)
+        );
+    }
+
+    #[test]
+    fn test_compression_format_detection() {
+        assert_eq!(
+            CompressionFormat::from_url("http://host/ledger/00/00/00/ledger-0000003f.xdr.xz"),
+            CompressionFormat::Xz
+        );
+        assert_eq!(
+            CompressionFormat::from_url("http://host/ledger/00/00/00/ledger-0000003f.xdr.gz"),
+            CompressionFormat::Gzip
+        );
+        // Query strings and fragments should not confuse extension detection
+        assert_eq!(
+            CompressionFormat::from_url("http://host/ledger-0000003f.xdr.xz?token=abc#frag"),
+            CompressionFormat::Xz
+        );
+        // Unrecognized / missing extensions default to gzip
+        assert_eq!(
+            CompressionFormat::from_url("http://host/ledger-0000003f.xdr"),
+            CompressionFormat::Gzip
+        );
+        assert_eq!(
+            CompressionFormat::from_url("http://host/ledger-0000003f"),
+            CompressionFormat::Gzip
+        );
+    }
+
+    #[test]
+    fn test_decompress_gzip_payload() {
+        let data = b"gzip payload";
+        let compressed = gzip_compress(data);
+        let decompressed = CompressionFormat::Gzip.decompress(&compressed, "test.xdr.gz").unwrap();
+        assert_eq!(decompressed, data);
+    }
+
+    #[test]
+    fn test_decompress_xz_payload() {
+        let data = b"xz payload";
+        let compressed = xz_compress(data);
+        let decompressed = CompressionFormat::Xz.decompress(&compressed, "test.xdr.xz").unwrap();
+        assert_eq!(decompressed, data);
+    }
+
+    #[test]
+    fn test_decompress_invalid_xz_fails() {
+        let err = CompressionFormat::Xz
+            .decompress(b"definitely not xz", "test.xdr.xz")
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            ArchiveErrorKind::DecompressionFailed { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_and_decompress_xz_over_http() {
+        let data = b"xz over http";
+        let compressed = xz_compress(data);
+        let (url, _handle) =
+            start_recording_mock_server(Arc::new(Mutex::new(Vec::new())), move |_path| {
+                (200, compressed.clone())
+            })
+            .await;
+
+        let client = reqwest::Client::new();
+        let url_xz = format!("{}/ledger/00/00/00/ledger-0000003f.xdr.xz", url);
+        let decompressed = fetch_and_decompress(&client, &url_xz, "ledger-0000003f.xdr.xz")
+            .await
+            .unwrap();
+        assert_eq!(decompressed, data);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_checkpoint_xz_fallback() {
+        // Host only serves xz payloads; the gzip attempt must fall through to xz.
+        let paths = Arc::new(Mutex::new(Vec::new()));
+        let ledger_xz = xz_compress(b"xz_ledger");
+        let tx_xz = xz_compress(b"xz_tx");
+        let res_xz = xz_compress(b"xz_results");
+
+        let (url, _handle) = start_recording_mock_server(paths.clone(), move |path| {
+            if !path.ends_with(".xz") {
+                return (404, Vec::new());
+            }
+            if path.contains("ledger-") {
+                (200, ledger_xz.clone())
+            } else if path.contains("transactions-") {
+                (200, tx_xz.clone())
+            } else if path.contains("results-") {
+                (200, res_xz.clone())
+            } else {
+                (404, Vec::new())
+            }
+        })
+        .await;
+
+        let config = NetworkConfig::custom("test", "", "").with_archive_urls(vec![url]);
+        let client = ArchiveClient::new(&config).unwrap();
+
+        let checkpoint = client.fetch_checkpoint(64).await.unwrap();
+        assert_eq!(checkpoint.ledger_sequence, 127);
+        assert_eq!(checkpoint.ledger_header, b"xz_ledger");
+        assert_eq!(checkpoint.transaction_set, b"xz_tx");
+        assert_eq!(checkpoint.transaction_results, b"xz_results");
+
+        // Ensure xz files were actually requested after the gzip 404s.
+        let recorded = paths.lock().unwrap();
+        assert!(recorded.iter().any(|p| p.ends_with(".xdr.xz")));
     }
 
     #[tokio::test]

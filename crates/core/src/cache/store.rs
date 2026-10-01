@@ -57,7 +57,13 @@ impl CacheStore {
         Self::new(project_dirs.cache_dir().to_path_buf(), 512)
     }
 
-    pub fn put(&self, category: CacheCategory, key: &str, value: &[u8]) -> GratResult<()> {
+    pub fn put(
+        &self,
+        category: CacheCategory,
+        key: &str,
+        value: &[u8],
+        ledger_sequence: Option<u32>,
+    ) -> GratResult<()> {
         let new_size = value.len() as u64;
         if new_size > self.max_size {
             return Err(GratError::CacheError(format!(
@@ -72,7 +78,7 @@ impl CacheStore {
             self.evict_lru_to_fit(new_size)?;
         }
 
-        let path = self.entry_path(category, key);
+        let path = self.entry_path(category, key, ledger_sequence);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| GratError::CacheError(format!("Failed to create dir: {e}")))?;
@@ -83,8 +89,13 @@ impl CacheStore {
         Ok(())
     }
 
-    pub fn get(&self, category: CacheCategory, key: &str) -> GratResult<Option<Vec<u8>>> {
-        let path = self.entry_path(category, key);
+    pub fn get(
+        &self,
+        category: CacheCategory,
+        key: &str,
+        ledger_sequence: Option<u32>,
+    ) -> GratResult<Option<Vec<u8>>> {
+        let path = self.entry_path(category, key, ledger_sequence);
         if path.exists() {
             // Explicitly update access metadata to ensure LRU eviction works even if atime is disabled.
             if let Ok(file) = std::fs::OpenOptions::new().write(true).open(&path) {
@@ -103,16 +114,54 @@ impl CacheStore {
         }
     }
 
-    pub fn contains(&self, category: CacheCategory, key: &str) -> bool {
-        self.entry_path(category, key).exists()
+    pub fn contains(&self, category: CacheCategory, key: &str, ledger_sequence: Option<u32>) -> bool {
+        self.entry_path(category, key, ledger_sequence).exists()
     }
 
-    pub fn remove(&self, category: CacheCategory, key: &str) -> GratResult<()> {
-        let path = self.entry_path(category, key);
+    pub fn remove(
+        &self,
+        category: CacheCategory,
+        key: &str,
+        ledger_sequence: Option<u32>,
+    ) -> GratResult<()> {
+        let path = self.entry_path(category, key, ledger_sequence);
         if path.exists() {
             std::fs::remove_file(&path)
                 .map_err(|e| GratError::CacheError(format!("Failed to remove cache entry: {e}")))?;
         }
+        Ok(())
+    }
+
+    pub fn prune_older_than(&self, category: CacheCategory, ledger_sequence: u32) -> GratResult<()> {
+        let base_dir = self.cache_dir.join(category.as_str());
+        if !base_dir.exists() {
+            return Ok(());
+        }
+
+        let mut stale_paths = Vec::new();
+        for entry in walk_dir_files(&base_dir) {
+            let path = entry.path();
+            let Some(parent) = path.parent() else {
+                continue;
+            };
+            let Some(seq_text) = parent.file_name().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            let Ok(seq) = seq_text.parse::<u32>() else {
+                continue;
+            };
+            if seq < ledger_sequence {
+                stale_paths.push(path);
+            }
+        }
+
+        for path in stale_paths {
+            if path.exists() {
+                std::fs::remove_file(&path)
+                    .map_err(|e| GratError::CacheError(format!("Failed to prune cache entry: {e}")))?;
+            }
+        }
+
         Ok(())
     }
 
@@ -126,8 +175,17 @@ impl CacheStore {
         Ok(())
     }
 
-    fn entry_path(&self, category: CacheCategory, key: &str) -> PathBuf {
-        self.cache_dir.join(category.as_str()).join(key)
+    fn entry_path(
+        &self,
+        category: CacheCategory,
+        key: &str,
+        ledger_sequence: Option<u32>,
+    ) -> PathBuf {
+        let mut path = self.cache_dir.join(category.as_str());
+        if let Some(sequence) = ledger_sequence {
+            path = path.join(sequence.to_string());
+        }
+        path.join(key)
     }
 
     fn total_cache_size(&self) -> GratResult<u64> {
@@ -238,9 +296,9 @@ mod tests {
         let store = CacheStore::new(dir.clone(), 10).unwrap();
 
         store
-            .put(CacheCategory::WasmBlob, "test_key", b"hello")
+            .put(CacheCategory::WasmBlob, "test_key", b"hello", None)
             .unwrap();
-        let result = store.get(CacheCategory::WasmBlob, "test_key").unwrap();
+        let result = store.get(CacheCategory::WasmBlob, "test_key", None).unwrap();
         assert_eq!(result, Some(b"hello".to_vec()));
 
         store.clear().unwrap();
@@ -253,21 +311,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let store = CacheStore::with_max_size_bytes(dir.clone(), 10).unwrap();
 
-        store.put(CacheCategory::WasmBlob, "key1", b"1234").unwrap();
+        store.put(CacheCategory::WasmBlob, "key1", b"1234", None).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(10));
-        store.put(CacheCategory::WasmBlob, "key2", b"5678").unwrap();
+        store.put(CacheCategory::WasmBlob, "key2", b"5678", None).unwrap();
 
-        assert!(store.contains(CacheCategory::WasmBlob, "key1"));
-        assert!(store.contains(CacheCategory::WasmBlob, "key2"));
+        assert!(store.contains(CacheCategory::WasmBlob, "key1", None));
+        assert!(store.contains(CacheCategory::WasmBlob, "key2", None));
 
-        store.get(CacheCategory::WasmBlob, "key1").unwrap();
+        store.get(CacheCategory::WasmBlob, "key1", None).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(10));
 
-        store.put(CacheCategory::WasmBlob, "key3", b"9012").unwrap();
+        store.put(CacheCategory::WasmBlob, "key3", b"9012", None).unwrap();
 
-        assert!(store.contains(CacheCategory::WasmBlob, "key1"));
-        assert!(!store.contains(CacheCategory::WasmBlob, "key2"));
-        assert!(store.contains(CacheCategory::WasmBlob, "key3"));
+        assert!(store.contains(CacheCategory::WasmBlob, "key1", None));
+        assert!(!store.contains(CacheCategory::WasmBlob, "key2", None));
+        assert!(store.contains(CacheCategory::WasmBlob, "key3", None));
 
         store.clear().unwrap();
         let _ = std::fs::remove_dir_all(dir);

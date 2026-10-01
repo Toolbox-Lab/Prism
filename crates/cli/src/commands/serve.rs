@@ -36,6 +36,7 @@ pub enum TraceStreamMessage {
         path: Vec<usize>,
     },
     ResourceUpdate {
+        trace_id: String,
         cpu_used: u64,
         memory_used: u64,
         cpu_limit: u64,
@@ -213,8 +214,9 @@ async fn stream_trace_replay(
         ledger_sequence: ledger_state.ledger_sequence,
     });
 
+    let trace_id = grat_core::types::trace::TraceId::new();
     let result =
-        match grat_core::replay::sandbox::execute_with_tracing(&ledger_state, tx_hash).await {
+        match grat_core::replay::sandbox::execute_with_tracing(&ledger_state, tx_hash, trace_id).await {
             Ok(r) => r,
             Err(e) => {
                 let _ = sender.send(TraceStreamMessage::TraceError {
@@ -248,6 +250,7 @@ async fn stream_trace_replay(
 
         if idx % 10 == 0 {
             let _ = sender.send(TraceStreamMessage::ResourceUpdate {
+                trace_id: result.trace_id.0.clone(),
                 cpu_used: result.total_cpu,
                 memory_used: result.total_memory,
                 cpu_limit: 100_000_000,

@@ -57,6 +57,13 @@ struct Cli {
 
     #[arg(long, global = true, help = "Disable network requests for updates")]
     offline: bool,
+
+    #[arg(
+        long,
+        global = true,
+        help = "Bypass local cache and always fetch live network data"
+    )]
+    no_cache: bool,
 }
 
 #[derive(Subcommand)]
@@ -139,6 +146,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(ref rpc_url) = cli.rpc_url {
         network.rpc_url = rpc_url.clone();
     }
+    network.no_cache = cli.no_cache;
 
     tracing::debug!(
         resolved_network = ?network.network,
@@ -355,5 +363,18 @@ mod tests {
         assert!(version.contains(grat_core::VERSION));
         assert!(version.contains(BUILD_HASH));
         assert!(version.contains(&grat_core::SOROBAN_PROTOCOL_VERSION.to_string()));
+    }
+
+    #[test]
+    fn parses_no_cache_flag_on_decode() {
+        let cli = Cli::try_parse_from(["grat", "decode", "abc123", "--no-cache"])
+            .expect("cli should parse with --no-cache");
+        assert!(cli.no_cache);
+    }
+
+    #[test]
+    fn no_cache_absent_by_default() {
+        let cli = Cli::try_parse_from(["grat", "decode", "abc123"]).expect("cli should parse");
+        assert!(!cli.no_cache);
     }
 }

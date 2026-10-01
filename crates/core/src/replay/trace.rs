@@ -10,6 +10,7 @@ pub fn build_trace_tree(result: &SandboxResult) -> GratResult<Vec<ContractInvoca
         match event.event_type {
             TraceEventType::InvocationStart => {
                 let invocation = ContractInvocation {
+                    trace_id: result.trace_id.clone(),
                     contract_id: event
                         .data
                         .get("contract_id")

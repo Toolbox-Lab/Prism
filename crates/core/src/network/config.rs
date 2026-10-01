@@ -136,6 +136,9 @@ pub struct NetworkConfig {
     pub api_key: Option<String>,
 
     pub request_timeout_secs: u64,
+
+    #[serde(default)]
+    pub no_cache: bool,
 }
 
 impl NetworkConfig {
@@ -150,6 +153,7 @@ impl NetworkConfig {
                 .collect(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -164,6 +168,7 @@ impl NetworkConfig {
                 .collect(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -178,6 +183,7 @@ impl NetworkConfig {
                 .collect(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -189,6 +195,7 @@ impl NetworkConfig {
             archive_urls: Vec::new(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -204,6 +211,7 @@ impl NetworkConfig {
             archive_urls: Vec::new(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
