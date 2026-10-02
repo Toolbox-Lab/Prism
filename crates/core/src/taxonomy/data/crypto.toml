@@ -19,6 +19,8 @@ Cryptographic host functions expect inputs of specific formats and lengths. For 
 ed25519 public keys must be exactly 32 bytes, signatures must be 64 bytes, and hash inputs \
 must not exceed size limits. Violating these constraints raises this error.
 """
+related_errors = []
+source_file = "soroban-env-host/src/host/crypto.rs"
 
 [[errors.common_causes]]
 description = "Public key or signature with incorrect byte length"
@@ -33,5 +35,3 @@ description = "Verify that all cryptographic inputs have the correct length and 
 difficulty = "easy"
 requires_upgrade = false
 
-related_errors = []
-source_file = "soroban-env-host/src/host/crypto.rs"

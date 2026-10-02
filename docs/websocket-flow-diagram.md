@@ -4,7 +4,7 @@
 
 ```
 ┌─────────────┐                                    ┌──────────────┐
-│  Web Client │                                    │ prism serve  │
+│  Web Client │                                    │ grat serve  │
 │   (Browser) │                                    │  (Rust CLI)  │
 └──────┬──────┘                                    └──────┬───────┘
        │                                                  │
@@ -52,7 +52,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                      prism serve                              │
+│                      grat serve                              │
 │                                                               │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │  Main Server Loop                                    │    │
@@ -193,7 +193,7 @@ T10: Connection remains open for next request
 
 ```
 ┌─────────────┐                                    ┌──────────────┐
-│  Web Client │                                    │ prism serve  │
+│  Web Client │                                    │ grat serve  │
 └──────┬──────┘                                    └──────┬───────┘
        │                                                  │
        │  Normal flow...                                 │
@@ -218,7 +218,7 @@ T10: Connection remains open for next request
 
 ```
 ┌──────────────┐
-│ prism serve  │
+│ grat serve  │
 └──────┬───────┘
        │
        ├─────────────────────────────────────────┐

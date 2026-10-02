@@ -1,0 +1,13 @@
+{
+  "name": "fetch-taxonomy",
+  "version": "1.0.0",
+  "description": "Example showing how to parse the core TOML error taxonomy into JSON.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@iarna/toml": "^2.2.5"
+  }
+}

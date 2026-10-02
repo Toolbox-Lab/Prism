@@ -1,5 +1,5 @@
 ---
-title: "prism whatif"
+title: "grat whatif"
 sidebarTitle: "whatif"
 description: "Re-simulate with modified inputs and compare outcomes."
 icon: "question"
@@ -10,11 +10,13 @@ The `whatif` command allows for non-destructive experimentation with failed tran
 ## Usage
 
 ```bash
-prism whatif <TX_HASH> --modify <PATCH_FILE>
+grat whatif <TX_HASH> --modify <PATCH_FILE>
 ```
 
 ## Patch Examples
+
 You can modify:
+
 - **Arguments**: Change the values passed to the contract.
 - **Ledger Entries**: Simulate a different starting state.
 - **Resource Limits**: See if a higher budget would have fixed the failure.

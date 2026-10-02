@@ -1,6 +1,6 @@
 use clap::Args;
-use prism_core::types::config::NetworkConfig;
-use prism_core::types::report::{DiagnosticReport, Severity};
+use grat_core::types::config::NetworkConfig;
+use grat_core::types::report::{DiagnosticReport, Severity};
 
 #[derive(Args)]
 pub struct DecodeArgs {
@@ -21,9 +21,7 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     let effective_output = if args.short { "short" } else { output_format };
 
-    // Decode transaction, handling possible multiple operations
     let reports = if args.raw {
-        // Raw XDR decoding yields a single report
         vec![build_raw_xdr_report(&args.tx_hash)?]
     } else {
         let spinner = indicatif::ProgressBar::new_spinner();
@@ -33,17 +31,19 @@ pub async fn run(
         ));
         spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-        let reports = prism_core::decode::decode_transaction_with_op_filter(
-            &args.tx_hash,
-            network,
-            None,
-        )
-        .await?;
+        let reports =
+            grat_core::decode::decode_transaction_with_op_filter(&args.tx_hash, network, None)
+                .await?;
         spinner.finish_and_clear();
         reports
     };
 
-    // Print each report; include operation index header when multiple reports
+    if !args.raw {
+        if let Err(e) = crate::commands::history::append_to_history(&args.tx_hash) {
+            eprintln!("Warning: failed to update command history: {e}");
+        }
+    }
+
     for (i, report) in reports.iter().enumerate() {
         if reports.len() > 1 {
             println!("\n=== Operation {} ===", i + 1);
@@ -62,7 +62,7 @@ pub async fn run(
 }
 
 fn build_raw_xdr_report(raw_xdr: &str) -> anyhow::Result<DiagnosticReport> {
-    let bytes = prism_core::xdr::codec::decode_xdr_base64(raw_xdr)?;
+    let bytes = grat_core::xdr::codec::decode_xdr_base64(raw_xdr)?;
     let mut report =
         DiagnosticReport::new("raw-xdr", 0, "RawXdr", "Decoded raw XDR input from --raw");
     report.severity = Severity::Info;

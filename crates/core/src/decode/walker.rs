@@ -1,70 +1,21 @@
-//! `DiagnosticEventWalker` — zero-copy traversal and structured classification
-//! of raw Soroban [`DiagnosticEvent`] values.
-//!
-//! # Design
-//!
-//! The walker consumes an iterator of XDR [`DiagnosticEvent`] records and maps
-//! each one to a [`StructuredDiagnosticEvent`] that carries:
-//!
-//! - A strongly-typed [`DiagnosticEventKind`] derived from
-//!   [`ContractEventType`] (the authoritative protocol discriminant).
-//! - An optional strkey-encoded contract address.
-//! - The full extracted topic vector.
-//! - The payload [`ScVal`] from the event body.
-//! - The `in_successful_contract_call` success flag.
-//!
-//! Every input item — even malformed ones — produces an output record.
-//! Malformed envelopes are represented by [`DiagnosticEventKind::Unknown`]
-//! with the original XDR bytes preserved in the `raw_xdr` field, so no data
-//! from the original execution story is dropped.
-//!
-//! # Example
-//!
-//! ```rust,ignore
-//! use prism_core::decode::walker::DiagnosticEventWalker;
-//!
-//! let events: Vec<stellar_xdr::curr::DiagnosticEvent> = /* ... */;
-//! let structured = DiagnosticEventWalker::new().walk(events.iter());
-//! for event in &structured {
-//!     println!("{:?} — contract: {:?}", event.kind, event.contract_id);
-//! }
-//! ```
-
 use serde::{Deserialize, Serialize};
 use stellar_strkey::Contract as StrkeyContract;
 use stellar_xdr::curr::{ContractEventBody, ContractEventType, DiagnosticEvent, Hash, ScVal};
 
-// ---------------------------------------------------------------------------
-// Public types
-// ---------------------------------------------------------------------------
-
-/// Functional category of a Soroban diagnostic event.
-///
-/// Derived directly from [`ContractEventType`] which is the canonical
-/// protocol-level discriminant embedded in every [`ContractEvent`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DiagnosticEventKind {
-    /// An event explicitly emitted by user-contract execution
-    /// (e.g. `env.events().publish(...)`).
     Contract,
 
-    /// A core host or VM-level operational event (e.g. call frame push/pop,
-    /// ledger footprint access, budget checkpoints).
     System,
 
-    /// A log message, trace string, or developer-inserted diagnostic hook
-    /// emitted by the host while `SOROBAN_DIAGNOSTIC_EVENTS` is enabled.
     Debug,
 
-    /// Catch-all for any future `ContractEventType` variant added by a
-    /// protocol upgrade that this version of Prism does not yet recognise.
     Unknown,
 }
 
 impl DiagnosticEventKind {
-    /// Derive the kind from the raw XDR [`ContractEventType`] discriminant.
-    fn from_contract_event_type(t: &ContractEventType) -> Self {
+    fn from_contract_event_type(t: ContractEventType) -> Self {
         match t {
             ContractEventType::Contract => Self::Contract,
             ContractEventType::System => Self::System,
@@ -86,7 +37,6 @@ impl std::fmt::Display for DiagnosticEventKind {
 
 /// A fully-parsed, strongly-typed representation of a single Soroban
 /// diagnostic event.
-///
 /// All fields are extracted from the raw XDR envelope during the walk.
 /// No data is discarded — if the event body cannot be fully decoded the
 /// [`Self::kind`] is set to [`DiagnosticEventKind::Unknown`] and the
@@ -97,28 +47,23 @@ pub struct StructuredDiagnosticEvent {
     pub kind: DiagnosticEventKind,
 
     /// Optional strkey-encoded contract identifier (`C…` Stellar address).
-    ///
     /// `None` when the event was emitted by the host rather than a specific
     /// contract (common for [`DiagnosticEventKind::System`] events).
     pub contract_id: Option<String>,
 
     /// Ordered topic vector extracted from the event body.
-    ///
     /// Always present (may be empty) for well-formed events.
     pub topics: Vec<ScVal>,
 
     /// Payload data from the event body.
-    ///
     /// [`ScVal::Void`] when the body cannot be decoded.
     pub data: ScVal,
 
     /// Whether this event occurred within a *successful* contract call frame.
-    ///
     /// Mapped 1-to-1 from [`DiagnosticEvent::in_successful_contract_call`].
     pub in_successful_call: bool,
 
     /// Human-readable parse error, set only when the XDR body is malformed.
-    ///
     /// `None` for every well-formed event.
     pub parse_error: Option<String>,
 }
@@ -137,14 +82,11 @@ impl StructuredDiagnosticEvent {
 
 /// Walks a collection of raw [`DiagnosticEvent`] records and maps them into
 /// an ordered [`Vec<StructuredDiagnosticEvent>`].
-///
 /// The walker is zero-copy in the sense that it does not clone or buffer the
 /// input: it iterates exactly once and processes each item in place.
 /// `ScVal` values *are* cloned into the output structs so they can be freely
 /// moved around the call-site without a lifetime dependency on the input.
-///
 /// # Guarantees
-///
 /// - Output length **always equals** input length (zero-data-loss).
 /// - No `panic!` — all error paths produce an [`DiagnosticEventKind::Unknown`]
 ///   record with a [`StructuredDiagnosticEvent::parse_error`] message.
@@ -152,7 +94,6 @@ pub struct DiagnosticEventWalker;
 
 impl DiagnosticEventWalker {
     /// Create a new walker instance.
-    ///
     /// The walker is stateless; you may re-use a single instance for multiple
     /// walks.
     pub fn new() -> Self {
@@ -160,12 +101,9 @@ impl DiagnosticEventWalker {
     }
 
     /// Walk `events` and return an ordered, typed collection.
-    ///
     /// Accepts any iterator whose item is a reference to a [`DiagnosticEvent`].
     /// The returned vector preserves the original ordering.
-    ///
     /// # Panics
-    ///
     /// Never panics.
     pub fn walk<'a, I>(&self, events: I) -> Vec<StructuredDiagnosticEvent>
     where
@@ -179,7 +117,6 @@ impl DiagnosticEventWalker {
     // ------------------------------------------------------------------
 
     /// Map a single raw [`DiagnosticEvent`] to its structured counterpart.
-    ///
     /// On any extraction failure the record is emitted with
     /// [`DiagnosticEventKind::Unknown`] and the error message is captured in
     /// [`StructuredDiagnosticEvent::parse_error`].
@@ -188,13 +125,10 @@ impl DiagnosticEventWalker {
         let inner = &raw.event;
 
         // Derive kind from the protocol-level discriminant.
-        let kind = DiagnosticEventKind::from_contract_event_type(&inner.type_);
+        let kind = DiagnosticEventKind::from_contract_event_type(inner.type_);
 
         // Resolve optional contract address to a strkey string.
-        let contract_id = inner
-            .contract_id
-            .as_ref()
-            .map(Self::hash_to_strkey);
+        let contract_id = inner.contract_id.as_ref().map(Self::hash_to_strkey);
 
         // Extract topics and data from the event body.
         match &inner.body {
@@ -211,6 +145,24 @@ impl DiagnosticEventWalker {
                 }
             }
         }
+    }
+
+    /// Given a slice of diagnostic events, returns the ContractId (as a
+    /// strkey-encoded `C…` string) of the contract that emitted the final
+    /// failure event.
+    /// A "failure event" is one where `in_successful_contract_call` is `false`
+    /// **and** the event carries a `contract_id`. Events are walked in reverse
+    /// order so the last-emitted failure is found first.
+    /// Returns `None` when no such event exists.
+    pub fn find_failing_contract(events: &[DiagnosticEvent]) -> Option<String> {
+        for event in events.iter().rev() {
+            if !event.in_successful_contract_call {
+                if let Some(ref hash) = event.event.contract_id {
+                    return Some(Self::hash_to_strkey(hash));
+                }
+            }
+        }
+        None
     }
 
     /// Encode a raw 32-byte [`Hash`] as a Stellar contract strkey (`C…`).
@@ -230,7 +182,6 @@ impl Default for DiagnosticEventWalker {
 // ---------------------------------------------------------------------------
 
 /// Walk `events` with a default [`DiagnosticEventWalker`].
-///
 /// Convenience wrapper; prefer constructing the walker explicitly when you
 /// need to call it multiple times in a hot path.
 pub fn walk_diagnostic_events(events: &[DiagnosticEvent]) -> Vec<StructuredDiagnosticEvent> {
@@ -246,7 +197,7 @@ mod tests {
     use super::*;
     use stellar_xdr::curr::{
         ContractEvent, ContractEventBody, ContractEventType, ContractEventV0, DiagnosticEvent,
-        ExtensionPoint, Hash, ScSymbol, ScVal, ScVec, VecM,
+        ExtensionPoint, Hash, ScSymbol, ScVal, VecM,
     };
 
     // -----------------------------------------------------------------------
@@ -394,10 +345,6 @@ mod tests {
         assert!(result[0].contract_id.is_none());
     }
 
-    // -----------------------------------------------------------------------
-    // System event — VM/host state transitions
-    // -----------------------------------------------------------------------
-
     #[test]
     fn system_event_has_no_contract_id_and_correct_topics() {
         let event = make_event(
@@ -415,10 +362,6 @@ mod tests {
         assert_eq!(out.topics.len(), 2);
         assert_eq!(out.data, ScVal::Bool(true));
     }
-
-    // -----------------------------------------------------------------------
-    // Debug event — log messages and trace strings
-    // -----------------------------------------------------------------------
 
     #[test]
     fn debug_event_parses_log_message_cleanly() {
@@ -439,10 +382,6 @@ mod tests {
         assert!(!out.in_successful_call);
         assert!(out.parse_error.is_none());
     }
-
-    // -----------------------------------------------------------------------
-    // Success/failure status metadata
-    // -----------------------------------------------------------------------
 
     #[test]
     fn in_successful_call_false_is_preserved() {
@@ -496,10 +435,6 @@ mod tests {
         assert!(!result[0].is_healthy());
     }
 
-    // -----------------------------------------------------------------------
-    // Empty topics / void data
-    // -----------------------------------------------------------------------
-
     #[test]
     fn event_with_empty_topics_is_accepted() {
         let event = make_event(ContractEventType::System, None, vec![], ScVal::Void, true);
@@ -507,10 +442,6 @@ mod tests {
         assert_eq!(result[0].topics.len(), 0);
         assert_eq!(result[0].data, ScVal::Void);
     }
-
-    // -----------------------------------------------------------------------
-    // Zero data-loss guarantee
-    // -----------------------------------------------------------------------
 
     #[test]
     fn output_count_equals_input_count_for_uniform_batch() {
@@ -542,7 +473,7 @@ mod tests {
 
     #[test]
     fn output_count_equals_input_count_for_mixed_batch() {
-        let events = vec![
+        let events = [
             make_event(
                 ContractEventType::Contract,
                 Some(contract_hash(1)),
@@ -586,7 +517,7 @@ mod tests {
 
     #[test]
     fn walk_diagnostic_events_convenience_fn_matches_walker_output() {
-        let events = vec![
+        let events = [
             make_event(
                 ContractEventType::Contract,
                 Some(contract_hash(10)),
@@ -615,13 +546,9 @@ mod tests {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Ordering preservation
-    // -----------------------------------------------------------------------
-
     #[test]
     fn output_ordering_mirrors_input_ordering() {
-        let events = vec![
+        let events = [
             make_event(
                 ContractEventType::Contract,
                 Some(contract_hash(10)),
@@ -652,10 +579,6 @@ mod tests {
         assert_eq!(result[2].kind, DiagnosticEventKind::Debug);
     }
 
-    // -----------------------------------------------------------------------
-    // Classification matrix — every kind variant covered
-    // -----------------------------------------------------------------------
-
     #[test]
     fn all_kind_variants_are_reachable_from_xdr_type() {
         let contract_event = make_event(
@@ -674,7 +597,7 @@ mod tests {
             true,
         );
 
-        let events = vec![contract_event, system_event, debug_event];
+        let events = [contract_event, system_event, debug_event];
         let result = DiagnosticEventWalker::new().walk(events.iter());
 
         let kinds: Vec<&DiagnosticEventKind> = result.iter().map(|e| &e.kind).collect();
@@ -683,13 +606,8 @@ mod tests {
         assert!(kinds.contains(&&DiagnosticEventKind::Debug));
     }
 
-    // -----------------------------------------------------------------------
-    // Data shape integrity for complex ScVal payloads
-    // -----------------------------------------------------------------------
-
     #[test]
     fn complex_scval_data_survives_round_trip() {
-        // Build a Vec<ScVal> payload carried in an i64
         let data = ScVal::I64(-9_999_999_999_i64);
         let event = make_event(
             ContractEventType::Contract,
@@ -719,10 +637,6 @@ mod tests {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Default impl
-    // -----------------------------------------------------------------------
-
     #[test]
     fn default_walker_behaves_identically_to_new() {
         let event = make_event(
@@ -733,14 +647,10 @@ mod tests {
             true,
         );
         let a = DiagnosticEventWalker::new().walk(std::iter::once(&event));
-        let b = DiagnosticEventWalker::default().walk(std::iter::once(&event));
+        let b = DiagnosticEventWalker.walk(std::iter::once(&event));
         assert_eq!(a[0].kind, b[0].kind);
         assert_eq!(a[0].contract_id, b[0].contract_id);
     }
-
-    // -----------------------------------------------------------------------
-    // DiagnosticEventKind display
-    // -----------------------------------------------------------------------
 
     #[test]
     fn kind_display_strings_are_correct() {
@@ -748,5 +658,118 @@ mod tests {
         assert_eq!(DiagnosticEventKind::System.to_string(), "System");
         assert_eq!(DiagnosticEventKind::Debug.to_string(), "Debug");
         assert_eq!(DiagnosticEventKind::Unknown.to_string(), "Unknown");
+    }
+
+    #[test]
+    fn find_failing_contract_returns_last_failed_event_contract() {
+        let hash_a = contract_hash(1);
+        let hash_b = contract_hash(2);
+        let expected = StrkeyContract(hash_b.0).to_string();
+
+        let events = vec![
+            make_event(
+                ContractEventType::Contract,
+                Some(hash_a),
+                vec![sym("transfer")],
+                ScVal::Void,
+                true,
+            ),
+            make_event(
+                ContractEventType::Contract,
+                Some(hash_b),
+                vec![sym("error")],
+                ScVal::Void,
+                false,
+            ),
+        ];
+
+        let result = DiagnosticEventWalker::find_failing_contract(&events);
+        assert_eq!(result.as_deref(), Some(expected.as_str()));
+    }
+
+    #[test]
+    fn find_failing_contract_returns_none_when_no_events() {
+        assert_eq!(DiagnosticEventWalker::find_failing_contract(&[]), None);
+    }
+
+    #[test]
+    fn find_failing_contract_returns_none_when_all_succeeded() {
+        let events = vec![
+            make_event(
+                ContractEventType::Contract,
+                Some(contract_hash(1)),
+                vec![],
+                ScVal::Void,
+                true,
+            ),
+            make_event(ContractEventType::System, None, vec![], ScVal::Void, true),
+        ];
+        assert_eq!(DiagnosticEventWalker::find_failing_contract(&events), None);
+    }
+
+    #[test]
+    fn find_failing_contract_returns_none_when_failed_event_has_no_contract_id() {
+        let events = vec![make_event(
+            ContractEventType::System,
+            None,
+            vec![sym("error")],
+            ScVal::Void,
+            false,
+        )];
+        assert_eq!(DiagnosticEventWalker::find_failing_contract(&events), None);
+    }
+
+    #[test]
+    fn find_failing_contract_prefers_last_emitted_failure() {
+        let hash_a = contract_hash(10);
+        let hash_b = contract_hash(20);
+        let expected_b = StrkeyContract(hash_b.0).to_string();
+
+        let events = vec![
+            make_event(
+                ContractEventType::Contract,
+                Some(hash_a),
+                vec![sym("error")],
+                ScVal::Void,
+                false,
+            ),
+            make_event(
+                ContractEventType::Contract,
+                Some(hash_b),
+                vec![sym("error")],
+                ScVal::Void,
+                false,
+            ),
+        ];
+
+        let result = DiagnosticEventWalker::find_failing_contract(&events);
+        assert_eq!(result.as_deref(), Some(expected_b.as_str()));
+    }
+
+    #[test]
+    fn find_failing_contract_skips_successful_events_in_reverse() {
+        let hash_fail = contract_hash(42);
+        let expected = StrkeyContract(hash_fail.0).to_string();
+
+        let events = vec![
+            make_event(
+                ContractEventType::Contract,
+                Some(contract_hash(1)),
+                vec![],
+                ScVal::Void,
+                true,
+            ),
+            make_event(
+                ContractEventType::Contract,
+                Some(hash_fail),
+                vec![sym("error")],
+                ScVal::Void,
+                false,
+            ),
+            make_event(ContractEventType::System, None, vec![], ScVal::Void, true),
+        ];
+
+        let result = DiagnosticEventWalker::find_failing_contract(&events);
+        assert_eq!(result.as_deref(), Some(expected.as_str()));
     }
 }

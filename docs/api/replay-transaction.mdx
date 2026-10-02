@@ -8,7 +8,7 @@ pub async fn replay_transaction(
     tx_hash: &str,
     state: &ReconstructedState,
     options: ReplayOptions
-) -> Result<TraceTimeline, PrismError>
+) -> Result<TraceTimeline, GratError>
 ```
 
 Replays a transaction against a reconstructed state snapshot and returns a hierarchical execution trace.

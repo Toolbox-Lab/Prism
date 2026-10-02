@@ -1,0 +1,140 @@
+{
+  "0": {
+    "id": "host.contract.error_general",
+    "category": "contract",
+    "code": 0,
+    "name": "ContractError",
+    "severity": "Error",
+    "since_protocol": 20,
+    "summary": "Contract error: the contract's own logic rejected this call — run with --resolve to map the code to its name.",
+    "detailed_explanation": "Unlike host errors, contract errors are defined by the contract author. Each contract can define an error enum with numeric codes and descriptive names. When a contract panics or returns an error value, the host wraps it as a ContractError with the numeric code.\n\nTo understand a contract error, you need the contract's specification (contractspecv0 metadata) which maps the numeric code to a human-readable name and optional documentation.",
+    "common_causes": [
+      {
+        "description": "Business logic assertion failure in the contract (e.g., insufficient balance, invalid state)",
+        "likelihood": "high"
+      },
+      {
+        "description": "Input validation failure — the contract rejected the provided arguments",
+        "likelihood": "high"
+      },
+      {
+        "description": "Access control check failed — the caller is not authorized for this operation",
+        "likelihood": "medium"
+      }
+    ],
+    "suggested_fixes": [
+      {
+        "description": "Use grat's contract error resolver to map the numeric code to the contract's error enum name",
+        "difficulty": "easy",
+        "requires_upgrade": false
+      },
+      {
+        "description": "Review the contract source code for the error enum definition to understand the specific failure",
+        "difficulty": "medium",
+        "requires_upgrade": false,
+        "related_errors": ["host.auth.not_authorized"],
+        "source_file": "soroban-env-host/src/host.rs"
+      }
+    ]
+  },
+  "1": {
+    "id": "host.contract.internal_error",
+    "category": "contract",
+    "code": 1,
+    "name": "InternalError",
+    "severity": "Error",
+    "since_protocol": 20,
+    "summary": "An internal protocol implementation error occurred (e.g. invalid ledger state).",
+    "detailed_explanation": "The contract encountered an internal error during execution, indicating a protocol implementation issue or invalid ledger state.",
+    "common_causes": [
+      {
+        "description": "Internal validation or state consistency checks failed in the contract",
+        "likelihood": "high"
+      }
+    ],
+    "suggested_fixes": [
+      {
+        "description": "Check the diagnostic logs to see if there are internal contract assertion failures",
+        "difficulty": "medium",
+        "requires_upgrade": false,
+        "related_errors": [],
+        "source_file": "soroban-env-host/src/host.rs"
+      }
+    ]
+  },
+  "2": {
+    "id": "host.contract.operation_not_supported",
+    "category": "contract",
+    "code": 2,
+    "name": "OperationNotSupportedError",
+    "severity": "Error",
+    "since_protocol": 20,
+    "summary": "The operation is not supported (e.g. calling clawback on an asset without clawback enabled).",
+    "detailed_explanation": "The contract attempted an operation that is unsupported by the contract configuration or type (e.g., performing a clawback on an asset when clawback is disabled).",
+    "common_causes": [
+      {
+        "description": "Invoking clawback on a non-clawbackable asset",
+        "likelihood": "high"
+      }
+    ],
+    "suggested_fixes": [
+      {
+        "description": "Check the asset flags and ensure the operation is allowed for the target asset",
+        "difficulty": "easy",
+        "requires_upgrade": false,
+        "related_errors": [],
+        "source_file": "soroban-env-host/src/host.rs"
+      }
+    ]
+  },
+  "3": {
+    "id": "host.contract.already_initialized",
+    "category": "contract",
+    "code": 3,
+    "name": "AlreadyInitializedError",
+    "severity": "Error",
+    "since_protocol": 20,
+    "summary": "The contract instance has already been initialized and cannot be re-initialized.",
+    "detailed_explanation": "The contract instance was initialized twice. Soroban contracts typically only allow initialization once.",
+    "common_causes": [
+      {
+        "description": "Calling the initialize function on an already initialized contract instance",
+        "likelihood": "high"
+      }
+    ],
+    "suggested_fixes": [
+      {
+        "description": "Ensure that initialization is only called once per contract deployment",
+        "difficulty": "easy",
+        "requires_upgrade": false,
+        "related_errors": [],
+        "source_file": "soroban-env-host/src/host.rs"
+      }
+    ]
+  },
+  "6": {
+    "id": "host.contract.account_missing",
+    "category": "contract",
+    "code": 6,
+    "name": "AccountMissingError",
+    "severity": "Error",
+    "since_protocol": 20,
+    "summary": "An account involved in the transaction does not exist on the network.",
+    "detailed_explanation": "The operation required a specific account to exist on the network, but the account could not be found.",
+    "common_causes": [
+      {
+        "description": "Providing an invalid account address or an account that has not been created/funded",
+        "likelihood": "high"
+      }
+    ],
+    "suggested_fixes": [
+      {
+        "description": "Verify that the addresses provided exist and are active on the target network",
+        "difficulty": "easy",
+        "requires_upgrade": false,
+        "related_errors": [],
+        "source_file": "soroban-env-host/src/host.rs"
+      }
+    ]
+  }
+}

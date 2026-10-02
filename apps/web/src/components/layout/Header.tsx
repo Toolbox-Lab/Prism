@@ -2,7 +2,7 @@ export default function Header() {
   return (
     <header>
       <nav>
-        <span>🔬 Prism</span>
+        <span>🔬 Grat</span>
       </nav>
     </header>
   );

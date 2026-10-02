@@ -1,4 +1,4 @@
-use crate::error::{JsonRpcError, PrismError, PrismResult};
+use crate::error::{GratError, GratResult, JsonRpcError};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
@@ -31,7 +31,6 @@ impl<T: Serialize> JsonRpcRequest<T> {
 }
 
 /// JSON-RPC 2.0 response envelope.
-///
 /// `T` is the method-specific result struct; it must implement [`Deserialize`].
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcResponse<T> {
@@ -77,7 +76,6 @@ pub struct EmptyParams {}
 pub type GetHealthParams = EmptyParams;
 
 /// Low-level JSON-RPC HTTP transport.
-///
 /// Handles serialization, deserialization, retry, and rate-limit backoff.
 /// Higher-level clients (e.g. [`super::rpc::RpcClient`]) build on top of this.
 pub struct JsonRpcTransport {
@@ -98,7 +96,7 @@ impl JsonRpcTransport {
         Self {
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
-                .user_agent(concat!("prism-cli/", env!("CARGO_PKG_VERSION")))
+                .user_agent(concat!("grat-cli/", env!("CARGO_PKG_VERSION")))
                 .default_headers(headers)
                 .build()
                 .expect("failed to build HTTP client"),
@@ -108,20 +106,18 @@ impl JsonRpcTransport {
     }
 
     /// Execute a typed JSON-RPC call and return the typed result.
-    ///
     /// Retries are triggered by:
     /// - Transport-level failures (connection refused, timeout, etc.)
     /// - HTTP 429 Too Many Requests
     /// - HTTP 5xx Server Errors (500–599)
-    ///
-    /// Backoff follows `BASE_DELAY_MS × 2^attempt`, capped at `MAX_DELAY_MS`.
-    pub async fn call<P, R>(&self, request: &JsonRpcRequest<P>) -> PrismResult<R>
+    ///   Backoff follows `BASE_DELAY_MS × 2^attempt`, capped at `MAX_DELAY_MS`.
+    pub async fn call<P, R>(&self, request: &JsonRpcRequest<P>) -> GratResult<R>
     where
         P: Serialize + std::fmt::Debug,
         R: for<'de> Deserialize<'de>,
     {
         let method = request.method;
-        let mut last_error: Option<PrismError> = None;
+        let mut last_error: Option<GratError> = None;
 
         for attempt in 0..=self.max_retries {
             if attempt > 0 {
@@ -136,6 +132,7 @@ impl JsonRpcTransport {
                 tracing::debug!(attempt, method, "retrying RPC request");
             }
 
+            // Start the Prometheus latency timer before the network request.
             let started_at = Instant::now();
             tracing::debug!(method, endpoint = %self.endpoint, attempt, "sending RPC request");
 
@@ -143,7 +140,9 @@ impl JsonRpcTransport {
                 Ok(response) => {
                     let status = response.status();
                     let elapsed_ms = started_at.elapsed().as_millis();
+                    // Exact latency delta recorded into the HistogramVec.
                     let duration_secs = started_at.elapsed().as_secs_f64();
+                    crate::rpc::record_rpc_duration(&self.endpoint, method, duration_secs);
 
                     tracing::debug!(
                         method,
@@ -154,19 +153,17 @@ impl JsonRpcTransport {
                         "RPC response received"
                     );
 
-                    // Retry on 429 Too Many Requests.
                     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                        crate::rpc::record_rpc_duration(method, duration_secs, false);
+                        crate::rpc::record_rpc_http_error(&self.endpoint, method, 429);
                         tracing::warn!(method, attempt, "rate limited by RPC endpoint, will retry");
-                        last_error = Some(PrismError::RpcError(format!(
+                        last_error = Some(GratError::RpcError(format!(
                             "rate limited (attempt {attempt})"
                         )));
                         continue;
                     }
 
-                    // Retry on any 5xx Server Error.
                     if status.is_server_error() {
-                        crate::rpc::record_rpc_duration(method, duration_secs, false);
+                        crate::rpc::record_rpc_http_error(&self.endpoint, method, status.as_u16());
                         tracing::warn!(
                             method,
                             attempt,
@@ -174,27 +171,23 @@ impl JsonRpcTransport {
                             elapsed_ms,
                             "RPC endpoint returned server error (5xx), will retry"
                         );
-                        last_error = Some(PrismError::RpcError(format!(
+                        last_error = Some(GratError::RpcError(format!(
                             "server error {status} on attempt {attempt}"
                         )));
                         continue;
                     }
 
-                    let body = response.text().await.map_err(|e| {
-                        crate::rpc::record_rpc_duration(method, duration_secs, false);
-                        PrismError::RpcError(format!("response read error: {e}"))
-                    })?;
+                    let body = response
+                        .text()
+                        .await
+                        .map_err(|e| GratError::RpcError(format!("response read error: {e}")))?;
 
                     tracing::trace!(method, elapsed_ms, response = %body, "RPC response payload");
 
-                    let envelope: JsonRpcResponse<R> =
-                        serde_json::from_str(&body).map_err(|e| {
-                            crate::rpc::record_rpc_duration(method, duration_secs, false);
-                            PrismError::RpcError(format!("response parse error: {e}"))
-                        })?;
+                    let envelope: JsonRpcResponse<R> = serde_json::from_str(&body)
+                        .map_err(|e| GratError::RpcError(format!("response parse error: {e}")))?;
 
                     if let Some(err) = envelope.error {
-                        crate::rpc::record_rpc_duration(method, duration_secs, false);
                         tracing::debug!(
                             method,
                             endpoint = %self.endpoint,
@@ -202,17 +195,16 @@ impl JsonRpcTransport {
                             code = err.code,
                             "RPC returned error response"
                         );
-                        return Err(PrismError::JsonRpc(err));
+                        return Err(GratError::JsonRpc(err));
                     }
 
-                    crate::rpc::record_rpc_duration(method, duration_secs, true);
                     return envelope
                         .result
-                        .ok_or_else(|| PrismError::RpcError("empty result".to_string()));
+                        .ok_or_else(|| GratError::RpcError("empty result".to_string()));
                 }
                 Err(e) => {
                     let duration_secs = started_at.elapsed().as_secs_f64();
-                    crate::rpc::record_rpc_duration(method, duration_secs, false);
+                    crate::rpc::record_rpc_duration(&self.endpoint, method, duration_secs);
                     tracing::debug!(
                         method,
                         endpoint = %self.endpoint,
@@ -221,11 +213,11 @@ impl JsonRpcTransport {
                         error = %e,
                         "RPC request failed"
                     );
-                    last_error = Some(PrismError::RpcError(format!("request failed: {e}")));
+                    last_error = Some(GratError::RpcError(format!("request failed: {e}")));
                 }
             }
         }
 
-        Err(last_error.unwrap_or_else(|| PrismError::RpcError("unknown error".to_string())))
+        Err(last_error.unwrap_or_else(|| GratError::RpcError("unknown error".to_string())))
     }
 }

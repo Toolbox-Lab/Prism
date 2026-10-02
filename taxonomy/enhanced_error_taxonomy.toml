@@ -1,0 +1,116 @@
+# Stellar Error Taxonomy Database - Enhanced Schema
+# See: https://github.com/Toolbox-Lab/Grat/issues/381
+
+[error.ZERO_BALANCE]
+title = "Zero Balance Error"
+description = "The account has insufficient balance for the transaction."
+code = "ERR_ZERO_BALANCE"
+since_protocol = 19
+category = "account"
+
+# NEW: Related Errors linking system
+[[error.ZERO_BALANCE.related_errors]]
+code = "ERR_UNDERFUNDED"
+relationship = "similar"
+description = "Underfunded error occurs when balance is below minimum reserve"
+
+[[error.ZERO_BALANCE.related_errors]]
+code = "ERR_ACCOUNT_NOT_FOUND"
+relationship = "precondition"
+description = "Account must exist before checking balance"
+
+# NEW: Documentation URL
+[error.ZERO_BALANCE.documentation]
+stellar_docs_url = "https://developers.stellar.org/docs/encyclopedia/errors#zero-balance"
+soroban_docs_url = "https://soroban.stellar.org/docs/reference/errors#zero-balance"
+
+# NEW: Since Protocol Version
+[error.ZERO_BALANCE.protocol]
+since_version = 19
+deprecated_in = null
+removed_in = null
+
+# NEW: Contract-specific examples
+[[error.ZERO_BALANCE.examples]]
+contract = "token"
+scenario = "Transfer with insufficient balance"
+code_snippet = '''
+fn transfer(e: Env, from: Address, to: Address, amount: i128) {
+    let balance = read_balance(&e, from.clone());
+    if balance < amount {
+        panic_with_error!(e, Error::ZeroBalance);
+    }
+}
+'''
+
+[error.UNDERFUNDED]
+title = "Underfunded Error"
+description = "The account balance is below the minimum reserve requirement."
+code = "ERR_UNDERFUNDED"
+since_protocol = 19
+category = "account"
+
+[[error.UNDERFUNDED.related_errors]]
+code = "ERR_ZERO_BALANCE"
+relationship = "similar"
+description = "Both indicate insufficient funds; underfunded is reserve-specific"
+
+[error.UNDERFUNDED.documentation]
+stellar_docs_url = "https://developers.stellar.org/docs/encyclopedia/errors#underfunded"
+soroban_docs_url = "https://soroban.stellar.org/docs/reference/errors#underfunded"
+
+[error.UNDERFUNDED.protocol]
+since_version = 19
+
+[[error.UNDERFUNDED.examples]]
+contract = "token"
+scenario = "Create account with insufficient starting balance"
+code_snippet = '''
+fn create_account(e: Env, initial_balance: i128) {
+    if initial_balance < MIN_RESERVE {
+        panic_with_error!(e, Error::Underfunded);
+    }
+}
+'''
+
+[error.HOST_FN_FAILED]
+title = "Host Function Failed"
+description = "A Soroban host function call failed during execution."
+code = "ERR_HOST_FN_FAILED"
+since_protocol = 20
+category = "runtime"
+
+[[error.HOST_FN_FAILED.related_errors]]
+code = "ERR_CONTRACT_TRAPPED"
+relationship = "similar"
+description = "Contract trap is a specific case where the contract explicitly aborts"
+
+[[error.HOST_FN_FAILED.related_errors]]
+code = "ERR_BUDGET_EXCEEDED"
+relationship = "cascade"
+description = "Budget exceeded often causes subsequent host function failures"
+
+[error.HOST_FN_FAILED.documentation]
+stellar_docs_url = "https://developers.stellar.org/docs/encyclopedia/errors#host-fn-failed"
+soroban_docs_url = "https://soroban.stellar.org/docs/reference/errors#host-function-failure"
+
+[error.HOST_FN_FAILED.protocol]
+since_version = 20
+
+[[error.HOST_FN_FAILED.examples]]
+contract = "defi"
+scenario = "Calling a host function with invalid arguments"
+code_snippet = '''
+fn deposit(e: Env, amount: i128) -> Result<(), Error> {
+    e.storage().instance().get::<Balance>(&DataKey::Balance)
+        .map_err(|_| Error::HostFnFailed)?;
+    Ok(())
+}
+'''
+
+# Schema validation metadata
+[metadata]
+version = "2.0"
+fields_required = ["title", "description", "code", "since_protocol"]
+fields_optional = ["related_errors", "documentation", "protocol", "examples", "category"]
+last_updated = "2026-07-29"

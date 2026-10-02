@@ -10,6 +10,10 @@ export interface TraceData {
     memory_used: number;
     cpu_limit: number;
     memory_limit: number;
+    read_bytes: number;
+    read_limit: number;
+    write_bytes: number;
+    write_limit: number;
   };
   state_diff: any[];
   completed: boolean;
@@ -81,10 +85,11 @@ export function useTrace(wsUrl?: string) {
     },
   };
 
-  const { connected, error: wsError, requestTrace: wsRequestTrace } = useWebSocket(
-    wsUrl || "",
-    callbacks
-  );
+  const {
+    connected,
+    error: wsError,
+    requestTrace: wsRequestTrace,
+  } = useWebSocket(wsUrl || "", callbacks);
 
   const requestTrace = useCallback(
     (txHash: string, network: string) => {
@@ -95,15 +100,14 @@ export function useTrace(wsUrl?: string) {
         setLoading(false);
       }
     },
-    [wsUrl, connected, wsRequestTrace]
+    [wsUrl, connected, wsRequestTrace],
   );
 
-  return { 
-    trace, 
-    loading, 
-    requestTrace, 
+  return {
+    trace,
+    loading,
+    requestTrace,
     streaming: !!wsUrl && connected,
     streamError: wsError,
   };
 }
-

@@ -1,12 +1,20 @@
 {
-  "name": "prism-vscode",
-  "displayName": "Prism — Soroban Debugger",
+  "name": "grat-vscode",
+  "displayName": "Grat — Soroban Debugger",
   "description": "Inline Soroban error decoding and transaction debugging for VS Code.",
   "version": "0.1.0",
-  "publisher": "prism-soroban",
-  "engines": { "vscode": "^1.95.0" },
-  "categories": ["Debuggers", "Other"],
-  "activationEvents": ["onLanguage:rust", "onCommand:prism.decode"],
+  "publisher": "grat-soroban",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:rust",
+    "onCommand:grat.decode"
+  ],
   "main": "./dist/extension.js",
   "scripts": {
     "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --platform=node",
@@ -17,16 +25,24 @@
   },
   "contributes": {
     "commands": [
-      { "command": "prism.decode", "title": "Prism: Decode Transaction Error" },
-      { "command": "prism.inspect", "title": "Prism: Inspect Transaction" }
+      {
+        "command": "grat.decode",
+        "title": "Grat: Decode Transaction Error"
+      },
+      {
+        "command": "grat.inspect",
+        "title": "Grat: Inspect Transaction"
+      }
     ]
   },
   "devDependencies": {
-    "@types/vscode": "^1.95.0",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.0.0",
-    "typescript": "^5.7.0",
-    "esbuild": "^0.24.0",
+    "@types/vscode": "^1.95.0",
     "@vscode/vsce": "^3.0.0",
-    "eslint": "^9.0.0"
+    "esbuild": "^0.24.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.64.0"
   }
 }

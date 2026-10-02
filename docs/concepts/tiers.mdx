@@ -1,18 +1,21 @@
 ---
 title: "The Three Tiers"
-description: "Prism is organized into three levels of diagnostic depth."
+description: "Grat is organized into three levels of diagnostic depth."
 ---
 
-Prism builds on itself. Most sessions end at Tier 1. The rare hard cases escalate to Tier 2. Tier 3 is for instruction-level investigation.
+Grat builds on itself. Most sessions end at Tier 1. The rare hard cases escalate to Tier 2. Tier 3 is for instruction-level investigation.
 
 ## Tier 1 — Decode
+
 **The Fast Path.**
-Prism fetches the transaction, classifies the error, looks it up in the taxonomy, and resolves contract codes. This runs in under two seconds.
+Grat fetches the transaction, classifies the error, looks it up in the taxonomy, and resolves contract codes. This runs in under two seconds.
 
 ## Tier 2 — Trace
+
 **The Diagnostic Path.**
-Prism reconstructs the exact ledger state at the time of execution and replays the transaction in a modified Soroban sandbox. It produces a hierarchical execution timeline and resource profile.
+Grat reconstructs the exact ledger state at the time of execution and replays the transaction in a modified Soroban sandbox. It produces a hierarchical execution timeline and resource profile.
 
 ## Tier 3 — Time-Travel
+
 **The Investigation Path.**
 Adds interactive debugging to the replay: breakpoints, step-through, and **What-If mode**. Re-simulate with modified inputs (arguments, state, limits) and see the diff in outcomes without redeploying.

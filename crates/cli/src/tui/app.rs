@@ -1,6 +1,4 @@
-
-
-use prism_core::types::config::NetworkConfig;
+use grat_core::types::config::NetworkConfig;
 
 pub async fn launch(tx_hash: &str, network: &NetworkConfig) -> anyhow::Result<()> {
     let state = crate::tui::state::TuiState {

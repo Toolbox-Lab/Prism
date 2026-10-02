@@ -1,3 +1,3 @@
 export default function LoadingSpinner() {
-  return <div className="spinner">{/* Loading animation */}</div>;
+  return <div className="spinner">{}</div>;
 }

@@ -10,12 +10,14 @@ import LoadingSpinner from "@/components/shared/LoadingSpinner";
 export default function TracePage() {
   const [txHash, setTxHash] = useState("");
   const [network, setNetwork] = useState("testnet");
-  
-  const wsUrl = typeof window !== "undefined" 
-    ? `ws://${window.location.hostname}:8080` 
-    : "";
-  
-  const { trace, loading, requestTrace, streaming, streamError } = useTrace(wsUrl);
+
+  const wsUrl =
+    typeof window !== "undefined"
+      ? `ws://${window.location.hostname}:8080`
+      : "";
+
+  const { trace, loading, requestTrace, streaming, streamError } =
+    useTrace(wsUrl);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +29,7 @@ export default function TracePage() {
   return (
     <main className="container mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6">Execution Trace</h1>
-      
+
       <form onSubmit={handleSubmit} className="mb-8 space-y-4">
         <div>
           <label htmlFor="txHash" className="block text-sm font-medium mb-2">
@@ -42,7 +44,7 @@ export default function TracePage() {
             className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
           />
         </div>
-        
+
         <div>
           <label htmlFor="network" className="block text-sm font-medium mb-2">
             Network
@@ -58,7 +60,7 @@ export default function TracePage() {
             <option value="futurenet">Futurenet</option>
           </select>
         </div>
-        
+
         <button
           type="submit"
           disabled={loading || !txHash}
@@ -66,13 +68,13 @@ export default function TracePage() {
         >
           {loading ? "Tracing..." : "Trace Transaction"}
         </button>
-        
+
         {streaming && (
           <div className="text-sm text-green-600">
             ✓ Streaming enabled - trace will appear incrementally
           </div>
         )}
-        
+
         {streamError && (
           <div className="text-sm text-red-600">
             ⚠ Streaming unavailable: {streamError}
@@ -84,8 +86,8 @@ export default function TracePage() {
         <div className="flex items-center justify-center py-12">
           <LoadingSpinner />
           <span className="ml-3 text-gray-600">
-            {trace?.nodes.length 
-              ? `Processing trace nodes (${trace.nodes.length} received)...` 
+            {trace?.nodes.length
+              ? `Processing trace nodes (${trace.nodes.length} received)...`
               : "Reconstructing state and starting replay..."}
           </span>
         </div>
@@ -107,7 +109,8 @@ export default function TracePage() {
               <div>
                 <dt className="text-sm text-gray-600">Trace Nodes</dt>
                 <dd className="font-mono text-sm">
-                  {trace.nodes.length} {trace.completed ? "(complete)" : "(streaming...)"}
+                  {trace.nodes.length}{" "}
+                  {trace.completed ? "(complete)" : "(streaming...)"}
                 </dd>
               </div>
               <div>
@@ -115,7 +118,7 @@ export default function TracePage() {
                 <dd className="font-mono text-sm">{trace.state_diff.length}</dd>
               </div>
             </dl>
-            
+
             {trace.error && (
               <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                 <p className="text-red-800 font-medium">Error</p>
@@ -129,7 +132,10 @@ export default function TracePage() {
           )}
 
           {trace.nodes.length > 0 && (
-            <ExecutionTimeline nodes={trace.nodes} />
+            <ExecutionTimeline
+              nodes={trace.nodes}
+              resourceProfile={trace.resource_profile}
+            />
           )}
 
           {trace.state_diff.length > 0 && (
@@ -140,4 +146,3 @@ export default function TracePage() {
     </main>
   );
 }
-

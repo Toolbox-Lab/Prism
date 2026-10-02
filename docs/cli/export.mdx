@@ -1,5 +1,5 @@
 ---
-title: "prism export"
+title: "grat export"
 sidebarTitle: "export"
 description: "Export a transaction as a standalone test case."
 icon: "file-export"
@@ -10,10 +10,11 @@ The `export` command helps you turn a mainnet failure into a reproducible regres
 ## Usage
 
 ```bash
-prism export <TX_HASH> --format test
+grat export <TX_HASH> --format test
 ```
 
 ## Formats
+
 - **`test`**: Generates a Rust unit test using the `soroban-sdk` test framework.
 - **`json`**: Exports the full reconstructed state and inputs for custom tools.
 - **`trace`**: Saves the Tier 2 execution timeline as a shareable file.

@@ -7,7 +7,7 @@ description: "Compares pre and post execution ledger states."
 pub fn diff_state(
     before: &LedgerState,
     after: &LedgerState
-) -> Result<StateDiff, PrismError>
+) -> Result<StateDiff, GratError>
 ```
 
 Produces a structured comparison of ledger entries, highlighting created, updated, and deleted keys.

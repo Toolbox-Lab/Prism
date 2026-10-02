@@ -1,8 +1,8 @@
 {
-  "name": "Prism",
+  "name": "Grat",
   "logo": {
-    "light": "https://img.shields.io/badge/Prism-Diagnostic-7C3AED?style=for-the-badge",
-    "dark": "https://img.shields.io/badge/Prism-Diagnostic-A78BFA?style=for-the-badge"
+    "light": "https://img.shields.io/badge/Grat-Diagnostic-7C3AED?style=for-the-badge",
+    "dark": "https://img.shields.io/badge/Grat-Diagnostic-A78BFA?style=for-the-badge"
   },
   "favicon": "/favicon.png",
   "colors": {
@@ -13,7 +13,7 @@
   "topbarLinks": [
     {
       "name": "GitHub",
-      "url": "https://github.com/prism-soroban/prism"
+      "url": "https://github.com/grat-soroban/grat"
     }
   ],
   "anchors": [
@@ -108,6 +108,6 @@
     }
   ],
   "footerSocials": {
-    "github": "https://github.com/prism-soroban/prism"
+    "github": "https://github.com/grat-soroban/grat"
   }
 }

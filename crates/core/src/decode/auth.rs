@@ -1,14 +1,4 @@
-//! Parse Soroban authorization entries into a readable auth chain.
-//!
-//! Auth failures are among the most confusing Soroban errors because the raw
-//! `SorobanAuthorizationEntry` XDR hides *who* authorized *what* behind nested
-//! credentials and a recursively nested invocation tree. This analyzer flattens
-//! that structure: it surfaces the credential (source-account vs. a specific
-//! address with its nonce and signature expiry) and walks the
-//! `SorobanAuthorizedInvocation` tree into a depth-ordered list of steps, so a
-//! reader can see every invocation and where the authorization actually applies.
-
-use crate::error::PrismResult;
+use crate::error::GratResult;
 use crate::xdr::codec::XdrCodec;
 use serde::{Deserialize, Serialize};
 use stellar_xdr::curr::{
@@ -17,73 +7,72 @@ use stellar_xdr::curr::{
     SorobanCredentials, Uint256,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthorizationType {
+    Ed25519,
+    SmartWallet,
+}
+
+impl std::fmt::Display for AuthorizationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthorizationType::Ed25519 => write!(f, "Ed25519"),
+            AuthorizationType::SmartWallet => write!(f, "Smart Wallet"),
+        }
+    }
+}
+
 /// The credential that authorizes an [`AuthChain`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum AuthCredential {
     /// Authorized implicitly by the transaction's source account — no nonce or
-    /// signature is carried in the entry itself.
     SourceAccount,
-    /// Authorized by a specific address, signed off-chain.
     Address(AddressCredential),
 }
 
-/// The address-based credential of an auth entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AddressCredential {
-    /// The authorizing address as a strkey (`G...` account or `C...` contract).
     pub address: String,
-    /// Replay-protection nonce chosen by the signer.
+    pub auth_type: AuthorizationType,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub contract_id: Option<String>,
     pub nonce: i64,
-    /// Ledger sequence at which this signature stops being valid.
     pub signature_expiration_ledger: u32,
-    /// Whether a non-void signature payload is present.
     pub signed: bool,
 }
 
-/// The kind of host function a single invocation step authorizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthFunctionKind {
-    /// A contract function call (`ContractFn`).
     ContractFn,
-    /// A contract-creation host function (`CreateContractHostFn` and its v2 form).
     CreateContract,
 }
 
-/// A single, flattened step in the authorized-invocation tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthInvocation {
-    /// Depth in the original tree; the root invocation is `0`.
     pub depth: usize,
-    /// What kind of host function this step authorizes.
     pub kind: AuthFunctionKind,
-    /// The invoked contract address as a strkey, when known (`ContractFn`).
     pub contract: Option<String>,
-    /// The invoked function name, when known (`ContractFn`).
     pub function: Option<String>,
-    /// Number of arguments passed to the invocation.
     pub arg_count: usize,
+    pub args: Vec<String>,
+    pub target: String,
 }
 
-/// A readable authorization chain parsed from a raw auth entry: the credential
-/// state plus every invocation it covers, in depth-first order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthChain {
-    /// Who authorized this chain and how.
     pub credential: AuthCredential,
-    /// Every authorized invocation, flattened depth-first from the root.
     pub invocations: Vec<AuthInvocation>,
 }
 
 impl AuthChain {
-    /// Parse an [`AuthChain`] from a base64-encoded `SorobanAuthorizationEntry`.
-    pub fn from_xdr_base64(b64: &str) -> PrismResult<Self> {
+    pub fn from_xdr_base64(b64: &str) -> GratResult<Self> {
         let entry = SorobanAuthorizationEntry::from_xdr_base64(b64)?;
         Ok(Self::from_entry(&entry))
     }
 
-    /// Parse an [`AuthChain`] from a decoded `SorobanAuthorizationEntry`.
     pub fn from_entry(entry: &SorobanAuthorizationEntry) -> Self {
         let credential = parse_credential(&entry.credentials);
         let mut invocations = Vec::new();
@@ -95,8 +84,6 @@ impl AuthChain {
     }
 }
 
-/// Extract the credential state (address + nonce, or source account) from the
-/// entry's `SorobanCredentials`.
 fn parse_credential(credentials: &SorobanCredentials) -> AuthCredential {
     match credentials {
         SorobanCredentials::SourceAccount => AuthCredential::SourceAccount,
@@ -107,15 +94,21 @@ fn parse_credential(credentials: &SorobanCredentials) -> AuthCredential {
 }
 
 fn parse_address_credential(creds: &SorobanAddressCredentials) -> AddressCredential {
+    let address = scaddress_to_strkey(&creds.address);
+    let (auth_type, contract_id) = match &creds.address {
+        ScAddress::Account(_) => (AuthorizationType::Ed25519, None),
+        ScAddress::Contract(_) => (AuthorizationType::SmartWallet, Some(address.clone())),
+    };
     AddressCredential {
-        address: scaddress_to_strkey(&creds.address),
+        address,
+        auth_type,
+        contract_id,
         nonce: creds.nonce,
         signature_expiration_ledger: creds.signature_expiration_ledger,
         signed: creds.signature != ScVal::Void,
     }
 }
 
-/// Recursively flatten an `AuthorizedInvocation` tree into depth-ordered steps.
 fn walk_invocation(
     invocation: &SorobanAuthorizedInvocation,
     depth: usize,
@@ -129,27 +122,88 @@ fn walk_invocation(
 
 fn parse_function(function: &SorobanAuthorizedFunction, depth: usize) -> AuthInvocation {
     match function {
-        SorobanAuthorizedFunction::ContractFn(args) => AuthInvocation {
-            depth,
-            kind: AuthFunctionKind::ContractFn,
-            contract: Some(scaddress_to_strkey(&args.contract_address)),
-            function: Some(args.function_name.to_string()),
-            arg_count: args.args.len(),
-        },
-        // Both `CreateContractHostFn` and the v2 form authorize a contract
-        // creation; the contract address is not yet known at this point.
-        _ => AuthInvocation {
+        SorobanAuthorizedFunction::ContractFn(args) => {
+            let contract = scaddress_to_strkey(&args.contract_address);
+            let function = args.function_name.to_string();
+            let readable_args: Vec<String> =
+                args.args.iter().map(scval_to_readable_string).collect();
+            let target = format!("{}.{}({})", contract, function, readable_args.join(", "));
+
+            AuthInvocation {
+                depth,
+                kind: AuthFunctionKind::ContractFn,
+                contract: Some(contract),
+                function: Some(function),
+                arg_count: readable_args.len(),
+                args: readable_args,
+                target,
+            }
+        }
+
+        SorobanAuthorizedFunction::CreateContractHostFn(_) => AuthInvocation {
             depth,
             kind: AuthFunctionKind::CreateContract,
             contract: None,
             function: None,
             arg_count: 0,
+            args: Vec::new(),
+            target: "create_contract".to_string(),
         },
     }
 }
 
-/// Render an `ScAddress` as a strkey (`G...` for accounts, `C...` for contracts).
-fn scaddress_to_strkey(address: &ScAddress) -> String {
+pub fn scval_to_readable_string(val: &ScVal) -> String {
+    match val {
+        ScVal::Void => "void".to_string(),
+        ScVal::Bool(b) => b.to_string(),
+        ScVal::Symbol(sym) => sym.to_string(),
+        ScVal::String(s) => format!("\"{}\"", String::from_utf8_lossy(s.as_ref())),
+        ScVal::U32(u) => u.to_string(),
+        ScVal::I32(i) => i.to_string(),
+        ScVal::U64(u) => u.to_string(),
+        ScVal::I64(i) => i.to_string(),
+        ScVal::Timepoint(t) => t.0.to_string(),
+        ScVal::Duration(d) => d.0.to_string(),
+        ScVal::U128(u) => ((u128::from(u.hi) << 64) | u128::from(u.lo)).to_string(),
+        ScVal::I128(i) => {
+            #[allow(clippy::cast_possible_wrap)]
+            let lo = u128::from(i.lo) as i128;
+            ((i128::from(i.hi) << 64) | lo).to_string()
+        }
+        ScVal::Address(address) => scaddress_to_strkey(address),
+        ScVal::Bytes(bytes) => format!(
+            "0x{}",
+            bytes.iter().fold(String::new(), |mut output, b| {
+                use std::fmt::Write;
+                let _ = write!(output, "{b:02x}");
+                output
+            })
+        ),
+        ScVal::Vec(Some(vec)) => {
+            let items: Vec<String> = vec.iter().map(scval_to_readable_string).collect();
+            format!("[{}]", items.join(", "))
+        }
+        ScVal::Vec(None) => "[]".to_string(),
+        ScVal::Map(Some(map)) => {
+            let items: Vec<String> = map
+                .iter()
+                .map(|entry| {
+                    format!(
+                        "{}: {}",
+                        scval_to_readable_string(&entry.key),
+                        scval_to_readable_string(&entry.val)
+                    )
+                })
+                .collect();
+            format!("{{{}}}", items.join(", "))
+        }
+        ScVal::Map(None) => "{}".to_string(),
+        ScVal::Error(err) => format!("error:{err:?}"),
+        other => format!("{other:?}"),
+    }
+}
+
+pub(crate) fn scaddress_to_strkey(address: &ScAddress) -> String {
     match address {
         ScAddress::Account(AccountId(PublicKey::PublicKeyTypeEd25519(Uint256(bytes)))) => {
             stellar_strkey::ed25519::PublicKey(*bytes).to_string()
@@ -213,6 +267,8 @@ mod tests {
         assert_eq!(root.kind, AuthFunctionKind::ContractFn);
         assert_eq!(root.function.as_deref(), Some("transfer"));
         assert_eq!(root.arg_count, 1);
+        assert_eq!(root.args, vec!["1"]);
+        assert!(root.target.contains(".transfer(1)"));
         assert!(root.contract.as_deref().unwrap().starts_with('C'));
     }
 
@@ -239,8 +295,108 @@ mod tests {
                 assert_eq!(creds.signature_expiration_ledger, 1000);
                 assert!(creds.signed);
             }
-            other => panic!("expected address credential, got {other:?}"),
+            other @ AuthCredential::SourceAccount => {
+                panic!("expected address credential, got {other:?}")
+            }
         }
+    }
+
+    #[test]
+    fn ed25519_account_credential_has_correct_auth_type() {
+        let entry = SorobanAuthorizationEntry {
+            credentials: SorobanCredentials::Address(SorobanAddressCredentials {
+                address: account_address(3),
+                nonce: 1,
+                signature_expiration_ledger: 100,
+                signature: ScVal::Void,
+            }),
+            root_invocation: invocation(
+                contract_fn(contract_address(9), "transfer", vec![]),
+                empty_subs(),
+            ),
+        };
+
+        let chain = AuthChain::from_entry(&entry);
+        match chain.credential {
+            AuthCredential::Address(creds) => {
+                assert_eq!(creds.auth_type, AuthorizationType::Ed25519);
+                assert!(creds.address.starts_with('G'));
+                assert!(
+                    creds.contract_id.is_none(),
+                    "Ed25519 should have no contract_id"
+                );
+                assert_eq!(creds.auth_type.to_string(), "Ed25519");
+            }
+            other @ AuthCredential::SourceAccount => {
+                panic!("expected address credential, got {other:?}")
+            }
+        }
+    }
+
+    #[test]
+    fn smart_wallet_contract_credential_has_correct_auth_type() {
+        let entry = SorobanAuthorizationEntry {
+            credentials: SorobanCredentials::Address(SorobanAddressCredentials {
+                address: contract_address(5),
+                nonce: 99,
+                signature_expiration_ledger: 200,
+                signature: ScVal::Void,
+            }),
+            root_invocation: invocation(
+                contract_fn(contract_address(8), "invoke", vec![]),
+                empty_subs(),
+            ),
+        };
+
+        let chain = AuthChain::from_entry(&entry);
+        match chain.credential {
+            AuthCredential::Address(creds) => {
+                assert_eq!(creds.auth_type, AuthorizationType::SmartWallet);
+                assert!(creds.address.starts_with('C'));
+
+                let contract_id = creds
+                    .contract_id
+                    .as_deref()
+                    .expect("smart wallet must have contract_id");
+                assert_eq!(contract_id, creds.address);
+                assert!(contract_id.starts_with('C'));
+                assert_eq!(creds.auth_type.to_string(), "Smart Wallet");
+            }
+            other @ AuthCredential::SourceAccount => {
+                panic!("expected address credential, got {other:?}")
+            }
+        }
+    }
+
+    #[test]
+    fn smart_wallet_contract_id_matches_address() {
+        let seed = 42u8;
+        let addr = contract_address(seed);
+        let entry = SorobanAuthorizationEntry {
+            credentials: SorobanCredentials::Address(SorobanAddressCredentials {
+                address: addr.clone(),
+                nonce: 0,
+                signature_expiration_ledger: 0,
+                signature: ScVal::Void,
+            }),
+            root_invocation: invocation(
+                contract_fn(contract_address(1), "fn", vec![]),
+                empty_subs(),
+            ),
+        };
+
+        let chain = AuthChain::from_entry(&entry);
+        if let AuthCredential::Address(creds) = chain.credential {
+            assert_eq!(creds.contract_id.as_deref(), Some(creds.address.as_str()));
+        } else {
+            panic!("expected address credential");
+        }
+    }
+
+    #[test]
+    fn authorization_type_display_labels() {
+        assert_eq!(AuthorizationType::Ed25519.to_string(), "Ed25519");
+        assert_eq!(AuthorizationType::SmartWallet.to_string(), "Smart Wallet");
     }
 
     #[test]
@@ -261,13 +417,14 @@ mod tests {
         let chain = AuthChain::from_entry(&entry);
         match chain.credential {
             AuthCredential::Address(creds) => assert!(!creds.signed),
-            other => panic!("expected address credential, got {other:?}"),
+            other @ AuthCredential::SourceAccount => {
+                panic!("expected address credential, got {other:?}")
+            }
         }
     }
 
     #[test]
     fn nested_invocations_are_flattened_depth_first() {
-        // root -> [child_a -> [grandchild], child_b]
         let grandchild = invocation(
             contract_fn(contract_address(30), "gc", vec![]),
             empty_subs(),
@@ -299,8 +456,43 @@ mod tests {
             .collect();
 
         assert_eq!(steps, vec![(0, "root"), (1, "a"), (2, "gc"), (1, "b")]);
-        // Arg counts are preserved per step.
+
         assert_eq!(chain.invocations[1].arg_count, 2);
+        assert_eq!(chain.invocations[1].args, vec!["1", "2"]);
+        assert!(chain.invocations[1].target.contains(".a(1, 2)"));
+    }
+
+    #[test]
+    fn contract_invocation_decodes_readable_argument_values() {
+        let entry = SorobanAuthorizationEntry {
+            credentials: SorobanCredentials::SourceAccount,
+            root_invocation: invocation(
+                contract_fn(
+                    contract_address(8),
+                    "transfer",
+                    vec![
+                        ScVal::Address(account_address(4)),
+                        ScVal::Bool(true),
+                        ScVal::Vec(Some(
+                            vec![ScVal::U32(10), ScVal::I32(-2)].try_into().unwrap(),
+                        )),
+                    ],
+                ),
+                empty_subs(),
+            ),
+        };
+
+        let chain = AuthChain::from_entry(&entry);
+        let root = &chain.invocations[0];
+
+        assert_eq!(root.function.as_deref(), Some("transfer"));
+        assert_eq!(root.arg_count, 3);
+        assert!(root.args[0].starts_with('G'));
+        assert_eq!(root.args[1], "true");
+        assert_eq!(root.args[2], "[10, -2]");
+        assert!(root.target.contains(".transfer("));
+        assert!(root.target.contains("true"));
+        assert!(root.target.contains("[10, -2]"));
     }
 
     #[test]

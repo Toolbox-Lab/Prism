@@ -1,5 +1,3 @@
-
-
 use anyhow::{anyhow, Result};
 use clap::{Args, Subcommand};
 use dialoguer::Select;
@@ -16,9 +14,7 @@ pub struct AuthArgs {
 
 #[derive(Subcommand)]
 pub enum AuthCommands {
-
     Login {
-
         #[arg(long)]
         provider: Option<String>,
 
@@ -27,7 +23,6 @@ pub enum AuthCommands {
     },
 
     Logout {
-
         #[arg(long)]
         provider: Option<String>,
 
@@ -36,8 +31,7 @@ pub enum AuthCommands {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct AuthConfig {
     credentials: std::collections::HashMap<String, String>,
 }
@@ -291,7 +285,9 @@ fn get_credential_config(provider: &str) -> Result<Option<String>> {
 
 fn load_auth_config(config_file: Option<&PathBuf>) -> Result<AuthConfig> {
     let default_path;
-    let config_file = if let Some(p) = config_file { p } else {
+    let config_file = if let Some(p) = config_file {
+        p
+    } else {
         default_path = get_config_path(None)?;
         &default_path
     };
@@ -325,7 +321,7 @@ fn get_config_path(override_path: Option<String>) -> Result<PathBuf> {
         return Ok(PathBuf::from(path));
     }
 
-    let project_dirs = directories::ProjectDirs::from("dev", "prism", "prism")
+    let project_dirs = directories::ProjectDirs::from("dev", "grat", "grat")
         .ok_or_else(|| anyhow!("Could not determine config directory"))?;
 
     Ok(project_dirs.config_dir().join("auth.toml"))

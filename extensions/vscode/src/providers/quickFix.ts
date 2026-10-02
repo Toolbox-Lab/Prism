@@ -6,6 +6,6 @@ export function registerQuickFix(context: vscode.ExtensionContext) {
       provideCodeActions(document, range, context) {
         return [];
       },
-    })
+    }),
   );
 }

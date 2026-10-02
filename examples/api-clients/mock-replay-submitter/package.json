@@ -1,0 +1,9 @@
+{
+  "name": "mock-replay-submitter",
+  "version": "1.0.0",
+  "description": "Example showing how to submit replay jobs to the Grat API.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  }
+}

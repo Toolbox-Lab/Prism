@@ -19,6 +19,8 @@ Soroban contracts can require authorization for specific operations. When the au
 provided with the transaction do not match the authorization requirements of the contract
 invocation, the host cannot validate the action and raises this error.
 """
+related_errors = ["host.auth.not_authorized"]
+source_file = "soroban-env-host/src/auth.rs"
 
 [[errors.common_causes]]
 description = "Missing or incorrect auth entries in the transaction envelope"
@@ -38,8 +40,6 @@ description = "Verify that all required signers are included and signing the cor
 difficulty = "medium"
 requires_upgrade = false
 
-related_errors = ["host.auth.not_authorized"]
-source_file = "soroban-env-host/src/auth.rs"
 
 [[errors]]
 id = "host.auth.invalid_signature"
@@ -56,6 +56,8 @@ signing key was used, or the auth entry expired. For smart-wallet or contract-ac
 it means the wallet's __check_auth logic rejected the payload or could not authenticate the
 request it was asked to approve.
 """
+related_errors = ["host.auth.missing_auth", "host.auth.forbidden"]
+source_file = "soroban-env-host/src/builtin_contracts/account_contract.rs"
 
 [[errors.common_causes]]
 description = "The payload was signed by the wrong Ed25519 key"
@@ -79,8 +81,6 @@ description = "Confirm the account key or wallet logic is signing the exact auth
 difficulty = "medium"
 requires_upgrade = false
 
-related_errors = ["host.auth.missing_auth", "host.auth.forbidden"]
-source_file = "soroban-env-host/src/builtin_contracts/account_contract.rs"
 
 [[errors]]
 id = "host.auth.missing_auth"
@@ -95,6 +95,8 @@ The contract or host expected an authorization record for a required signer, but
 did not include one. This often happens when the client skips simulation, rebuilds the operation
 without preserving sorobanData, or omits one of the signers needed by a multi-party flow.
 """
+related_errors = ["host.auth.invalid_action"]
+source_file = "soroban-env-host/src/auth.rs"
 
 [[errors.common_causes]]
 description = "The transaction was rebuilt without the required sorobanData"
@@ -114,8 +116,6 @@ description = "Check that every required signer is present before submitting"
 difficulty = "medium"
 requires_upgrade = false
 
-related_errors = ["host.auth.invalid_action"]
-source_file = "soroban-env-host/src/auth.rs"
 
 [[errors]]
 id = "host.auth.forbidden"
@@ -131,6 +131,8 @@ permissions granted to the signer, wallet, or delegated auth chain. This commonl
 a contract tries to escalate privileges, invoke a protected branch, or use a signer that is not
 permitted to approve the current action.
 """
+related_errors = ["host.auth.not_authorized"]
+source_file = "soroban-env-host/src/builtin_contracts/account_contract.rs"
 
 [[errors.common_causes]]
 description = "The auth tree does not include the role required for the current call"
@@ -150,8 +152,6 @@ description = "Rebuild the auth tree so the approved signer covers the exact sub
 difficulty = "medium"
 requires_upgrade = false
 
-related_errors = ["host.auth.not_authorized"]
-source_file = "soroban-env-host/src/builtin_contracts/account_contract.rs"
 
 [[errors]]
 id = "host.auth.expired_auth"
@@ -166,6 +166,8 @@ Auth entries are only valid up to their signature expiration ledger. If the tran
 submitted after that ledger, the host rejects the authorization even if the signature itself
 was otherwise correct.
 """
+related_errors = ["host.auth.invalid_signature"]
+source_file = "soroban-env-host/src/auth.rs"
 
 [[errors.common_causes]]
 description = "The signature expiration ledger was set too low for the submission delay"
@@ -185,8 +187,6 @@ description = "Increase the signature expiration window only as much as the work
 difficulty = "medium"
 requires_upgrade = false
 
-related_errors = ["host.auth.invalid_signature"]
-source_file = "soroban-env-host/src/auth.rs"
 
 [[errors]]
 id = "host.auth.not_authorized"
@@ -202,6 +202,8 @@ tree still does not cover the exact invocation or sub-invocation being executed.
 when a contract call is legitimate in principle but the specific branch needs a stronger signer,
 another delegated approval, or a different permission scope.
 """
+related_errors = ["host.auth.forbidden"]
+source_file = "soroban-env-host/src/auth.rs"
 
 [[errors.common_causes]]
 description = "The caller authenticated successfully but lacked permission for the specific branch"
@@ -221,5 +223,3 @@ description = "Verify any delegated or policy signer actually authorizes the cur
 difficulty = "medium"
 requires_upgrade = false
 
-related_errors = ["host.auth.forbidden"]
-source_file = "soroban-env-host/src/auth.rs"

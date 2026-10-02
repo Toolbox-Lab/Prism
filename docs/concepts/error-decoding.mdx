@@ -4,38 +4,38 @@ description: "Resolving cryptic errors into plain English."
 icon: "binary"
 ---
 
-Tier 1 is the fastest way to understand why a transaction failed. Prism takes the transaction result XDR and performs a multi-step enrichment process.
+Tier 1 is the fastest way to understand why a transaction failed. Grat takes the transaction result XDR and performs a multi-step enrichment process.
 
 ## How it works
 
-1. **Classification**: Prism extracts the `TransactionResult` and identifies the specific error code.
+1. **Classification**: Grat extracts the `TransactionResult` and identifies the specific error code.
 2. **Taxonomy Lookup**: It maps the code to our [Error Taxonomy](/concepts/error-taxonomy), which contains detailed explanations for every host error.
-3. **Contract Resolution**: If the error is a custom contract error (`Error(Contract, #N)`), Prism:
+3. **Contract Resolution**: If the error is a custom contract error (`Error(Contract, #N)`), Grat:
    - Fetches the contract's WASM bytecode from the ledger.
    - Parses the `contractspecv0` custom section.
    - Cross-references the error index with the defined enum names and doc comments.
 
 ## Contract-Specific Metadata
 
-Prism resolves `#3` into `InsufficientBalance` because it understands the contract's metadata structure. This turns a generic number into a business-logic error that you can fix instantly.
+Grat resolves `#3` into `InsufficientBalance` because it understands the contract's metadata structure. This turns a generic number into a business-logic error that you can fix instantly.
 
 ## Plain-English Error Summaries
 
 Every `HostError` exposes a `summary()` method that returns a single sentence
 describing what went wrong. This is the **first line** a developer sees when
-running `prism decode` — written to immediately answer "what went wrong?" without
+running `grat decode` — written to immediately answer "what went wrong?" without
 requiring knowledge of Soroban internals.
 
 ### Examples
 
-| Error | Summary |
-|---|---|
-| `Budget(0)` | CPU budget exceeded: the transaction ran out of CPU instructions before completing execution. |
-| `Storage(0)` | Storage access denied: the contract tried to read or write a ledger entry not declared in the transaction footprint. |
-| `Auth(0)` | Authorization failed: the transaction is missing or has invalid auth entries for this contract call. |
-| `Wasm(0)` | Invalid WASM module: the contract bytecode failed validation — recompile with a compatible Soroban SDK version. |
-| `ContractSpecific` | Always points toward `--resolve` for WASM metadata lookup. |
-| `Unknown` | Includes raw type and sub-codes for forward-compatibility debugging. |
+| Error              | Summary                                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `Budget(0)`        | CPU budget exceeded: the transaction ran out of CPU instructions before completing execution.                        |
+| `Storage(0)`       | Storage access denied: the contract tried to read or write a ledger entry not declared in the transaction footprint. |
+| `Auth(0)`          | Authorization failed: the transaction is missing or has invalid auth entries for this contract call.                 |
+| `Wasm(0)`          | Invalid WASM module: the contract bytecode failed validation — recompile with a compatible Soroban SDK version.      |
+| `ContractSpecific` | Always points toward `--resolve` for WASM metadata lookup.                                                           |
+| `Unknown`          | Includes raw type and sub-codes for forward-compatibility debugging.                                                 |
 
 All summaries are kept under 120 characters and avoid technical jargon where possible.
 For unknown codes within known categories, a formatted fallback is returned so no

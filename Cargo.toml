@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     "crates/core",
     "crates/cli",
-    "crates/wasm", "scratch/xdr_test",
+    "crates/wasm",
 ]
 
 [workspace.lints.rust]
@@ -42,7 +42,7 @@ borrow_as_ptr = "allow"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/prism-soroban/prism"
+repository = "https://github.com/grat-soroban/grat"
 description = "Soroban Transaction Debugger — From cryptic error to root cause in one command."
 
 [workspace.dependencies]
@@ -62,7 +62,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 base64 = "0.22"
+hex = "0.4.3"
 libc = "0.2"
+sha2 = "0.10"
 
 # Web Server (using built-in HTTP server)
 
@@ -81,6 +83,8 @@ wasmparser = "0.218"
 
 # Storage & Caching
 redb = "2"
+sled = "0.34"
+dashmap = "6"
 directories = "5"
 flate2 = "1"
 xz2 = "0.1"
@@ -94,5 +98,15 @@ crossterm = "0.28"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Metrics / Observability
+prometheus = "0.13"
+
+# URL parsing
+url = "2"
+
+# Markdown rendering
+pulldown-cmark = "0.13"
+unicode-width = "0.2"
+
 # Shared internal crates
-prism-core = { path = "crates/core" }
+grat-core = { path = "crates/core" }

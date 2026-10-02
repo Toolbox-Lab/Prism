@@ -20,6 +20,8 @@ execution. When this limit is exceeded, the host terminates execution with this 
 This includes both contract-emitted events (via `env.events().publish()`) and internal \
 diagnostic events.
 """
+related_errors = ["host.budget.limit_exceeded.cpu"]
+source_file = "soroban-env-host/src/events.rs"
 
 [[errors.common_causes]]
 description = "Emitting too many events or events with large data payloads in a single transaction"
@@ -39,5 +41,3 @@ description = "Batch operations across multiple transactions to reduce per-trans
 difficulty = "medium"
 requires_upgrade = true
 
-related_errors = ["host.budget.limit_exceeded.cpu"]
-source_file = "soroban-env-host/src/events.rs"

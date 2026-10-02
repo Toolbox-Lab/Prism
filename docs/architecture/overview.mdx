@@ -4,7 +4,7 @@ description: "High-level component map and data flow."
 icon: "sitemap"
 ---
 
-Prism is organized into a core library that all interfaces share, a shared infrastructure layer for network and data access, and multiple interface targets.
+Grat is organized into a core library that all interfaces share, a shared infrastructure layer for network and data access, and multiple interface targets.
 
 ## Component Map
 
@@ -16,7 +16,7 @@ graph TD
         Web[Web App]
     end
 
-    subgraph CoreEngine [Prism Core]
+    subgraph CoreEngine [Grat Core]
         Decode[Decode Engine]
         Replay[Replay Engine]
         Breakpoint[Breakpoint Controller]
@@ -38,5 +38,5 @@ graph TD
 ## Layers
 
 - **Interfaces**: Consume the core logic to provide user-facing experiences.
-- **Prism Core**: Implements the 3-tier diagnostic logic.
+- **Grat Core**: Implements the 3-tier diagnostic logic.
 - **Shared Infrastructure**: Handles communication with the Stellar network and disk storage.

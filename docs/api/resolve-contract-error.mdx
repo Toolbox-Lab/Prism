@@ -8,7 +8,7 @@ pub async fn resolve_contract_error(
     contract_id: &str,
     error_index: u32,
     wasm_cache: &WasmCache
-) -> Result<ResolvedError, PrismError>
+) -> Result<ResolvedError, GratError>
 ```
 
 Parses the `contractspecv0` sections of the contract's WASM to resolve numeric error codes into human-readable enum names.

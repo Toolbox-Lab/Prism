@@ -3,14 +3,16 @@ title: "Regression Testing"
 description: "Preventing bugs from returning."
 ---
 
-Once you've fixed a bug, use Prism to ensure it never returns.
+Once you've fixed a bug, use Grat to ensure it never returns.
 
 ## Exporting Test Cases
-Use the `prism export` command to turn a failed mainnet transaction into a local unit test.
+
+Use the `grat export` command to turn a failed mainnet transaction into a local unit test.
 
 ```bash
-prism export <tx-hash> --format test
+grat export <tx-hash> --format test
 ```
 
 ## Integrating with CI
-Add the exported test cases to your Rust test suite. Prism ensures the test environment perfectly matches the mainnet state where the bug first occurred.
+
+Add the exported test cases to your Rust test suite. Grat ensures the test environment perfectly matches the mainnet state where the bug first occurred.

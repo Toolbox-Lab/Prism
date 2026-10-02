@@ -23,6 +23,9 @@ This commonly occurs in computationally intensive operations such as large loops
 cryptographic operations, or deeply nested cross-contract calls where each sub-invocation \
 consumes a portion of the parent's budget.
 """
+related_errors = ["host.budget.insufficient_memory"]
+source_file = "soroban-env-host/src/budget.rs"
+documentation_url = "https://soroban.stellar.org/docs/fundamentals/fees-and-metering"
 
 [[errors.common_causes]]
 description = "Unbounded or large loops processing collections (vectors, maps) with many entries"
@@ -51,9 +54,6 @@ description = "Break the operation into multiple smaller transactions"
 difficulty = "hard"
 requires_upgrade = true
 
-related_errors = ["host.budget.limit_exceeded.memory"]
-source_file = "soroban-env-host/src/budget.rs"
-documentation_url = "https://soroban.stellar.org/docs/fundamentals/fees-and-metering"
 
 [[errors]]
 id = "host.budget.insufficient_instructions"
@@ -161,6 +161,8 @@ requires_upgrade = false
 description = "Inspect the resource profile to identify the expensive contract call"
 difficulty = "medium"
 requires_upgrade = false
+
+[[errors]]
 id = "host.budget.approaching_limit"
 category = "budget"
 code = 3
@@ -173,7 +175,8 @@ This is a diagnostic signal, not a failure. The execution consumed a high fracti
 allocated budget but did not exceed it. Use this to identify contracts that are close to the \
 limit and may fail under slightly heavier load.
 """
-
+related_errors = ["host.budget.limit_exceeded.cpu"]
+source_file = "soroban-env-host/src/budget.rs"
 [[errors.common_causes]]
 description = "Contract logic that scales with input size, approaching the declared limit"
 likelihood = "medium"
@@ -183,5 +186,8 @@ description = "Profile the contract and reduce unnecessary computation before it
 difficulty = "medium"
 requires_upgrade = true
 
-related_errors = ["host.budget.limit_exceeded.cpu"]
-source_file = "soroban-env-host/src/budget.rs"
+[[errors.suggested_fixes]]
+description = "Add resource metering logs to your CI pipeline to catch contracts trending toward the limit before deploy"
+difficulty = "medium"
+requires_upgrade = false
+

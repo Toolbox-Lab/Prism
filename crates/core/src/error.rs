@@ -27,9 +27,8 @@ pub enum ArchiveErrorKind {
     #[error("decompression failed for '{file}': {reason}")]
     DecompressionFailed { file: String, reason: String },
 }
-
 #[derive(Debug, Error)]
-pub enum PrismError {
+pub enum GratError {
     #[error("RPC request timed out after {timeout_secs}s (method: {method})")]
     NetworkTimeout { method: String, timeout_secs: u64 },
 
@@ -57,6 +56,24 @@ pub enum PrismError {
     #[error("Cache error: {0}")]
     CacheError(String),
 
+    #[error("Cache miss for key '{0}'")]
+    CacheMiss(String),
+
+    #[error(
+        "Cache entry for key '{key}' ({entry_size} bytes) exceeds capacity limit of {limit} bytes"
+    )]
+    CacheCapacityExceeded {
+        key: String,
+        entry_size: u64,
+        limit: u64,
+    },
+
+    #[error("Failed to serialize cache value for key '{key}': {reason}")]
+    CacheSerializationError { key: String, reason: String },
+
+    #[error("Failed to deserialize cache value for key '{key}': {reason}")]
+    CacheDeserializationError { key: String, reason: String },
+
     #[error("Taxonomy error: {0}")]
     TaxonomyError(String),
 
@@ -83,6 +100,21 @@ pub enum PrismError {
 
     #[error("Transaction succeeded — no error to decode")]
     TransactionSucceeded,
+
+    #[error("Invalid Contract ID: {0}")]
+    InvalidContractId(String),
+
+    #[error(
+        "Function '{function_name}' expects {expected} argument(s), but {actual} were provided"
+    )]
+    ArityMismatch {
+        function_name: String,
+        expected: usize,
+        actual: usize,
+    },
+
+    #[error("Unsupported host function: {0}")]
+    UnsupportedHostFunction(String),
 }
 
-pub type PrismResult<T> = Result<T, PrismError>;
+pub type GratResult<T> = Result<T, GratError>;

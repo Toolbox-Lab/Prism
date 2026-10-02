@@ -1,4 +1,4 @@
-use crate::error::{PrismError, PrismResult};
+use crate::error::{GratError, GratResult};
 use crate::network::NetworkConfig;
 use crate::rpc::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
@@ -8,6 +8,8 @@ use std::time::{Duration, Instant};
 const BASE_DELAY_MS: u64 = 100;
 
 const MAX_DELAY_MS: u64 = 10_000;
+
+const LEDGER_ENTRIES_CHUNK_SIZE: usize = 100;
 
 fn backoff_duration(attempt: u32) -> Duration {
     let ms = BASE_DELAY_MS.saturating_mul(2u64.saturating_pow(attempt));
@@ -119,7 +121,7 @@ impl SorobanRpcClient {
 
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(config.request_timeout_secs))
-            .user_agent(concat!("prism-cli/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("grat-cli/", env!("CARGO_PKG_VERSION")))
             .default_headers(headers)
             .build()
             .expect("Failed to build reqwest client");
@@ -135,14 +137,14 @@ impl SorobanRpcClient {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         self.client = reqwest::Client::builder()
             .timeout(Duration::from_secs(timeout_secs))
-            .user_agent(concat!("prism-cli/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("grat-cli/", env!("CARGO_PKG_VERSION")))
             .default_headers(headers)
             .build()
             .expect("Failed to build reqwest client");
         self
     }
 
-    pub async fn get_transaction(&self, tx_hash: &str) -> PrismResult<GetTransactionResponse> {
+    pub async fn get_transaction(&self, tx_hash: &str) -> GratResult<GetTransactionResponse> {
         let params = serde_json::json!([tx_hash]);
         self.call("getTransaction", params).await
     }
@@ -150,18 +152,18 @@ impl SorobanRpcClient {
     pub async fn simulate_transaction(
         &self,
         tx_xdr: &str,
-    ) -> PrismResult<SimulateTransactionResponse> {
+    ) -> GratResult<SimulateTransactionResponse> {
         let params = serde_json::json!({ "transaction": tx_xdr });
         let raw = self
             .call::<serde_json::Value>("simulateTransaction", params)
             .await?;
 
         let response: SimulateTransactionResponse = serde_json::from_value(raw).map_err(|e| {
-            PrismError::RpcError(format!("Failed to parse simulateTransaction response: {e}"))
+            GratError::RpcError(format!("Failed to parse simulateTransaction response: {e}"))
         })?;
 
         if let Some(ref err) = response.error {
-            return Err(PrismError::RpcError(format!(
+            return Err(GratError::RpcError(format!(
                 "simulateTransaction failed: {err}"
             )));
         }
@@ -169,17 +171,46 @@ impl SorobanRpcClient {
         Ok(response)
     }
 
-    pub async fn get_ledger_entries(&self, keys: &[String]) -> PrismResult<serde_json::Value> {
-        let params = serde_json::json!({ "keys": keys });
-        self.call::<serde_json::Value>("getLedgerEntries", params)
-            .await
+    pub async fn get_ledger_entries(&self, keys: &[String]) -> GratResult<serde_json::Value> {
+        let mut chunks = keys.chunks(LEDGER_ENTRIES_CHUNK_SIZE);
+        let first_chunk = chunks.next().unwrap_or_default();
+        let params = serde_json::json!({ "keys": first_chunk });
+        let mut combined = self
+            .call::<serde_json::Value>("getLedgerEntries", params)
+            .await?;
+
+        for chunk in chunks {
+            let params = serde_json::json!({ "keys": chunk });
+            let mut response = self
+                .call::<serde_json::Value>("getLedgerEntries", params)
+                .await?;
+            let entries = response
+                .get_mut("entries")
+                .and_then(serde_json::Value::as_array_mut)
+                .ok_or_else(|| {
+                    GratError::RpcError(
+                        "getLedgerEntries response is missing an entries array".to_string(),
+                    )
+                })?;
+            combined
+                .get_mut("entries")
+                .and_then(serde_json::Value::as_array_mut)
+                .ok_or_else(|| {
+                    GratError::RpcError(
+                        "getLedgerEntries response is missing an entries array".to_string(),
+                    )
+                })?
+                .append(entries);
+        }
+
+        Ok(combined)
     }
 
     pub async fn get_events(
         &self,
         start_ledger: u32,
         filters: serde_json::Value,
-    ) -> PrismResult<serde_json::Value> {
+    ) -> GratResult<serde_json::Value> {
         let params = serde_json::json!({
             "startLedger": start_ledger,
             "filters": filters,
@@ -187,19 +218,20 @@ impl SorobanRpcClient {
         self.call("getEvents", params).await
     }
 
-    pub async fn get_latest_ledger(&self) -> PrismResult<serde_json::Value> {
+    pub async fn get_latest_ledger(&self) -> GratResult<serde_json::Value> {
         self.call("getLatestLedger", serde_json::json!({})).await
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn call<T: for<'de> Deserialize<'de>>(
         &self,
         method: &'static str,
         params: serde_json::Value,
-    ) -> PrismResult<T> {
+    ) -> GratResult<T> {
         let request = JsonRpcRequest::new(1, method, params);
 
         const MAX_RETRIES: u32 = 3;
-        let mut last_error: Option<PrismError> = None;
+        let mut last_error: Option<GratError> = None;
 
         for attempt in 0..=MAX_RETRIES {
             if attempt > 0 {
@@ -214,6 +246,7 @@ impl SorobanRpcClient {
                 tracing::debug!(attempt, method, "Retrying RPC request");
             }
 
+            // Start the Prometheus latency timer before the network request.
             let started = Instant::now();
             tracing::debug!(method, endpoint = %self.rpc_url, attempt, "Sending RPC request");
 
@@ -221,7 +254,9 @@ impl SorobanRpcClient {
                 Ok(response) => {
                     let status = response.status();
                     let elapsed_ms = started.elapsed().as_millis();
+                    // Exact latency delta recorded into the HistogramVec.
                     let duration_secs = started.elapsed().as_secs_f64();
+                    crate::rpc::record_rpc_duration(&self.rpc_url, method, duration_secs);
                     tracing::info!(
                         method,
                         endpoint = %self.rpc_url,
@@ -232,13 +267,13 @@ impl SorobanRpcClient {
 
                     // Retry on 429 Too Many Requests.
                     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                        crate::rpc::record_rpc_duration(method, duration_secs, false);
+                        crate::rpc::record_rpc_http_error(&self.rpc_url, method, 429);
                         tracing::warn!(
                             method,
                             attempt,
                             "Rate limited by RPC node (429), will retry"
                         );
-                        last_error = Some(PrismError::RpcError(format!(
+                        last_error = Some(GratError::RpcError(format!(
                             "Rate limited (attempt {attempt})"
                         )));
                         continue;
@@ -246,7 +281,7 @@ impl SorobanRpcClient {
 
                     // Retry on any 5xx Server Error — these are transient node failures.
                     if status.is_server_error() {
-                        crate::rpc::record_rpc_duration(method, duration_secs, false);
+                        crate::rpc::record_rpc_http_error(&self.rpc_url, method, status.as_u16());
                         tracing::warn!(
                             method,
                             attempt,
@@ -254,15 +289,14 @@ impl SorobanRpcClient {
                             elapsed_ms,
                             "RPC node returned a server error (5xx), will retry"
                         );
-                        last_error = Some(PrismError::RpcError(format!(
+                        last_error = Some(GratError::RpcError(format!(
                             "Server error {status} on attempt {attempt}"
                         )));
                         continue;
                     }
 
                     let body = response.text().await.map_err(|e| {
-                        crate::rpc::record_rpc_duration(method, duration_secs, false);
-                        PrismError::RpcError(format!("Failed to read response body: {e}"))
+                        GratError::RpcError(format!("Failed to read response body: {e}"))
                     })?;
 
                     tracing::debug!(
@@ -275,20 +309,23 @@ impl SorobanRpcClient {
                     );
 
                     if !status.is_success() {
-                        crate::rpc::record_rpc_duration(method, duration_secs, false);
-                        return Err(PrismError::RpcError(format!(
+                        // Track non-retryable client/server HTTP failures as well.
+                        if status.as_u16() == 500 || status.as_u16() == 429 {
+                            crate::rpc::record_rpc_http_error(
+                                &self.rpc_url,
+                                method,
+                                status.as_u16(),
+                            );
+                        }
+                        return Err(GratError::RpcError(format!(
                             "RPC request failed with HTTP {status}: {body}"
                         )));
                     }
 
-                    let rpc_response: JsonRpcResponse<T> =
-                        serde_json::from_str(&body).map_err(|e| {
-                            crate::rpc::record_rpc_duration(method, duration_secs, false);
-                            PrismError::RpcError(format!("Response parse error: {e}"))
-                        })?;
+                    let rpc_response: JsonRpcResponse<T> = serde_json::from_str(&body)
+                        .map_err(|e| GratError::RpcError(format!("Response parse error: {e}")))?;
 
                     if let Some(err) = rpc_response.error {
-                        crate::rpc::record_rpc_duration(method, duration_secs, false);
                         tracing::debug!(
                             method,
                             endpoint = %self.rpc_url,
@@ -297,18 +334,17 @@ impl SorobanRpcClient {
                             code = err.code,
                             "RPC returned an error response"
                         );
-                        return Err(PrismError::JsonRpc(err));
+                        return Err(GratError::JsonRpc(err));
                     }
 
-                    crate::rpc::record_rpc_duration(method, duration_secs, true);
-                    return rpc_response.result.ok_or_else(|| {
-                        PrismError::RpcError("Empty result in RPC response".into())
-                    });
+                    return rpc_response
+                        .result
+                        .ok_or_else(|| GratError::RpcError("Empty result in RPC response".into()));
                 }
                 Err(e) => {
                     let elapsed_ms = started.elapsed().as_millis();
                     let duration_secs = started.elapsed().as_secs_f64();
-                    crate::rpc::record_rpc_duration(method, duration_secs, false);
+                    crate::rpc::record_rpc_duration(&self.rpc_url, method, duration_secs);
                     tracing::info!(
                         method,
                         endpoint = %self.rpc_url,
@@ -325,12 +361,12 @@ impl SorobanRpcClient {
                         error = %e,
                         "RPC request failed"
                     );
-                    last_error = Some(PrismError::RpcError(format!("HTTP request failed: {e}")));
+                    last_error = Some(GratError::RpcError(format!("HTTP request failed: {e}")));
                 }
             }
         }
 
-        Err(last_error.unwrap_or_else(|| PrismError::RpcError("Unknown RPC error".into())))
+        Err(last_error.unwrap_or_else(|| GratError::RpcError("Unknown RPC error".into())))
     }
 }
 
@@ -404,6 +440,7 @@ mod tests {
             archive_urls: vec![],
             api_key: None,
             request_timeout_secs: 5,
+            no_cache: false,
         };
         SorobanRpcClient::new(&config)
     }
@@ -706,30 +743,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_ledger_entries_empty_response() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let rpc_url = format!("http://{}", addr);
-
-        let config = NetworkConfig {
-            network: crate::network::Network::Testnet,
-            rpc_url,
-            network_passphrase: "test".to_string(),
-            archive_urls: vec![],
-            api_key: None,
-            request_timeout_secs: 30,
-        };
-        let client = SorobanRpcClient::new(&config);
-
-        tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let body = r#"{"jsonrpc":"2.0","id":1,"result":{"latestLedger":123,"entries":[]}}"#;
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            socket.write_all(response.as_bytes()).await.unwrap();
-        });
+        let body = r#"{"jsonrpc":"2.0","id":1,"result":{"latestLedger":123,"entries":[]}}"#;
+        let responses = vec![http_response(200, "OK", body)];
+        let addr = spawn_mock_server(responses).await;
+        let client = make_client(addr);
 
         let result = client
             .get_ledger_entries(&["key1".to_string()])
@@ -740,34 +757,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_ledger_entries_batches_and_combines_large_requests() {
+        let responses = [(101, "entry-1"), (102, "entry-2"), (103, "entry-3")]
+            .into_iter()
+            .map(|(latest_ledger, entry)| {
+                let body = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {
+                        "latestLedger": latest_ledger,
+                        "entries": [{ "key": entry }]
+                    }
+                })
+                .to_string();
+                http_response(200, "OK", &body)
+            })
+            .collect();
+        let addr = spawn_mock_server(responses).await;
+        let keys = (0..205).map(|i| format!("key-{i}")).collect::<Vec<_>>();
+
+        let result = make_client(addr).get_ledger_entries(&keys).await.unwrap();
+
+        assert_eq!(result["latestLedger"], 101);
+        assert_eq!(
+            result["entries"],
+            serde_json::json!([
+                { "key": "entry-1" },
+                { "key": "entry-2" },
+                { "key": "entry-3" }
+            ])
+        );
+    }
+
+    #[tokio::test]
     async fn test_get_transaction_mocked_response() {
-        use tokio::io::AsyncWriteExt;
-        use tokio::net::TcpListener;
-
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let rpc_url = format!("http://{}", addr);
-
-        let config = NetworkConfig {
-            network: crate::network::Network::Testnet,
-            rpc_url,
-            network_passphrase: "test".to_string(),
-            archive_urls: vec![],
-            api_key: None,
-            request_timeout_secs: 30,
-        };
-        let client = SorobanRpcClient::new(&config);
-
-        tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let body = r#"{"jsonrpc":"2.0","id":1,"result":{"status":"SUCCESS","latestLedger":123,"latestLedgerCloseTime":1711620000,"ledger":120}}"#;
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            socket.write_all(response.as_bytes()).await.unwrap();
-        });
+        let body = r#"{"jsonrpc":"2.0","id":1,"result":{"status":"SUCCESS","latestLedger":123,"latestLedgerCloseTime":1711620000,"ledger":120}}"#;
+        let responses = vec![http_response(200, "OK", body)];
+        let addr = spawn_mock_server(responses).await;
+        let client = make_client(addr);
 
         let result = client.get_transaction("hash123").await.unwrap();
         assert_eq!(result.status, TransactionStatus::Success);
@@ -779,7 +806,7 @@ mod tests {
     async fn test_client_respects_timeout() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let rpc_url = format!("http://{}", addr);
+        let rpc_url = format!("http://{addr}");
 
         let config = NetworkConfig {
             network: crate::network::Network::Testnet,
@@ -788,6 +815,7 @@ mod tests {
             archive_urls: vec![],
             api_key: None,
             request_timeout_secs: 1,
+            no_cache: false,
         };
         let client = SorobanRpcClient::new(&config);
 
@@ -808,38 +836,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn records_latency_histogram_on_success() {
+        let responses = vec![http_response(200, "OK", ok_body())];
+        let addr = spawn_mock_server(responses).await;
+        let client = make_client(addr);
+
+        let result = client.get_latest_ledger().await;
+        assert!(result.is_ok(), "expected success: {result:?}");
+
+        let exposition = crate::rpc::gather_rpc_metrics();
+        assert!(
+            exposition.contains("rpc_request_duration_seconds"),
+            "histogram missing from exposition:\n{exposition}"
+        );
+        assert!(
+            exposition.contains("getLatestLedger"),
+            "method label missing from exposition:\n{exposition}"
+        );
+    }
+
+    #[tokio::test]
+    async fn records_http_error_counter_on_500_and_429() {
+        // Exhaust retries so every attempt is an error that gets counted.
+        let responses = vec![
+            http_response(500, "Internal Server Error", ""),
+            http_response(429, "Too Many Requests", ""),
+            http_response(500, "Internal Server Error", ""),
+            http_response(429, "Too Many Requests", ""),
+        ];
+        let addr = spawn_mock_server(responses).await;
+        let _ = make_client(addr).get_latest_ledger().await;
+
+        let exposition = crate::rpc::gather_rpc_metrics();
+        assert!(
+            exposition.contains("rpc_http_errors_total"),
+            "error counter missing from exposition:\n{exposition}"
+        );
+        // At least one of the tracked statuses should appear.
+        assert!(
+            exposition.contains("500") || exposition.contains("429"),
+            "expected 500/429 status labels:\n{exposition}"
+        );
+        assert!(
+            exposition.contains("rpc_request_duration_seconds"),
+            "duration should still be recorded on error paths:\n{exposition}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_simulate_transaction_returns_rpc_error_on_failure() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let rpc_url = format!("http://{}", addr);
-
-        let config = NetworkConfig {
-            network: crate::network::Network::Testnet,
-            rpc_url,
-            network_passphrase: "test".to_string(),
-            archive_urls: vec![],
-            api_key: None,
-            request_timeout_secs: 30,
-        };
-        let client = SorobanRpcClient::new(&config);
-
-        tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let body =
-                r#"{"jsonrpc":"2.0","id":1,"result":{"latestLedger":100,"error":"contract trap"}}"#;
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            socket.write_all(response.as_bytes()).await.unwrap();
-        });
+        let body =
+            r#"{"jsonrpc":"2.0","id":1,"result":{"latestLedger":100,"error":"contract trap"}}"#;
+        let responses = vec![http_response(200, "OK", body)];
+        let addr = spawn_mock_server(responses).await;
+        let client = make_client(addr);
 
         let result = client.simulate_transaction("AAAA").await;
         assert!(result.is_err());
         match result.unwrap_err() {
-            PrismError::RpcError(msg) => assert!(msg.contains("contract trap")),
-            _ => panic!("Expected PrismError::RpcError"),
+            GratError::RpcError(msg) => assert!(msg.contains("contract trap")),
+            _ => panic!("Expected GratError::RpcError"),
         }
     }
 }

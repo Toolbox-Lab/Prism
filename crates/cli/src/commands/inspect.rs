@@ -1,12 +1,9 @@
-
-
 use clap::Args;
-use prism_core::types::config::NetworkConfig;
-use prism_core::{DecodeContextBuilder, OutputFormat};
+use grat_core::decode::decode_context::{DecodeContextBuilder, OutputFormat};
+use grat_core::types::config::NetworkConfig;
 
 #[derive(Args)]
 pub struct InspectArgs {
-
     #[arg(value_name = "TX_HASH")]
     pub tx_hash: String,
 
@@ -21,23 +18,22 @@ pub async fn run(
     save: Option<&str>,
 ) -> anyhow::Result<()> {
     let ctx = DecodeContextBuilder::from(network)
-        .output_format(OutputFormat::from_str(output_format))
+        .output_format(OutputFormat::parse(output_format))
         .build();
 
     let spinner = indicatif::ProgressBar::new_spinner();
     spinner.set_message("Fetching and decoding transaction...");
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    let reports = prism_core::decode::decode_transaction_with_op_filter(
+    let reports = grat_core::decode::decode_transaction_with_op_filter(
         &args.tx_hash,
-        &ctx,
+        &ctx.network,
         args.op_index,
     )
     .await?;
 
     spinner.finish_and_clear();
 
-    // Print each report with operation index label
     for (i, report) in reports.iter().enumerate() {
         if reports.len() > 1 {
             println!("\n=== Operation {} ===", i + 1);

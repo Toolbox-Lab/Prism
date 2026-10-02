@@ -2,11 +2,11 @@
 workspace = true
 
 [package]
-name = "prism-core"
+name = "grat-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Core library for Prism — Soroban Transaction Debugger"
+description = "Core library for Grat — Soroban Transaction Debugger"
 
 [features]
 default = ["decode", "taxonomy"]
@@ -28,27 +28,47 @@ tokio = { workspace = true }
 
 # Serialization
 base64 = { workspace = true }
+bincode = "1.3"
+hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
+
+# Cryptography
+sha2 = { workspace = true }
 
 # WASM Processing
 wasmparser = { workspace = true }
 
 # Storage & Caching
 redb = { workspace = true }
+sled = { workspace = true }
+dashmap = { workspace = true }
 directories = { workspace = true }
 flate2 = { workspace = true }
+xz2 = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
 
+# Metrics / Observability
+prometheus = { workspace = true }
+
 # Error handling
 anyhow = { workspace = true }
 thiserror = { workspace = true }
+
+# URL parsing (for taxonomy linter documentation_url validation)
+url = { workspace = true }
+uuid = { version = "1.26.1", features = ["serde", "v4"] }
+
+[[bin]]
+name = "taxonomy_linter"
+path = "src/bin/taxonomy_linter.rs"
 
 [dev-dependencies]
 tokio-test = "0.4"
 insta = { version = "1", features = ["json"] }
 tracing-subscriber = { workspace = true }
 ctor = "0.2"
+tempfile = "3"

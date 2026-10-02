@@ -1,15 +1,16 @@
-
-
 pub mod auth;
+pub mod batch;
 pub mod clean;
 pub mod db;
 pub mod decode;
 pub mod diagnostic;
 pub mod diff;
 pub mod export;
+pub mod history;
 pub mod inspect;
 pub mod profile;
 pub mod replay;
+pub mod search_error;
 pub mod serve;
 pub mod trace;
 pub mod whatif;

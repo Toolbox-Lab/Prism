@@ -7,10 +7,11 @@ description: "Core API for Tier 1 diagnostics."
 pub async fn decode_error(
     result_xdr: &str,
     network: &NetworkConfig
-) -> Result<DiagnosticReport, PrismError>
+) -> Result<DiagnosticReport, GratError>
 ```
 
 Given a transaction result XDR, this function:
+
 - Classifies the error category.
 - Enriches the error with taxonomy data.
 - Returns a structured report suitable for UI rendering.

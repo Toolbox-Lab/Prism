@@ -1,26 +1,30 @@
 ---
 title: "Replay Engine Internals"
-description: "How Prism reconstructs state and re-executes transactions."
+description: "How Grat reconstructs state and re-executes transactions."
 ---
 
-The replay engine is the core component that powers Tier 2 and Tier 3 diagnostics. It allows Prism to show you exactly what happened inside a contract invocation on mainnet.
+The replay engine is the core component that powers Tier 2 and Tier 3 diagnostics. It allows Grat to show you exactly what happened inside a contract invocation on mainnet.
 
 ## Two-Path State Reconstruction
 
-Prism uses two different strategies to reconstruct the ledger state, depending on how old the transaction is:
+Grat uses two different strategies to reconstruct the ledger state, depending on how old the transaction is:
 
 ### Hot Path (Recent Transactions)
-For transactions within the last ~50,000 ledgers, Prism uses the Soroban RPC `getLedgerEntries` method. This is fast and efficient for debugging active development.
+
+For transactions within the last ~50,000 ledgers, Grat uses the Soroban RPC `getLedgerEntries` method. This is fast and efficient for debugging active development.
 
 ### Cold Path (Older Transactions)
-For older transactions, Prism fetches ledger snapshots from **Stellar History Archives**. It uses a captive core instance to replay ledgers up to the point of the transaction, ensuring 100% state accuracy.
+
+For older transactions, Grat fetches ledger snapshots from **Stellar History Archives**. It uses a captive core instance to replay ledgers up to the point of the transaction, ensuring 100% state accuracy.
 
 ## Instrumented Sandbox
 
-Prism does not use a standard Soroban host. Instead, it uses a modified `soroban-env-host` with **trace hooks** injected at the host function boundary.
+Grat does not use a standard Soroban host. Instead, it uses a modified `soroban-env-host` with **trace hooks** injected at the host function boundary.
 
 <Info>
-  **Why host function boundaries?** Production WASM blobs have DWARF debug symbols stripped. Tracing at the host function level ensures compatibility with every contract on the network without requiring original source code.
+  **Why host function boundaries?** Production WASM blobs have DWARF debug
+  symbols stripped. Tracing at the host function level ensures compatibility
+  with every contract on the network without requiring original source code.
 </Info>
 
 ## Key Components

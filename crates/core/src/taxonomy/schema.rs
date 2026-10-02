@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TaxonomyEntry {
     pub id: String,
 
@@ -37,6 +38,7 @@ pub struct TaxonomyEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TaxonomyCause {
     pub description: String,
 
@@ -44,6 +46,7 @@ pub struct TaxonomyCause {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TaxonomyFix {
     pub description: String,
 
@@ -90,22 +93,17 @@ impl std::fmt::Display for ErrorCategory {
     }
 }
 
-/// A parsed TOML taxonomy file containing entries for a single category.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TaxonomySchema {
-    /// Category metadata.
     pub category: CategoryMeta,
-    /// Error entries.
     pub errors: Vec<TaxonomyEntry>,
 }
 
-/// Category-level metadata in a taxonomy TOML file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CategoryMeta {
-    /// Category name.
     pub name: String,
-    /// Category description.
     pub description: String,
-    /// Stellar Core source module.
     pub source_module: String,
 }

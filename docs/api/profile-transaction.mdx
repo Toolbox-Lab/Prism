@@ -6,7 +6,7 @@ description: "Analyzes resource hotspots."
 ```rust
 pub fn profile_transaction(
     trace: &TraceTimeline
-) -> Result<ResourceProfile, PrismError>
+) -> Result<ResourceProfile, GratError>
 ```
 
 Post-processes an execution trace to identify the most expensive operations and budget-critical segments.

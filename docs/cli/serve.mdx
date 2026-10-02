@@ -1,19 +1,20 @@
 ---
-title: "prism serve"
+title: "grat serve"
 sidebarTitle: "serve"
 description: "Start the WebSocket server for real-time trace streaming."
 icon: "server"
 ---
 
-The `serve` command provides the backend for the Prism Web App and other remote interfaces.
+The `serve` command provides the backend for the Grat Web App and other remote interfaces.
 
 ## Usage
 
 ```bash
-prism serve --port 8080 --network mainnet
+grat serve --port 8080 --network mainnet
 ```
 
 ## Features
+
 - **Real-time Streaming**: Streams Tier 2 execution nodes to clients.
 - **WebSocket API**: Reusable by custom dashboards and CI monitors.
 - **Concurrent Traces**: Handles multiple trace requests simultaneously.

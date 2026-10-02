@@ -1,5 +1,5 @@
 # Storage Error Taxonomy
-# Category: Storage — errors related to ledger entry access and contract data operations.
+# Category: Storage â€” errors related to ledger entry access and contract data operations.
 
 [category]
 name = "Storage"
@@ -15,10 +15,12 @@ severity = "Error"
 since_protocol = 20
 summary = "The contract attempted to access a ledger entry not included in the transaction's footprint."
 detailed_explanation = """
-Every Soroban transaction must declare its read/write footprint — the set of ledger entries it \
+Every Soroban transaction must declare its read/write footprint â€” the set of ledger entries it \
 will access. If the contract tries to read or write an entry not in the declared footprint, \
 the host rejects the access. This is a fundamental part of Soroban's parallel execution model.
 """
+related_errors = ["host.storage.entry_not_found"]
+source_file = "soroban-env-host/src/storage.rs"
 
 [[errors.common_causes]]
 description = "Missing ledger entries in the transaction's resource footprint declaration"
@@ -38,8 +40,6 @@ description = "Manually add the missing ledger key to the transaction's read/wri
 difficulty = "medium"
 requires_upgrade = false
 
-related_errors = ["host.storage.missing_key"]
-source_file = "soroban-env-host/src/storage.rs"
 
 [[errors]]
 id = "host.storage.entry_not_found"
@@ -131,14 +131,21 @@ description = "The transaction hit a storage edge case that needs diagnostic eve
 likelihood = "medium"
 
 [[errors.suggested_fixes]]
-description = "Inspect diagnostic events for the ledger key or storage operation that failed"
+description = "Check diagnostic events for the specific ledger key or operation that triggered the internal failure"
 difficulty = "medium"
 requires_upgrade = false
 
 [[errors.suggested_fixes]]
-description = "Retry on a fresh ledger state or report the transaction if the failure is reproducible"
-difficulty = "medium"
+description = "If the error is reproducible, report it with the transaction envelope and diagnostic trace"
+difficulty = "hard"
 requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Retry the operation against a fresh ledger snapshot to rule out transient state corruption"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
 id = "host.storage.near_expiry"
 category = "storage"
 code = 4
@@ -150,9 +157,10 @@ detailed_explanation = """
 Soroban ledger entries have a time-to-live measured in ledgers. This warning indicates that a \
 contract read or written an entry that is close to expiring. The operation succeeded, but the \
 entry must be extended with extendTTL before it archives or future transactions will fail with \
-EntryNotFound. This is not a blocking error — it is a signal to act before the entry is lost.
+EntryNotFound. This is not a blocking error â€” it is a signal to act before the entry is lost.
 """
-
+related_errors = ["host.storage.entry_not_found"]
+source_file = "soroban-env-host/src/storage.rs"
 [[errors.common_causes]]
 description = "Contract data was created or last extended many ledgers ago and TTL refresh was missed"
 likelihood = "high"
@@ -162,5 +170,8 @@ description = "Call extendTTL on the entry to push the expiration ledger further
 difficulty = "easy"
 requires_upgrade = false
 
-related_errors = ["host.storage.entry_not_found"]
-source_file = "soroban-env-host/src/storage.rs"
+[[errors.suggested_fixes]]
+description = "Set up automated TTL extension for long-lived contract data"
+difficulty = "medium"
+requires_upgrade = true
+

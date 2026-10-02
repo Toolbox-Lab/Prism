@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "Prism",
+  "name": "Grat",
   "colors": {
     "primary": "#7C3AED",
     "light": "#A78BFA",
@@ -16,12 +16,7 @@
         "groups": [
           {
             "group": "Getting Started",
-            "pages": [
-              "introduction",
-              "installation",
-              "quickstart",
-              "roadmap"
-            ]
+            "pages": ["introduction", "installation", "quickstart", "roadmap"]
           },
           {
             "group": "Core Concepts",
@@ -100,20 +95,20 @@
     }
   },
   "logo": {
-    "light": "https://img.shields.io/badge/Prism-Diagnostic-7C3AED?style=for-the-badge",
-    "dark": "https://img.shields.io/badge/Prism-Diagnostic-A78BFA?style=for-the-badge"
+    "light": "https://img.shields.io/badge/Grat-Diagnostic-7C3AED?style=for-the-badge",
+    "dark": "https://img.shields.io/badge/Grat-Diagnostic-A78BFA?style=for-the-badge"
   },
   "navbar": {
     "links": [
       {
         "label": "GitHub",
-        "href": "https://github.com/prism-soroban/prism"
+        "href": "https://github.com/grat-soroban/grat"
       }
     ]
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/prism-soroban/prism"
+      "github": "https://github.com/grat-soroban/grat"
     }
   }
 }

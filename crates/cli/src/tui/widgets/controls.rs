@@ -1,6 +1,3 @@
-
-
 #![allow(dead_code)]
 
-pub fn render() {
-}
+pub fn render() {}

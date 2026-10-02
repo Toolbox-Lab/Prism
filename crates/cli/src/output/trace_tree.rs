@@ -1,6 +1,6 @@
 
 
-use prism_core::types::trace::{ ContractInvocation, ExecutionTrace };
+use grat_core::types::trace::{ ContractInvocation, ExecutionTrace };
 use std::io::Write;
 use termcolor::WriteColor;
 
@@ -147,7 +147,7 @@ pub fn render_contract_tree<W: WriteColor>(
 
 fn render_host_call<W: WriteColor>(
     writer: &mut W,
-    host_call: &prism_core::types::trace::HostFunctionCall,
+    host_call: &grat_core::types::trace::HostFunctionCall,
     prefix: &str,
     is_last: bool
 ) -> std::io::Result<()> {
@@ -317,7 +317,7 @@ pub fn print_trace_tree(trace: &ExecutionTrace) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prism_core::types::trace::{
+    use grat_core::types::trace::{
         ContractInvocation,
         HostFunctionCall,
         ExecutionTrace,

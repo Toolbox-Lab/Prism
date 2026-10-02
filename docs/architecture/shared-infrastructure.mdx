@@ -4,14 +4,18 @@ description: "Network, storage, and utility layers."
 ---
 
 ## XDR Codec
+
 A high-level wrapper around `stellar-xdr` that provides idiomatic Rust patterns for common Soroban operations.
 
 ## Network Clients
+
 - **Soroban RPC Client**: Handles communication with RPC endpoints with built-in retry and rate limiting.
 - **History Archive Client**: Fetches and decompresses historical state from S3 or GCS.
 
 ## Local Cache
+
 A content-addressed cache layer that stores:
+
 - Fetched WASM bytecode.
 - Parsed contract specs.
 - Reconstructed ledger entries.

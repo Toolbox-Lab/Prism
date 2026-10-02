@@ -1,19 +1,21 @@
 # Integration Guide: WebSocket Streaming
 
-This guide explains how to integrate the WebSocket streaming feature with the existing Prism codebase.
+This guide explains how to integrate the WebSocket streaming feature with the existing Grat codebase.
 
 ## Overview
 
-The WebSocket streaming implementation is designed to work alongside the existing batch trace functionality. It adds a new `prism serve` command that streams trace updates in real-time.
+The WebSocket streaming implementation is designed to work alongside the existing batch trace functionality. It adds a new `grat serve` command that streams trace updates in real-time.
 
 ## Architecture Integration
 
 ### Current Architecture
+
 ```
 CLI Command → Replay Engine → Complete Trace → Output
 ```
 
 ### New Architecture (Streaming)
+
 ```
 CLI Command → WebSocket Server → Replay Engine → Stream Events → Client
                                        ↓
@@ -42,14 +44,14 @@ The current `execute_with_tracing` function returns all events at once. For true
 pub async fn execute_with_tracing(
     state: &LedgerState,
     tx_hash: &str,
-) -> PrismResult<SandboxResult>
+) -> GratResult<SandboxResult>
 
 // Proposed streaming signature
 pub async fn execute_with_tracing_stream<F>(
     state: &LedgerState,
     tx_hash: &str,
     event_callback: F,
-) -> PrismResult<SandboxResult>
+) -> GratResult<SandboxResult>
 where
     F: Fn(TraceEvent) + Send + Sync,
 ```
@@ -61,22 +63,22 @@ pub async fn execute_with_tracing_stream<F>(
     state: &LedgerState,
     tx_hash: &str,
     event_callback: F,
-) -> PrismResult<SandboxResult>
+) -> GratResult<SandboxResult>
 where
     F: Fn(TraceEvent) + Send + Sync,
 {
     // Initialize sandbox
     let mut events = Vec::new();
-    
+
     // During execution, emit events immediately
     for event in sandbox.execute() {
         event_callback(event.clone());  // Stream to callback
         events.push(event);              // Also collect for final result
-        
+
         // Small delay to avoid overwhelming callback
         tokio::time::sleep(Duration::from_millis(1)).await;
     }
-    
+
     // Return complete result
     Ok(SandboxResult {
         success: true,
@@ -97,9 +99,9 @@ async fn stream_trace_replay(
     sender: broadcast::Sender<TraceStreamMessage>,
 ) -> anyhow::Result<()> {
     // ... existing code ...
-    
+
     // Use streaming API instead of batch
-    let result = prism_core::replay::sandbox::execute_with_tracing_stream(
+    let result = grat_core::replay::sandbox::execute_with_tracing_stream(
         &ledger_state,
         tx_hash,
         |event| {
@@ -111,7 +113,7 @@ async fn stream_trace_replay(
             });
         }
     ).await?;
-    
+
     // ... rest of code ...
 }
 ```
@@ -125,13 +127,13 @@ Keep the existing batch API for CLI commands:
 pub async fn execute_with_tracing(
     state: &LedgerState,
     tx_hash: &str,
-) -> PrismResult<SandboxResult> {
+) -> GratResult<SandboxResult> {
     // Call streaming API with no-op callback
     execute_with_tracing_stream(state, tx_hash, |_| {}).await
 }
 ```
 
-This ensures existing commands (`prism trace`, `prism profile`, etc.) continue to work.
+This ensures existing commands (`grat trace`, `grat profile`, etc.) continue to work.
 
 ### 5. Add Feature Flag (Optional)
 
@@ -160,18 +162,18 @@ Add tests for the streaming functionality:
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_streaming_trace() {
         let (tx, mut rx) = broadcast::channel(100);
-        
+
         // Spawn streaming task
         tokio::spawn(async move {
             stream_trace_replay("test_hash", &NetworkConfig::testnet(), tx)
                 .await
                 .unwrap();
         });
-        
+
         // Verify messages received
         let mut count = 0;
         while let Ok(msg) = rx.recv().await {
@@ -183,7 +185,7 @@ mod tests {
                 _ => {}
             }
         }
-        
+
         assert!(count > 0);
     }
 }
@@ -206,18 +208,18 @@ async fn test_websocket_server() {
             &NetworkConfig::testnet(),
         ).await
     });
-    
+
     // Give server time to start
     tokio::time::sleep(Duration::from_millis(100)).await;
-    
+
     // Connect client
     let (ws_stream, _) = tokio_tungstenite::connect_async("ws://127.0.0.1:8081")
         .await
         .unwrap();
-    
+
     // Send trace request
     // ... test logic ...
-    
+
     server.abort();
 }
 ```
@@ -236,9 +238,9 @@ COPY . .
 RUN cargo build --release
 
 FROM debian:bookworm-slim
-COPY --from=builder /app/target/release/prism /usr/local/bin/
+COPY --from=builder /app/target/release/grat /usr/local/bin/
 EXPOSE 8080
-CMD ["prism", "serve", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["grat", "serve", "--host", "0.0.0.0", "--port", "8080"]
 ```
 
 ### Systemd Service
@@ -246,15 +248,15 @@ CMD ["prism", "serve", "--host", "0.0.0.0", "--port", "8080"]
 Create a systemd service for the WebSocket server:
 
 ```ini
-# /etc/systemd/system/prism-serve.service
+# /etc/systemd/system/grat-serve.service
 [Unit]
-Description=Prism WebSocket Server
+Description=Grat WebSocket Server
 After=network.target
 
 [Service]
 Type=simple
-User=prism
-ExecStart=/usr/local/bin/prism serve --port 8080 --network mainnet
+User=grat
+ExecStart=/usr/local/bin/grat serve --port 8080 --network mainnet
 Restart=on-failure
 RestartSec=5s
 
@@ -269,8 +271,8 @@ Configure Nginx to proxy WebSocket connections:
 ```nginx
 server {
     listen 80;
-    server_name prism.example.com;
-    
+    server_name grat.example.com;
+
     location /ws {
         proxy_pass http://localhost:8080;
         proxy_http_version 1.1;
@@ -292,10 +294,10 @@ Support configuration via environment variables:
 ```rust
 // In crates/cli/src/commands/serve.rs
 pub struct ServeArgs {
-    #[arg(long, short, default_value = "8080", env = "PRISM_WS_PORT")]
+    #[arg(long, short, default_value = "8080", env = "GRAT_WS_PORT")]
     pub port: u16,
-    
-    #[arg(long, default_value = "127.0.0.1", env = "PRISM_WS_HOST")]
+
+    #[arg(long, default_value = "127.0.0.1", env = "GRAT_WS_HOST")]
     pub host: String,
 }
 ```
@@ -305,7 +307,7 @@ pub struct ServeArgs {
 Support configuration via file:
 
 ```toml
-# ~/.prism/config.toml
+# ~/.grat/config.toml
 [websocket]
 port = 8080
 host = "127.0.0.1"
@@ -411,15 +413,15 @@ impl RateLimiter {
         let now = Instant::now();
         let requests = self.requests.entry(client_id.to_string())
             .or_insert_with(Vec::new);
-        
+
         // Remove old requests
         requests.retain(|&t| now.duration_since(t) < self.window);
-        
+
         // Check limit
         if requests.len() >= self.max_requests {
             return false;
         }
-        
+
         requests.push(now);
         true
     }
@@ -435,14 +437,15 @@ Configure WebSocket URL based on environment:
 ```typescript
 // apps/web/src/config.ts
 export const config = {
-  wsUrl: process.env.NEXT_PUBLIC_WS_URL || 
-         (typeof window !== 'undefined' 
-           ? `ws://${window.location.hostname}:8080`
-           : 'ws://localhost:8080'),
+  wsUrl:
+    process.env.NEXT_PUBLIC_WS_URL ||
+    (typeof window !== "undefined"
+      ? `ws://${window.location.hostname}:8080`
+      : "ws://localhost:8080"),
 };
 
 // In TracePage
-import { config } from '@/config';
+import { config } from "@/config";
 const { trace, loading, requestTrace } = useTrace(config.wsUrl);
 ```
 
@@ -455,7 +458,7 @@ Add environment variables to build:
 NEXT_PUBLIC_WS_URL=ws://localhost:8080
 
 # .env.production
-NEXT_PUBLIC_WS_URL=wss://prism.example.com/ws
+NEXT_PUBLIC_WS_URL=wss://grat.example.com/ws
 ```
 
 ## Troubleshooting Integration
@@ -463,16 +466,19 @@ NEXT_PUBLIC_WS_URL=wss://prism.example.com/ws
 ### Common Issues
 
 1. **Port conflicts**: Check if port 8080 is already in use
+
    ```bash
    lsof -i :8080
    ```
 
 2. **Firewall blocking**: Ensure firewall allows WebSocket connections
+
    ```bash
    sudo ufw allow 8080/tcp
    ```
 
 3. **CORS issues**: Configure CORS headers if needed
+
    ```rust
    // Add CORS headers to WebSocket response
    ```
@@ -491,21 +497,25 @@ NEXT_PUBLIC_WS_URL=wss://prism.example.com/ws
 ## Migration Path
 
 ### Phase 1: Development (Current)
+
 - WebSocket server runs alongside existing CLI
 - Both batch and streaming APIs available
 - Testing with example client
 
 ### Phase 2: Beta Testing
+
 - Deploy to staging environment
 - Invite users to test streaming feature
 - Gather feedback and iterate
 
 ### Phase 3: Production
+
 - Deploy to production
 - Monitor performance and errors
 - Gradually increase traffic
 
 ### Phase 4: Optimization
+
 - Add caching for frequently traced transactions
 - Implement connection pooling
 - Add load balancing if needed
@@ -514,8 +524,8 @@ NEXT_PUBLIC_WS_URL=wss://prism.example.com/ws
 
 If issues arise, the feature can be disabled without affecting existing functionality:
 
-1. Stop the `prism serve` process
-2. Users fall back to batch `prism trace` command
+1. Stop the `grat serve` process
+2. Users fall back to batch `grat trace` command
 3. Web UI falls back to REST API (if implemented)
 4. No data loss or corruption
 
@@ -542,6 +552,7 @@ Track these metrics to measure integration success:
 ## Support
 
 For integration help:
+
 - Discord: emry_ss
 - Documentation: `docs/websocket-streaming.md`
 - Examples: `examples/websocket-client.js`

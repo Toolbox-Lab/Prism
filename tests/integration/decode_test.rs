@@ -1,23 +1,5 @@
-//! Integration tests for the decode pipeline.
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_taxonomy_loads_all_categories() {
-        let db = prism_core::taxonomy::loader::TaxonomyDatabase::load_embedded()
-            .expect("Taxonomy should load");
-        assert!(!db.is_empty(), "Taxonomy should contain entries");
-    }
-
-    #[test]
-    fn test_diagnostic_report_serializes() {
-        let report = prism_core::types::report::DiagnosticReport::new(
-            "Budget",
-            0,
-            "LimitExceeded",
-            "CPU budget exceeded",
-        );
-        let json = serde_json::to_string(&report).expect("Should serialize");
-        assert!(json.contains("LimitExceeded"));
-    }
-}
+// Integration tests for the decode command loop live in the CLI crate:
+//   crates/cli/tests/integration/decode_test.rs
+//
+// The workspace-root `tests/` directory is not a Cargo member, so this stub
+// exists only to preserve the file path referenced in the original issue.

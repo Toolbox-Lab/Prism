@@ -6,6 +6,6 @@ export function registerHoverProvider(context: vscode.ExtensionContext) {
       provideHover(document, position) {
         return null;
       },
-    })
+    }),
   );
 }

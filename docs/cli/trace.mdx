@@ -1,5 +1,5 @@
 ---
-title: "prism trace"
+title: "grat trace"
 sidebarTitle: "trace"
 description: "Replay a transaction and generate a hierarchical execution timeline."
 icon: "route"
@@ -10,10 +10,11 @@ The `trace` command escalating to Tier 2 diagnostics by replaying the transactio
 ## Usage
 
 ```bash
-prism trace <TX_HASH> [FLAGS]
+grat trace <TX_HASH> [FLAGS]
 ```
 
 ## Features
+
 - **Hierarchical View**: See nested contract calls and host function invocations.
 - **Detailed Annotations**: Every storage read, auth check, and event emission is marked on the timeline.
 - **Failure Point**: The exact line/call where the error occurred is highlighted.

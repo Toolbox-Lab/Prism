@@ -1,23 +1,27 @@
 ---
 title: "Core Library"
 sidebarTitle: "Core Library"
-description: "Embed Prism diagnostics into your own tools."
+description: "Embed Grat diagnostics into your own tools."
 icon: "cube"
 ---
 
-The Prism core engine is published as a Rust crate and a WASM package.
+The Grat core engine is published as a Rust crate and a WASM package.
 
 ## Rust Usage
-Add `prism-core` to your `Cargo.toml`:
+
+Add `grat-core` to your `Cargo.toml`:
+
 ```toml
 [dependencies]
-prism-core = "0.1.0"
+grat-core = "0.1.0"
 ```
 
 ## WASM Usage
-Embed Prism into your JavaScript/TypeScript applications:
+
+Embed Grat into your JavaScript/TypeScript applications:
+
 ```bash
-npm install @prism-soroban/wasm
+npm install @grat-soroban/wasm
 ```
 
 ## Public API Highlights
@@ -35,11 +39,11 @@ and an `Unknown` variant for forward compatibility.
 ### `summary() -> String`
 
 Returns a one-line plain-English sentence explaining what went wrong.
-This is the headline shown by `prism decode` — the first thing a developer
+This is the headline shown by `grat decode` — the first thing a developer
 reads when diagnosing a failed transaction.
 
 ```rust
-use prism_core::decode::host_error::HostError;
+use grat_core::decode::host_error::HostError;
 
 let err = HostError::Budget { code: 0 };
 println!("{}", err.summary());
@@ -54,6 +58,7 @@ println!("{}", err.summary());
 ```
 
 **Behaviour guarantees:**
+
 - Every variant returns a non-empty string — no error is ever silent.
 - Known code `0` summaries are under 120 characters.
 - Unknown codes within known categories fall back to a formatted message including the code number.

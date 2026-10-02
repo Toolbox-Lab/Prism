@@ -1,10 +1,11 @@
 # Contributing to the Error Taxonomy
 
-The error taxonomy is a community-contributable database of every known Soroban host error. It's the easiest way to contribute to Prism — no Rust knowledge required!
+The error taxonomy is a community-contributable database of every known Soroban host error. It's the easiest way to contribute to Grat — no Rust knowledge required!
 
 ## File Location
 
 Taxonomy files are in `crates/core/src/taxonomy/data/`, one file per error category:
+
 - `budget.toml`, `storage.toml`, `auth.toml`, `context.toml`, `value.toml`
 - `object.toml`, `crypto.toml`, `contract.toml`, `wasm.toml`, `events.toml`
 

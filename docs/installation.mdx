@@ -1,12 +1,12 @@
 ---
 title: "Installation"
-description: "Get Prism installed on your machine."
+description: "Get Grat installed on your machine."
 icon: "download"
 ---
 
 ## Prerequisites
 
-Before installing Prism, ensure your environment meets the following requirements:
+Before installing Grat, ensure your environment meets the following requirements:
 
 - **Rust**: 1.77 or higher
 - **Node.js**: 20 or higher
@@ -16,39 +16,22 @@ Before installing Prism, ensure your environment meets the following requirement
 
 <Tabs>
   <Tab title="Cargo">
-    The easiest way to install Prism is via Cargo:
-    ```bash
-    cargo install prism
-    ```
+    The easiest way to install Grat is via Cargo: ```bash cargo install grat ```
   </Tab>
   <Tab title="Pre-built Binaries">
-    Download the latest binary for your platform from the [GitHub Releases](https://github.com/prism-soroban/prism/releases) page.
-    - `prism-linux-x86_64`
-    - `prism-macos-aarch64`
-    - `prism-windows-x86_64.exe`
+    Download the latest binary for your platform from the [GitHub
+    Releases](https://github.com/grat-soroban/grat/releases) page. -
+    `grat-linux-x86_64` - `grat-macos-aarch64` - `grat-windows-x86_64.exe`
   </Tab>
   <Tab title="From Source">
     <Steps>
       <Step title="Clone the Repository">
-        ```bash
-        git clone https://github.com/prism-soroban/prism.git
-        cd Prism
-        ```
+        ```bash git clone https://github.com/grat-soroban/grat.git cd Grat ```
       </Step>
-      <Step title="Install Dependencies">
-        ```bash
-        pnpm install
-        ```
-      </Step>
-      <Step title="Build the Binary">
-        ```bash
-        cargo build --release
-        ```
-      </Step>
+      <Step title="Install Dependencies">```bash pnpm install ```</Step>
+      <Step title="Build the Binary">```bash cargo build --release ```</Step>
       <Step title="Verify Installation">
-        ```bash
-        ./target/release/prism --version
-        ```
+        ```bash ./target/release/grat --version ```
       </Step>
     </Steps>
   </Tab>
@@ -56,6 +39,7 @@ Before installing Prism, ensure your environment meets the following requirement
 
 ## Accessing RPC
 
-Prism requires access to a Soroban RPC endpoint to fetch transaction data. 
+Grat requires access to a Soroban RPC endpoint to fetch transaction data.
+
 - **Testnet/Mainnet**: Works out of the box using public endpoints.
 - **Custom**: Use the `--rpc-url` flag or set the `SOROBAN_RPC_URL` environment variable.

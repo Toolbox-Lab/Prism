@@ -6,13 +6,17 @@ description: "Reconstructing state and instrumenting execution."
 The Replay Engine powers Tier 2 and Tier 3 diagnostics.
 
 ## Historical State
+
 It uses the **History Archive Client** to fetch compressed ledger snapshots. These are decompressed and loaded into a local state database.
 
 ## Instrumented Sandbox
-Prism uses a modified `soroban-env-host` that:
+
+Grat uses a modified `soroban-env-host` that:
+
 - Emits a trace event for every host function call.
 - Records gas/budget consumption at each step.
 - Captures event emissions and storage diffs.
 
 ## Execution Timeline
+
 As events are emitted, the engine assembles them into a hierarchical tree representing the full invocation chain.

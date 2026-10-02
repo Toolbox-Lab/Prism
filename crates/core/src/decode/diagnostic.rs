@@ -1,12 +1,10 @@
-use crate::error::PrismResult;
+use crate::decode::walker::DiagnosticEventWalker;
+use crate::error::GratResult;
 use crate::types::report::{DiagnosticReport, RootCause, SuggestedFix};
 use crate::xdr::codec::XdrCodec;
 use stellar_xdr::curr::{ContractEventBody, DiagnosticEvent, ScVal};
 
-pub fn enrich_report(
-    report: &mut DiagnosticReport,
-    tx_data: &serde_json::Value,
-) -> PrismResult<()> {
+pub fn enrich_report(report: &mut DiagnosticReport, tx_data: &serde_json::Value) -> GratResult<()> {
     if let Some(events_b64) = tx_data
         .get("diagnosticEventsXdr")
         .and_then(|e| e.as_array())
@@ -25,6 +23,9 @@ pub fn enrich_report(
         if let Some(root_cause_event) = deepest_error_event(&diagnostic_events) {
             add_deepest_error_root_cause(report, &root_cause_event);
         }
+
+        report.failing_contract_id =
+            DiagnosticEventWalker::find_failing_contract(&diagnostic_events);
     }
 
     Ok(())
@@ -52,7 +53,9 @@ fn scval_to_string(val: &ScVal) -> Option<String> {
             Some(num.to_string())
         }
         ScVal::I128(i) => {
-            let num = (i128::from(i.hi) << 64) | (u128::from(i.lo) as i128);
+            #[allow(clippy::cast_possible_wrap)]
+            let lo = u128::from(i.lo) as i128;
+            let num = (i128::from(i.hi) << 64) | lo;
             Some(num.to_string())
         }
         ScVal::Vec(Some(v)) => {
@@ -149,9 +152,7 @@ fn deepest_error_event(events: &[DiagnosticEvent]) -> Option<DiagnosticErrorEven
                 };
                 let is_deeper = deepest
                     .as_ref()
-                    .is_none_or(|current: &DiagnosticErrorEvent| {
-                        candidate.depth >= current.depth
-                    });
+                    .is_none_or(|current: &DiagnosticErrorEvent| candidate.depth >= current.depth);
 
                 if is_deeper {
                     deepest = Some(candidate);
@@ -210,6 +211,7 @@ fn add_deepest_error_root_cause(report: &mut DiagnosticReport, error_event: &Dia
 }
 
 #[allow(irrefutable_let_patterns)]
+#[allow(clippy::too_many_lines)]
 fn analyze_diagnostic_event(report: &mut DiagnosticReport, event: &DiagnosticEvent) {
     if let ContractEventBody::V0(v0) = &event.event.body {
         let topics: Vec<String> = v0.topics.iter().filter_map(scval_to_string).collect();
@@ -313,8 +315,7 @@ fn analyze_diagnostic_event(report: &mut DiagnosticReport, event: &DiagnosticEve
         let topics_str = topics.join(" > ");
         if !report.detailed_explanation.contains(&topics_str) {
             if report.detailed_explanation.is_empty() {
-                report.detailed_explanation =
-                    format!("Diagnostic events trace:\n- [{topics_str}]");
+                report.detailed_explanation = format!("Diagnostic events trace:\n- [{topics_str}]");
             } else {
                 report
                     .detailed_explanation
@@ -453,21 +454,18 @@ mod tests {
 
     #[test]
     fn test_scval_to_string_large_integers() {
-        // U128 standard
         let u128_val = ScVal::U128(UInt128Parts { hi: 1, lo: 0 });
         assert_eq!(
             scval_to_string(&u128_val),
             Some("18446744073709551616".to_string())
         );
 
-        // I128 standard
         let i128_val = ScVal::I128(Int128Parts { hi: -1i64, lo: 0 });
         assert_eq!(
             scval_to_string(&i128_val),
             Some("-18446744073709551616".to_string())
         );
 
-        // U128 Max: hi is u64::MAX (all 1s), lo is u64::MAX
         let u128_max = ScVal::U128(UInt128Parts {
             hi: u64::MAX,
             lo: u64::MAX,
@@ -477,11 +475,9 @@ mod tests {
             Some("340282366920938463463374607431768211455".to_string())
         );
 
-        // U128 Min: 0
         let u128_min = ScVal::U128(UInt128Parts { hi: 0, lo: 0 });
         assert_eq!(scval_to_string(&u128_min), Some("0".to_string()));
 
-        // I128 Max: hi is i64::MAX, lo is u64::MAX
         let i128_max = ScVal::I128(Int128Parts {
             hi: i64::MAX,
             lo: u64::MAX,
@@ -491,7 +487,6 @@ mod tests {
             Some("170141183460469231731687303715884105727".to_string())
         );
 
-        // I128 Min: hi is i64::MIN, lo is 0
         let i128_min = ScVal::I128(Int128Parts {
             hi: i64::MIN,
             lo: 0,

@@ -1,10 +1,8 @@
-
-
 #![allow(dead_code)]
 
 use anyhow::Context;
 use directories::BaseDirs;
-use prism_core::types::config::PrismConfig;
+use grat_core::types::config::GratConfig;
 #[cfg(test)]
 use std::path::Path;
 use std::path::PathBuf;
@@ -15,11 +13,14 @@ pub struct ConfigManager {
 }
 
 impl ConfigManager {
-
-    pub fn new() -> anyhow::Result<Self> {
-        Ok(Self {
-            config_path: default_config_path()?,
-        })
+    /// Create a new ConfigManager. If `custom_path` is `Some`, that path is used
+    /// verbatim; otherwise falls back to the default `~/.grat/config.toml` location.
+    pub fn new(custom_path: Option<PathBuf>) -> anyhow::Result<Self> {
+        let config_path = match custom_path {
+            Some(path) => path,
+            None => default_config_path()?,
+        };
+        Ok(Self { config_path })
     }
 
     #[cfg(test)]
@@ -32,16 +33,16 @@ impl ConfigManager {
         &self.config_path
     }
 
-    pub fn load(&self) -> anyhow::Result<PrismConfig> {
+    pub fn load(&self) -> anyhow::Result<GratConfig> {
         if !self.config_path.exists() {
-            return Ok(PrismConfig::default());
+            return Ok(GratConfig::default());
         }
 
         let content = std::fs::read_to_string(&self.config_path).with_context(|| {
             format!("Failed to read config file {}", self.config_path.display())
         })?;
 
-        let config: PrismConfig = toml::from_str(&content).with_context(|| {
+        let config: GratConfig = toml::from_str(&content).with_context(|| {
             format!(
                 "Failed to parse config file {} as TOML",
                 self.config_path.display()
@@ -52,7 +53,7 @@ impl ConfigManager {
     }
 
     #[cfg(test)]
-    pub fn save(&self, config: &PrismConfig) -> anyhow::Result<()> {
+    pub fn save(&self, config: &GratConfig) -> anyhow::Result<()> {
         if let Some(parent) = self.config_path.parent() {
             std::fs::create_dir_all(parent).with_context(|| {
                 format!("Failed to create config directory {}", parent.display())
@@ -60,7 +61,7 @@ impl ConfigManager {
         }
 
         let serialized =
-            toml::to_string_pretty(config).context("Failed to serialize Prism config to TOML")?;
+            toml::to_string_pretty(config).context("Failed to serialize Grat config to TOML")?;
 
         std::fs::write(&self.config_path, serialized).with_context(|| {
             format!("Failed to write config file {}", self.config_path.display())
@@ -72,9 +73,9 @@ impl ConfigManager {
 
 fn default_config_path() -> anyhow::Result<PathBuf> {
     let base_dirs = BaseDirs::new()
-        .ok_or_else(|| anyhow::anyhow!("Could not determine home directory for Prism config"))?;
+        .ok_or_else(|| anyhow::anyhow!("Could not determine home directory for Grat config"))?;
 
-    Ok(base_dirs.home_dir().join(".prism").join("config.toml"))
+    Ok(base_dirs.home_dir().join(".grat").join("config.toml"))
 }
 
 #[cfg(test)]
@@ -83,7 +84,7 @@ mod tests {
 
     fn unique_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
-            "prism_cli_config_test_{}_{}",
+            "grat_cli_config_test_{}_{}",
             name,
             std::process::id()
         ))
@@ -98,7 +99,7 @@ mod tests {
 
         assert_eq!(
             loaded.default_network,
-            PrismConfig::default().default_network
+            GratConfig::default().default_network
         );
         assert!(!path.exists());
     }
@@ -109,9 +110,9 @@ mod tests {
         let path = root.join("config.toml");
         let manager = ConfigManager::with_path(path.clone());
 
-        let config = PrismConfig {
+        let config = GratConfig {
             max_cache_size_mb: 1024,
-            ..PrismConfig::default()
+            ..GratConfig::default()
         };
 
         manager.save(&config).expect("save config");
@@ -124,10 +125,18 @@ mod tests {
     }
 
     #[test]
-    fn default_path_uses_prism_config_toml() {
-        let manager = ConfigManager::new().expect("manager with default path");
+    fn default_path_uses_grat_config_toml() {
+        let manager = ConfigManager::new(None).expect("manager with default path");
 
         let path = manager.path().to_string_lossy();
-        assert!(path.ends_with(".prism/config.toml") || path.ends_with(".prism\\config.toml"));
+        assert!(path.ends_with(".grat/config.toml") || path.ends_with(".grat\\config.toml"));
+    }
+
+    #[test]
+    fn new_uses_custom_path_when_provided() {
+        let path = unique_path("custom_override").join("custom_config.toml");
+        let manager = ConfigManager::new(Some(path.clone())).expect("manager with custom path");
+
+        assert_eq!(manager.path(), path.as_path());
     }
 }

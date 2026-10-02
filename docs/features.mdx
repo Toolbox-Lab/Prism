@@ -3,25 +3,29 @@ title: "Features"
 description: "Powerful diagnostic tools for every stage of development."
 ---
 
-Prism is designed with the assumption that you want the answer in seconds. It provides four primary diagnostic layers.
+Grat is designed with the assumption that you want the answer in seconds. It provides four primary diagnostic layers.
 
 ### 1. Error Decoding
+
 Any Soroban host error decoded to plain English with root cause analysis and suggested fixes. This is powered by a comprehensive error taxonomy database.
 
 ### 2. Contract Resolution
+
 Fetches the contract's WASM metadata and cross-references `contractspecv0` to resolve `#3` into `InsufficientBalance`, including the original doc comments.
 
 ### 3. Execution Tracing
+
 Replays the transaction against historical state captured from Stellar History Archives. Every host function call, storage access, and budget checkpoint is structured into a timeline.
 
 ### 4. Interactive Debugging
+
 Set breakpoints on function entries, storage accesses, or budget thresholds. Step through execution one host call at a time and inspect the full state at any point.
 
 ## Interface Options
 
-| Interface | Best For |
-| --- | --- |
-| **Rust CLI** | Terminal-native diagnostics and CI/CD pipelines. |
+| Interface             | Best For                                                           |
+| --------------------- | ------------------------------------------------------------------ |
+| **Rust CLI**          | Terminal-native diagnostics and CI/CD pipelines.                   |
 | **VS Code Extension** | Inline error decoding and hover tooltips during local development. |
-| **Web Application** | Shareable debug sessions with visual trace timelines. |
-| **Core Library** | Embedding diagnostic logic into your own ecosystem tools. |
+| **Web Application**   | Shareable debug sessions with visual trace timelines.              |
+| **Core Library**      | Embedding diagnostic logic into your own ecosystem tools.          |

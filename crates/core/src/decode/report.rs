@@ -1,10 +1,10 @@
 use crate::decode::host_error::ClassifiedError;
-use crate::error::PrismResult;
+use crate::error::GratResult;
 use crate::taxonomy::loader::TaxonomyDatabase;
 use crate::types::report::{DiagnosticReport, RootCause, Severity, SuggestedFix};
 
-pub fn build_report(error: &ClassifiedError) -> PrismResult<DiagnosticReport> {
-    let db = TaxonomyDatabase::load_embedded()?;
+pub fn build_report(error: &ClassifiedError) -> GratResult<DiagnosticReport> {
+    let db = TaxonomyDatabase::load_latest()?;
 
     if let Some(entry) = db.lookup(&error.category, error.error_code) {
         let report = DiagnosticReport {
@@ -44,6 +44,14 @@ pub fn build_report(error: &ClassifiedError) -> PrismResult<DiagnosticReport> {
             related_errors: entry.related_errors.clone(),
             cross_contract_attribution: None,
             auth_signatures: Vec::new(),
+            auth_entries: Vec::new(),
+            failing_contract_id: None,
+            call_chain: None,
+            resource_diagnostics: None,
+            operation_index: None,
+            operation_count: None,
+            learn_more: "https://developers.stellar.org/docs/learn/smart-contracts/errors"
+                .to_string(),
         };
 
         Ok(report)

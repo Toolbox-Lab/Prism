@@ -17,10 +17,11 @@
 - **Resource Profiling**: Identifies budget hotspots and expensive host function calls.
 - **Time-Travel Debugging**: Supports breakpoints, step-through execution, and "what-if" re-simulation.
 - **Multi-Interface Support**: Available via Rust CLI, VS Code Extension, and a Web Application.
+- **Authorization Type Detection**: Distinguishes Ed25519 account signatures from Smart Wallet (contract) authorizations and surfaces the relevant address or contract ID.
 
 ## Architecture
 
-Prism is organized as a modular monorepo:
+Grat is organized as a modular monorepo:
 
 - **Core Library (`crates/core`)**: The shared Rust engine for decoding, replaying, and debugging.
 - **CLI (`crates/cli`)**: Powerful command-line interface for terminal-native diagnostics.
@@ -46,8 +47,8 @@ Prism is organized as a modular monorepo:
 2. **Clone and Prepare**:
 
    ```bash
-   git clone https://github.com/prism-soroban/prism.git
-   cd Prism
+   git clone https://github.com/grat-soroban/grat.git
+   cd Grat
    pnpm install
    ```
 
@@ -59,24 +60,24 @@ Prism is organized as a modular monorepo:
 
 4. **Run the CLI**:
    ```bash
-   ./target/release/prism decode <tx-hash>
+   ./target/release/grat decode <tx-hash>
    ```
 
 ## Documentation
 
-For full technical specifications, architecture deep-dives, and API references, visit our [Live Documentation](https://prism-ddf93e61.mintlify.app/docs/introduction).
+For full technical specifications, architecture deep-dives, and API references, visit our [Live Documentation](https://grat-ddf93e61.mintlify.app/docs/introduction).
 
 <CardGroup cols={2}>
-  <Card title="Quickstart" icon="bolt" href="https://prism-ddf93e61.mintlify.app/docs/quickstart">
+  <Card title="Quickstart" icon="bolt" href="https://grat-ddf93e61.mintlify.app/docs/quickstart">
     Get up and running in under 60 seconds.
   </Card>
-  <Card title="CLI Reference" icon="terminal" href="https://prism-ddf93e61.mintlify.app/docs/cli/decode">
-    Complete guide to all Prism commands.
+  <Card title="CLI Reference" icon="terminal" href="https://grat-ddf93e61.mintlify.app/docs/cli/decode">
+    Complete guide to all Grat commands.
   </Card>
-  <Card title="Architecture" icon="sitemap" href="https://prism-ddf93e61.mintlify.app/docs/architecture/overview">
+  <Card title="Architecture" icon="sitemap" href="https://grat-ddf93e61.mintlify.app/docs/architecture/overview">
     Deep dive into the 3-tier diagnostic engine.
   </Card>
-  <Card title="Guides" icon="book" href="https://prism-ddf93e61.mintlify.app/docs/guides/debugging-transactions">
+  <Card title="Guides" icon="book" href="https://grat-ddf93e61.mintlify.app/docs/guides/debugging-transactions">
     Real-world walkthroughs and optimization tips.
   </Card>
 </CardGroup>
@@ -95,6 +96,48 @@ Profile contract execution to identify expensive storage reads or CPU-heavy host
 
 Export failed transactions as standalone test cases to ensure bugs are permanently resolved.
 
+## Authorization Type Detection
+
+Grat automatically identifies the kind of authorization used in each Soroban transaction and includes this information in every diagnostic report.
+
+### Supported Types
+
+| Type             | Address Prefix | Description                                                                               |
+| ---------------- | -------------- | ----------------------------------------------------------------------------------------- |
+| **Ed25519**      | `G...`         | Classic Stellar account signing with its ed25519 key pair.                                |
+| **Smart Wallet** | `C...`         | Deployed contract implementing custom signature verification (e.g., multi-sig, passkeys). |
+
+### Detection Logic
+
+Detection is based on the `ScAddress` variant inside each `SorobanAddressCredentials` entry:
+
+- `ScAddress::Account(...)` → **Ed25519** — a standard Stellar account.
+- `ScAddress::Contract(...)` → **Smart Wallet** — a deployed contract acting as an authorizer.
+
+`SourceAccount` credentials (where the transaction's own source account implicitly authorizes the entry) are not typed because they carry no separate address.
+
+### Report Fields
+
+Each decoded `DiagnosticReport` includes an `auth_entries` array with one entry per authorization found in the transaction:
+
+```json
+{
+  "auth_entries": [
+    {
+      "auth_type": "Ed25519",
+      "address": "GABC...XYZ"
+    },
+    {
+      "auth_type": "Smart Wallet",
+      "address": "CABC...XYZ",
+      "contract_id": "CABC...XYZ"
+    }
+  ]
+}
+```
+
+The existing `auth_signatures` field (hex-encoded ed25519 signature bytes) is preserved unchanged for backward compatibility.
+
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed guidelines.
@@ -102,7 +145,6 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for de
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
-
 
 ---
 

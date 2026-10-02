@@ -6,6 +6,6 @@ export function registerCodeLens(context: vscode.ExtensionContext) {
       provideCodeLenses(document) {
         return [];
       },
-    })
+    }),
   );
 }

@@ -1,11 +1,8 @@
-
-
 use clap::Args;
-use prism_core::types::config::NetworkConfig;
+use grat_core::types::config::NetworkConfig;
 
 #[derive(Args)]
 pub struct ExportArgs {
-
     pub tx_hash: String,
 
     #[arg(long, default_value = "test")]
@@ -30,7 +27,7 @@ pub async fn run(
 
     let output_path = args.output.unwrap_or_else(|| {
         format!(
-            "prism_test_{}.rs",
+            "grat_test_{}.rs",
             &args.tx_hash[..8.min(args.tx_hash.len())]
         )
     });

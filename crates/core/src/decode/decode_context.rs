@@ -1,6 +1,5 @@
-use crate::types::config::NetworkConfig;
+use crate::network::config::NetworkConfig;
 
-/// Output format for diagnostic reports.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum OutputFormat {
     #[default]
@@ -11,7 +10,7 @@ pub enum OutputFormat {
 }
 
 impl OutputFormat {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s {
             "json" => Self::Json,
             "compact" => Self::Compact,
@@ -30,9 +29,6 @@ impl OutputFormat {
     }
 }
 
-/// Runtime configuration threaded through the entire decode pipeline.
-///
-/// Build with [`DecodeContext::builder`] and pass by reference to every analyzer.
 #[derive(Debug, Clone)]
 pub struct DecodeContext {
     pub network: NetworkConfig,
@@ -41,13 +37,11 @@ pub struct DecodeContext {
 }
 
 impl DecodeContext {
-    /// Start building a [`DecodeContext`].
     pub fn builder() -> DecodeContextBuilder {
         DecodeContextBuilder::default()
     }
 }
 
-/// Builder for [`DecodeContext`].
 #[derive(Debug, Default)]
 pub struct DecodeContextBuilder {
     network: Option<NetworkConfig>,
@@ -89,7 +83,7 @@ impl From<&NetworkConfig> for DecodeContextBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network::config::Network;
+    use crate::Network;
 
     #[test]
     fn builder_defaults_to_testnet() {
@@ -121,7 +115,7 @@ mod tests {
             ("short", OutputFormat::Short),
             ("unknown", OutputFormat::Human),
         ] {
-            assert_eq!(OutputFormat::from_str(s), expected);
+            assert_eq!(OutputFormat::parse(s), expected);
             if s != "unknown" {
                 assert_eq!(expected.as_str(), s);
             }

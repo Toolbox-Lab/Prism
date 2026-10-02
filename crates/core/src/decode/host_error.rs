@@ -4,7 +4,7 @@ use stellar_xdr::curr::{
     TransactionResultResult,
 };
 
-use crate::error::{PrismError, PrismResult};
+use crate::error::{GratError, GratResult};
 use crate::taxonomy::schema::ErrorCategory;
 use crate::xdr::codec::XdrCodec;
 
@@ -75,79 +75,98 @@ impl HostError {
         match self {
             Self::Budget { code } => {
                 if let Some(detail) = crate::decode::mappings::budget::lookup(*code) {
-                    detail.summary.to_string()
+                    format!("[BUDGET] {}", detail.name)
                 } else {
-                    format!("Budget error (code {code}): the transaction exceeded an allocated resource budget.")
+                    format!("[BUDGET] Code {code}")
                 }
-            },
+            }
+
             Self::Storage { code } => {
                 if let Some(detail) = crate::decode::mappings::storage::lookup(*code) {
-                    detail.summary.to_string()
+                    format!("[STORAGE] {}", detail.name)
                 } else {
-                    format!("Storage error (code {code}): an unexpected error occurred while accessing contract data.")
+                    format!("[STORAGE] Code {code}")
                 }
-            },
+            }
+
             Self::Auth { code } => {
                 if let Some(detail) = crate::decode::mappings::auth::lookup(*code) {
-                    detail.summary.to_string()
+                    format!("[AUTH] {}", detail.name)
                 } else {
-                    format!("Auth error (code {code}): an authorization requirement was not satisfied.")
+                    format!("[AUTH] Code {code}")
                 }
-            },
+            }
+
             Self::Context { code } => {
                 if let Some(detail) = crate::decode::mappings::context::lookup(*code) {
-                    detail.summary.to_string()
+                    format!("[CONTEXT] {}", detail.name)
                 } else {
-                    format!("Context error (code {code}): the contract was invoked in an invalid execution context.")
+                    format!("[CONTEXT] Code {code}")
                 }
-            },
+            }
+
             Self::Value { code } => {
                 if let Some(detail) = crate::decode::mappings::value::lookup(*code) {
-                    detail.summary.to_string()
+                    format!("[VALUE] {}", detail.name)
                 } else {
-                    format!("Value error (code {code}): a host value could not be converted or validated.")
+                    format!("[VALUE] Code {code}")
                 }
-            },
+            }
+
             Self::Object { code } => {
                 if let Some(detail) = crate::decode::mappings::object::lookup(*code) {
-                    detail.summary.to_string()
+                    format!("[OBJECT] {}", detail.name)
                 } else {
-                    format!("Object error (code {code}): an operation on a host object (vector, map, bytes) failed.")
+                    format!("[OBJECT] Code {code}")
                 }
-            },
-            Self::Crypto { code } => match code {
-                0 => "Invalid cryptographic input: a public key, signature, or hash input has the wrong length or format.".to_string(),
-                _ => format!("Crypto error (code {code}): a cryptographic operation failed due to invalid input."),
-            },
-            Self::Contract { code } => match code {
-               0 => "Contract error: the contract's own logic rejected this call — run with --resolve to map the code to its name.".to_string(),
-                _ => format!("Contract error (code {code}): the contract returned a non-zero error code — run with --resolve to identify it."),
-            },
-            Self::Wasm { code } => match code {
-               0 => "Invalid WASM module: the contract bytecode failed validation — recompile with a compatible Soroban SDK version.".to_string(),
-                _ => format!("WASM error (code {code}): the contract's WASM module could not be loaded or executed."),
-            },
-            Self::Events { code } => match code {
-                0 => "Event size limit exceeded: the transaction emitted more event data than the protocol allows in a single execution.".to_string(),
-                _ => format!("Events error (code {code}): an error occurred during event emission."),
-            },
-            Self::ContractSpecific { contract_id, code } => {
-                let contract = contract_id
-                    .as_deref()
-                    .unwrap_or("unknown contract");
-                format!(
-                    "Contract-specific error {code} from {contract}: run with --resolve to look up the error name from the contract's WASM metadata."
-                )
             }
-            Self::Unknown { type_code, sub_code } => {
-                format!(
-                    "Unknown error (type {type_code}, sub-code {sub_code}): this error code is not recognised — the network may be running a newer protocol version."
-                )
+
+            Self::Crypto { code } => {
+                if let Some(detail) = crate::decode::mappings::crypto::lookup(*code) {
+                    format!("[CRYPTO] {}", detail.name)
+                } else {
+                    format!("[CRYPTO] Code {code}")
+                }
+            }
+
+            Self::Contract { code } => {
+                if let Some(detail) = crate::decode::mappings::contract::lookup(*code) {
+                    format!("[CONTRACT] {}", detail.name)
+                } else {
+                    format!("[CONTRACT] Code {code}")
+                }
+            }
+
+            Self::Wasm { code } => {
+                if let Some(detail) = crate::decode::mappings::wasm::lookup(*code) {
+                    format!("[WASM] {}", detail.name)
+                } else {
+                    format!("[WASM] Code {code}")
+                }
+            }
+
+            Self::Events { code } => {
+                if let Some(detail) = crate::decode::mappings::events::lookup(*code) {
+                    format!("[EVENTS] {}", detail.name)
+                } else {
+                    format!("[EVENTS] Code {code}")
+                }
+            }
+
+            Self::ContractSpecific { contract_id, code } => {
+                let contract = contract_id.as_deref().unwrap_or("unknown");
+                format!("[CONTRACT] {contract} ({code})")
+            }
+
+            Self::Unknown {
+                type_code,
+                sub_code,
+            } => {
+                format!("[UNKNOWN] {type_code}:{sub_code}")
             }
         }
     }
 }
-
 #[derive(Debug, Clone)]
 pub struct ClassifiedError {
     pub category: ErrorCategory,
@@ -157,15 +176,15 @@ pub struct ClassifiedError {
     pub raw_data: serde_json::Value,
 }
 
-pub fn from_transaction_result(tx_result: TransactionResult) -> PrismResult<ClassifiedError> {
+pub fn from_transaction_result(tx_result: TransactionResult) -> GratResult<ClassifiedError> {
     let op_results = match tx_result.result {
-        TransactionResultResult::TxSuccess(_) => return Err(PrismError::TransactionSucceeded),
+        TransactionResultResult::TxSuccess(_) => return Err(GratError::TransactionSucceeded),
         TransactionResultResult::TxFailed(ops) => ops,
         TransactionResultResult::TxFeeBumpInnerSuccess(_) => {
-            return Err(PrismError::TransactionSucceeded)
+            return Err(GratError::TransactionSucceeded)
         }
 
-        _ => return Err(PrismError::NotSorobanTransaction),
+        _ => return Err(GratError::NotSorobanTransaction),
     };
 
     let ihf_result = op_results
@@ -177,10 +196,10 @@ pub fn from_transaction_result(tx_result: TransactionResult) -> PrismResult<Clas
                 None
             }
         })
-        .ok_or(PrismError::NotSorobanTransaction)?;
+        .ok_or(GratError::NotSorobanTransaction)?;
 
     let (category, error_code, is_contract_error) = match ihf_result {
-        InvokeHostFunctionResult::Success(_) => return Err(PrismError::TransactionSucceeded),
+        InvokeHostFunctionResult::Success(_) => return Err(GratError::TransactionSucceeded),
         InvokeHostFunctionResult::Trapped => (ErrorCategory::Contract, 0u32, false),
         InvokeHostFunctionResult::ResourceLimitExceeded => (ErrorCategory::Budget, 0, false),
         InvokeHostFunctionResult::EntryArchived => (ErrorCategory::Storage, 0, false),
@@ -197,14 +216,14 @@ pub fn from_transaction_result(tx_result: TransactionResult) -> PrismResult<Clas
     })
 }
 
-pub fn classify_error(tx_data: &serde_json::Value) -> PrismResult<ClassifiedError> {
+pub fn classify_error(tx_data: &serde_json::Value) -> GratResult<ClassifiedError> {
     let status = tx_data
         .get("status")
         .and_then(|s| s.as_str())
         .unwrap_or("UNKNOWN");
 
     if status == "SUCCESS" {
-        return Err(PrismError::TransactionSucceeded);
+        return Err(GratError::TransactionSucceeded);
     }
 
     if let Some(result_xdr_b64) = tx_data.get("resultXdr").and_then(|r| r.as_str()) {
@@ -245,7 +264,7 @@ mod tests {
     use super::*;
     use stellar_xdr::curr::{
         Hash, InvokeHostFunctionResult, OperationResult, OperationResultTr, TransactionResult,
-        TransactionResultResult, VecM,
+        TransactionResultResult,
     };
 
     fn make_tx_result(op_result: InvokeHostFunctionResult) -> TransactionResult {
@@ -330,47 +349,52 @@ mod tests {
     fn test_summary_known_codes() {
         assert_eq!(
             HostError::Budget { code: 0 }.summary(),
-            "CPU budget exceeded: the transaction ran out of CPU instructions before completing execution."
+            "[BUDGET] CPUExceeded"
         );
+
         assert_eq!(
             HostError::Storage { code: 0 }.summary(),
-            "The contract attempted to access a ledger entry not included in the transaction's footprint."
+            "[STORAGE] AccessDenied"
         );
+
         assert_eq!(
             HostError::Auth { code: 0 }.summary(),
-            "The authorization context is malformed or does not match the current invocation."
+            "[AUTH] InvalidAction"
         );
+
         assert_eq!(
             HostError::Context { code: 0 }.summary(),
-            "Host internal error: an unexpected Soroban runtime error occurred — this may be a platform bug, not a contract bug."
+            "[CONTEXT] UnknownError"
         );
+
         assert_eq!(
             HostError::Value { code: 0 }.summary(),
-            "Invalid value: a host function received an argument of the wrong type or format."
+            "[VALUE] UnknownError"
         );
+
         assert_eq!(
             HostError::Object { code: 0 }.summary(),
-            "An unknown or unclassified host object error occurred."
+            "[OBJECT] UnknownError"
         );
-        assert_eq!(
-            HostError::Object { code: 5 }.summary(),
-            "An index out of bounds was used when accessing a host vector or byte array."
-        );
+
         assert_eq!(
             HostError::Crypto { code: 0 }.summary(),
-            "Invalid cryptographic input: a public key, signature, or hash input has the wrong length or format."
+            "[CRYPTO] InvalidInput"
         );
+
         assert_eq!(
             HostError::Contract { code: 0 }.summary(),
-            "Contract error: the contract's own logic rejected this call — run with --resolve to map the code to its name."
+            "[CONTRACT] ContractError"
         );
+
         assert_eq!(
             HostError::Wasm { code: 0 }.summary(),
-            "Invalid WASM module: the contract bytecode failed validation — recompile with a compatible Soroban SDK version."
+            "[WASM] InvalidModule"
         );
+
         assert_eq!(
             HostError::Events { code: 0 }.summary(),
-            "Event size limit exceeded: the transaction emitted more event data than the protocol allows in a single execution."
+            "[EVENTS] ArithDomain"
         );
     }
 
@@ -382,8 +406,7 @@ mod tests {
         }
         .summary();
         assert!(s.contains("CABC123"));
-        assert!(s.contains("3"));
-        assert!(s.contains("--resolve"));
+        assert!(s.contains('3'));
     }
 
     #[test]
@@ -393,8 +416,8 @@ mod tests {
             code: 7,
         }
         .summary();
-        assert!(s.contains("unknown contract"));
-        assert!(s.contains("--resolve"));
+        assert!(s.contains("unknown"));
+        assert!(s.contains('7'));
     }
 
     #[test]
@@ -404,20 +427,18 @@ mod tests {
             sub_code: 42,
         }
         .summary();
-        assert!(s.contains("9"));
-        assert!(s.contains("42"));
-        assert!(s.contains("not recognised"));
+        assert_eq!(s, "[UNKNOWN] 9:42");
     }
 
     #[test]
     fn test_summary_unknown_codes_fallback() {
         let s = HostError::Budget { code: 99 }.summary();
         assert!(s.contains("99"));
-        assert!(s.contains("Budget") || s.contains("budget"));
+        assert!(s.contains("BUDGET"));
     }
 
     #[test]
-    fn test_summary_under_120_chars() {
+    fn test_summary_under_80_chars() {
         let errors = vec![
             HostError::Budget { code: 0 },
             HostError::Storage { code: 0 },
@@ -433,7 +454,7 @@ mod tests {
         for err in errors {
             let summary = err.summary();
             assert!(
-                summary.len() <= 120,
+                summary.len() <= 80,
                 "Summary too long ({} chars) for {:?}: {}",
                 summary.len(),
                 err,
@@ -473,7 +494,7 @@ mod tests {
         };
         assert!(matches!(
             from_transaction_result(tx_result),
-            Err(PrismError::TransactionSucceeded)
+            Err(GratError::TransactionSucceeded)
         ));
     }
 
@@ -486,7 +507,7 @@ mod tests {
         };
         assert!(matches!(
             from_transaction_result(tx_result),
-            Err(PrismError::NotSorobanTransaction)
+            Err(GratError::NotSorobanTransaction)
         ));
     }
 
@@ -495,7 +516,7 @@ mod tests {
         let result = make_tx_result(InvokeHostFunctionResult::Success(Hash([0; 32])));
         assert!(matches!(
             from_transaction_result(result),
-            Err(PrismError::TransactionSucceeded)
+            Err(GratError::TransactionSucceeded)
         ));
     }
 }

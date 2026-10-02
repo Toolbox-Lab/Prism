@@ -2,8 +2,8 @@
 
 use crate::output::theme::ColorPalette;
 use colored::Colorize;
-use prism_core::types::report::{DiagnosticReport, RootCause, TransactionContext, FeeBreakdown};
-use prism_core::types::trace::ResourceProfile;
+use grat_core::types::report::{DiagnosticReport, FeeBreakdown, RootCause, TransactionContext};
+use grat_core::types::trace::ResourceProfile;
 use tabled::{Table, Tabled};
 
 const BAR_WIDTH: usize = 10;
@@ -17,7 +17,7 @@ pub fn render_error_card(report: &DiagnosticReport) -> String {
     ErrorCard::new(report).render()
 }
 
-pub fn render_fix_list(fixes: &[prism_core::types::report::SuggestedFix]) -> String {
+pub fn render_fix_list(fixes: &[grat_core::types::report::SuggestedFix]) -> String {
     FixList::new(fixes).render()
 }
 
@@ -25,7 +25,7 @@ pub fn render_cause_list(causes: &[RootCause]) -> String {
     CauseList::new(causes).render()
 }
 
-pub fn render_state_diff_table(diff: &prism_core::types::trace::StateDiff) -> String {
+pub fn render_state_diff_table(diff: &grat_core::types::trace::StateDiff) -> String {
     StateDiffTable::new(diff).render()
 }
 
@@ -101,11 +101,11 @@ impl<'a> ErrorCard<'a> {
 }
 
 pub struct FixList<'a> {
-    fixes: &'a [prism_core::types::report::SuggestedFix],
+    fixes: &'a [grat_core::types::report::SuggestedFix],
 }
 
 impl<'a> FixList<'a> {
-    pub fn new(fixes: &'a [prism_core::types::report::SuggestedFix]) -> Self {
+    pub fn new(fixes: &'a [grat_core::types::report::SuggestedFix]) -> Self {
         Self { fixes }
     }
 
@@ -163,7 +163,6 @@ impl<'a> CauseList<'a> {
     }
 }
 
-/// Renders a colored budget utilization bar for Soroban resource usage.
 pub struct BudgetBar {
     label: &'static str,
     used: u64,
@@ -233,7 +232,6 @@ fn heat_cell(intensity: f64) -> String {
     }
 }
 
-/// Render a resource heatmap grid from a `ResourceProfile`.
 pub fn render_heatmap(profile: &ResourceProfile) -> String {
     if profile.hotspots.is_empty() {
         let palette = ColorPalette::default();
@@ -334,7 +332,6 @@ struct ArgumentRow {
     value: String,
 }
 
-/// Renders decoded contract arguments as a clean table.
 pub fn render_context_table(context: &TransactionContext) -> String {
     if context.arguments.is_empty() {
         return String::new();
@@ -374,13 +371,12 @@ struct DiffRow {
     new_value: String,
 }
 
-/// Renders a detailed state diff table.
 pub struct StateDiffTable<'a> {
-    diff: &'a prism_core::types::trace::StateDiff,
+    diff: &'a grat_core::types::trace::StateDiff,
 }
 
 impl<'a> StateDiffTable<'a> {
-    pub fn new(diff: &'a prism_core::types::trace::StateDiff) -> Self {
+    pub fn new(diff: &'a grat_core::types::trace::StateDiff) -> Self {
         Self { diff }
     }
 
@@ -396,16 +392,16 @@ impl<'a> StateDiffTable<'a> {
             .iter()
             .map(|entry| {
                 let change = match entry.change_type {
-                    prism_core::types::trace::DiffChangeType::Created => {
+                    grat_core::types::trace::DiffChangeType::Created => {
                         palette.success_text("Created")
                     }
-                    prism_core::types::trace::DiffChangeType::Deleted => {
+                    grat_core::types::trace::DiffChangeType::Deleted => {
                         palette.error_text("Deleted")
                     }
-                    prism_core::types::trace::DiffChangeType::Updated => {
+                    grat_core::types::trace::DiffChangeType::Updated => {
                         palette.warning_text("Updated")
                     }
-                    prism_core::types::trace::DiffChangeType::Unchanged => {
+                    grat_core::types::trace::DiffChangeType::Unchanged => {
                         palette.muted_text("Unchanged")
                     }
                 };
@@ -455,11 +451,11 @@ pub fn render_fee_breakdown(fee: &FeeBreakdown) -> String {
 
     if fee.resource_fee > 0 {
         out.push_str(&format!(
-            "    Refundable:       {}\n",
-            palette.muted_text(&format_fee(fee.refundable_fee))
+            "    Refundable Resource Fee:  {}\n",
+            palette.muted_text(&format_fee(fee.refundable_resource_fee))
         ));
         out.push_str(&format!(
-            "    Non-Refundable:   {}\n",
+            "    Non-Refundable:           {}\n",
             palette.muted_text(&format_fee(fee.non_refundable_fee))
         ));
     }
@@ -470,10 +466,10 @@ pub fn render_fee_breakdown(fee: &FeeBreakdown) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prism_core::types::report::{
+    use grat_core::types::report::{
         ContractErrorInfo, FeeBreakdown, ResourceSummary, Severity, TransactionContext,
     };
-    use prism_core::types::trace::{ResourceHotspot, ResourceProfile};
+    use grat_core::types::trace::{ResourceHotspot, ResourceProfile};
 
     fn make_profile(hotspots: Vec<ResourceHotspot>) -> ResourceProfile {
         ResourceProfile {
@@ -483,6 +479,8 @@ mod tests {
             memory_limit: 1_000_000,
             total_read_bytes: 0,
             total_write_bytes: 0,
+            read_limit: 0,
+            write_limit: 0,
             hotspots,
             warnings: vec![],
         }
@@ -504,9 +502,20 @@ mod tests {
                 error_code: 1,
                 error_name: Some("InsufficientBalance".to_string()),
                 doc_comment: Some("User attempted transfer with insufficient balance".to_string()),
+                learn_more: String::new(),
             }),
             transaction_context: None,
             related_errors: Vec::new(),
+            cross_contract_attribution: None,
+            auth_signatures: Vec::new(),
+            auth_entries: Vec::new(),
+            failing_contract_id: None,
+            call_chain: None,
+            resource_diagnostics: None,
+            operation_index: None,
+            operation_count: None,
+            learn_more: "https://developers.stellar.org/docs/learn/smart-contracts/errors"
+                .to_string(),
         }
     }
 
@@ -574,6 +583,7 @@ mod tests {
                 total_charged_fee: 150,
                 inclusion_fee: 100,
                 resource_fee: 50,
+                refundable_resource_fee: 25,
                 refundable_fee: 25,
                 non_refundable_fee: 25,
                 bid_fee: Some(150),
@@ -584,8 +594,12 @@ mod tests {
                 memory_bytes_used: 5000,
                 memory_bytes_limit: 50000,
                 read_bytes: 1000,
+                read_bytes_limit: 10000,
                 write_bytes: 500,
             },
+            return_value: None,
+            operation_index: None,
+            operation_count: None,
         };
 
         let output = render_context_table(&context);
@@ -595,11 +609,46 @@ mod tests {
     }
 
     #[test]
+    fn render_context_table_with_empty_arguments() {
+        let context = TransactionContext {
+            tx_hash: "abc123".to_string(),
+            ledger_sequence: 12345,
+            operation_count: Some(0),
+            operation_index: Some(0),
+            function_name: Some("transfer".to_string()),
+            arguments: vec![],
+            fee: FeeBreakdown {
+                total_charged_fee: 150,
+                inclusion_fee: 100,
+                resource_fee: 50,
+                refundable_resource_fee: 25,
+                refundable_fee: 25,
+                non_refundable_fee: 25,
+                bid_fee: Some(150),
+            },
+            resources: ResourceSummary {
+                cpu_instructions_used: 1000,
+                cpu_instructions_limit: 10000,
+                memory_bytes_used: 5000,
+                memory_bytes_limit: 50000,
+                read_bytes: 1000,
+                read_bytes_limit: 10000,
+                write_bytes: 500,
+            },
+            return_value: None,
+        };
+
+        let output = render_context_table(&context);
+        assert!(output.is_empty());
+    }
+
+    #[test]
     fn render_fee_breakdown_works() {
         let fee = FeeBreakdown {
             total_charged_fee: 150,
             inclusion_fee: 100,
             resource_fee: 50,
+            refundable_resource_fee: 25,
             refundable_fee: 25,
             non_refundable_fee: 25,
             bid_fee: Some(150),
@@ -608,5 +657,6 @@ mod tests {
         assert!(output.contains("FEE BREAKDOWN"));
         assert!(output.contains("Total Charged Fee:"));
         assert!(output.contains("150 stroops"));
+        assert!(output.contains("Refundable Resource Fee:"));
     }
 }

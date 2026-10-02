@@ -10,6 +10,10 @@ export interface ResourceUpdate {
   memory_used: number;
   cpu_limit: number;
   memory_limit: number;
+  read_bytes: number;
+  read_limit: number;
+  write_bytes: number;
+  write_limit: number;
 }
 
 export interface StateDiffEntry {
@@ -24,7 +28,10 @@ export interface TraceStreamCallbacks {
   onTraceNode?: (data: TraceNode) => void;
   onResourceUpdate?: (data: ResourceUpdate) => void;
   onStateDiffEntry?: (data: StateDiffEntry) => void;
-  onTraceCompleted?: (data: { total_nodes: number; duration_ms: number }) => void;
+  onTraceCompleted?: (data: {
+    total_nodes: number;
+    duration_ms: number;
+  }) => void;
   onTraceError?: (data: { error: string }) => void;
 }
 
@@ -48,7 +55,7 @@ export function useWebSocket(url: string, callbacks?: TraceStreamCallbacks) {
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        
+
         switch (message.type) {
           case "trace_started":
             callbacks?.onTraceStarted?.(message);
@@ -100,14 +107,17 @@ export function useWebSocket(url: string, callbacks?: TraceStreamCallbacks) {
     }
   }, []);
 
-  const requestTrace = useCallback((txHash: string) => {
-    sendMessage({ tx_hash: txHash });
-  }, [sendMessage]);
+  const requestTrace = useCallback(
+    (txHash: string) => {
+      sendMessage({ tx_hash: txHash });
+    },
+    [sendMessage],
+  );
 
-  return { 
-    connected, 
-    error, 
-    sendMessage, 
-    requestTrace 
+  return {
+    connected,
+    error,
+    sendMessage,
+    requestTrace,
   };
 }

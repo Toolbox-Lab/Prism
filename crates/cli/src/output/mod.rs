@@ -1,8 +1,6 @@
-
-
 #![allow(dead_code)]
 
-use prism_core::types::{
+use grat_core::types::{
     report::DiagnosticReport,
     trace::{DiffChangeType, ExecutionTrace, ResourceProfile, StateDiff},
 };
@@ -70,6 +68,16 @@ pub fn print_resource_profile(
                 renderers::BudgetBar::new("Memory", profile.total_memory, profile.memory_limit)
                     .render()
             );
+            println!(
+                "{}",
+                renderers::BudgetBar::new("Read", profile.total_read_bytes, profile.read_limit)
+                    .render()
+            );
+            println!(
+                "{}",
+                renderers::BudgetBar::new("Write", profile.total_write_bytes, profile.write_limit)
+                    .render()
+            );
             let palette = theme::ColorPalette::default();
             for warning in &profile.warnings {
                 println!("{} {warning}", palette.warning_text("⚠"));
@@ -134,12 +142,14 @@ pub fn print_whatif_status(
 
 fn format_trace_summary(trace: &ExecutionTrace) -> String {
     format!(
-        "Status: Complete | Tx: {} | Invocations: {} | Changes: {} | CPU: {}/{}",
+        "Status: Complete | Tx: {} | Invocations: {} | Changes: {} | CPU: {}/{} | Write: {}/{}",
         trace.tx_hash,
         trace.invocations.len(),
         trace.state_diff.entries.len(),
         trace.resource_profile.total_cpu,
-        trace.resource_profile.cpu_limit
+        trace.resource_profile.cpu_limit,
+        trace.resource_profile.total_write_bytes,
+        trace.resource_profile.write_limit
     )
 }
 
@@ -151,11 +161,15 @@ fn format_resource_profile_summary(profile: &ResourceProfile) -> String {
     };
 
     format!(
-        "Status: Complete | CPU: {}/{} | Memory: {}/{}{}",
+        "Status: Complete | CPU: {}/{} | Memory: {}/{} | Read: {}/{} | Write: {}/{}{}",
         profile.total_cpu,
         profile.cpu_limit,
         profile.total_memory,
         profile.memory_limit,
+        profile.total_read_bytes,
+        profile.read_limit,
+        profile.total_write_bytes,
+        profile.write_limit,
         warning_suffix
     )
 }

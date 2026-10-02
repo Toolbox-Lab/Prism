@@ -8,14 +8,15 @@ When Tier 1 isn't enough, Tier 2 escalation provides a full execution trace of t
 
 ## State Reconstruction
 
-To replay a transaction accurately, Prism must reconstruct the exact ledger state that existed at the moment of execution.
+To replay a transaction accurately, Grat must reconstruct the exact ledger state that existed at the moment of execution.
 
 - **Recent Transactions**: Fetched via Soroban RPC `getLedgerEntries`.
 - **Historical Transactions**: Fetched from **Stellar History Archives** (S3/GCS) and replayed up to the target ledger sequence using Captive Core.
 
 ## The Tracing Sandbox
 
-Prism executes the transaction in a modified Soroban sandbox.
+Grat executes the transaction in a modified Soroban sandbox.
+
 - It intercepts every host function call.
 - It records every storage read/write.
 - It tracks CPU and memory consumption at every step.

@@ -2,19 +2,19 @@
 workspace = true
 
 [package]
-name = "prism"
+name = "grat"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Prism CLI — Soroban Transaction Debugger"
+description = "Grat CLI — Soroban Transaction Debugger"
 build = "build.rs"
 
 [[bin]]
-name = "prism"
+name = "grat"
 path = "src/main.rs"
 
 [dependencies]
-prism-core = { workspace = true }
+grat-core = { workspace = true }
 fs2     = "0.4"
 walkdir = "2"
 reqwest = { workspace = true }
@@ -63,7 +63,12 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "5.0"
 url = "2"
 
+# Markdown
+pulldown-cmark = { workspace = true }
+unicode-width = { workspace = true }
+
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
+stellar-xdr = { workspace = true }

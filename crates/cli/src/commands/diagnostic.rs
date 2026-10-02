@@ -1,16 +1,13 @@
-
-
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crate::output::theme::ColorPalette;
 use anyhow::Result;
 use directories::ProjectDirs;
-use crate::output::theme::ColorPalette;
 
 #[derive(clap::Args)]
 #[command(about = "Check binary health, network connectivity, and cache state.")]
 pub struct DiagnosticArgs {
-
     #[arg(long, short)]
     pub quiet: bool,
 }
@@ -89,10 +86,7 @@ fn check_binary_version() -> Check {
     }
 }
 
-async fn check_rpc(
-    label: &str,
-    network_config: &prism_core::types::config::NetworkConfig,
-) -> Check {
+async fn check_rpc(label: &str, network_config: &grat_core::types::config::NetworkConfig) -> Check {
     let start = Instant::now();
 
     let client = reqwest::Client::builder()
@@ -132,11 +126,11 @@ async fn check_network() -> Vec<Check> {
     let configs = [
         (
             "mainnet",
-            prism_core::network::config::resolve_network("mainnet"),
+            grat_core::network::config::resolve_network("mainnet"),
         ),
         (
             "testnet",
-            prism_core::network::config::resolve_network("testnet"),
+            grat_core::network::config::resolve_network("testnet"),
         ),
     ];
 
@@ -148,7 +142,7 @@ async fn check_network() -> Vec<Check> {
 }
 
 fn cache_dir() -> Option<PathBuf> {
-    ProjectDirs::from("io", "prism", "prism").map(|p| p.cache_dir().to_path_buf())
+    ProjectDirs::from("io", "grat", "grat").map(|p| p.cache_dir().to_path_buf())
 }
 
 fn check_cache() -> Vec<Check> {
@@ -170,7 +164,7 @@ fn check_cache() -> Vec<Check> {
     }
     checks.push(Check::ok(format!("Cache directory   {}", dir.display())));
 
-    let probe = dir.join(".prism_diag_probe");
+    let probe = dir.join(".grat_diag_probe");
     match std::fs::write(&probe, b"ok") {
         Ok(()) => {
             let _ = std::fs::remove_file(&probe);
@@ -252,7 +246,7 @@ fn dir_size_mib(path: &PathBuf) -> Result<u64> {
 fn print_report(checks: &[Check], quiet: bool) {
     let palette = ColorPalette::default();
     let sep = "─".repeat(58);
-    println!("\n  {}", palette.accent_text("Prism Diagnostic Report"));
+    println!("\n  {}", palette.accent_text("Grat Diagnostic Report"));
     println!("  {}\n", palette.muted_text(&sep));
 
     for check in checks {

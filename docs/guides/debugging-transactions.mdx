@@ -10,10 +10,10 @@ In this guide, we walk through the process of debugging a failed cross-contract 
     The transaction fails on mainnet with a generic `HostError(Value, InvalidInput)`.
   </Step>
   <Step title="Run Decode">
-    Run `prism decode <hash>`. Prism identifies that the `InvalidInput` happened inside the `Token` contract during a transfer call.
+    Run `grat decode <hash>`. Grat identifies that the `InvalidInput` happened inside the `Token` contract during a transfer call.
   </Step>
   <Step title="Esclate to Trace">
-    Run `prism trace <hash>`. The hierarchical timeline shows that the `swap` contract passed a negative amount to the `token` contract.
+    Run `grat trace <hash>`. The hierarchical timeline shows that the `swap` contract passed a negative amount to the `token` contract.
   </Step>
   <Step title="Root Cause Found">
     The root cause is a slippage calculation bug in the `swap` contract that resulted in a negative value under extreme market conditions.

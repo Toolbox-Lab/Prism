@@ -5,19 +5,19 @@ description: "Soroban transaction debugger: from cryptic error to root cause in 
 icon: "hand-wave"
 ---
 
-**Prism** turns opaque Soroban errors into plain English, replays historical transactions against reconstructed ledger state, and lets you step through contract execution with full time-travel debugging. 
+**Grat** turns opaque Soroban errors into plain English, replays historical transactions against reconstructed ledger state, and lets you step through contract execution with full time-travel debugging.
 
 It handles everything from decoding `Error(Contract, #3)` into the actual enum name defined in the contract, to showing you exactly which host function call consumed the last byte of your CPU budget.
 
-## Why Prism Exists
+## Why Grat Exists
 
 Soroban errors are notoriously opaque. `HostError(Budget, LimitExceeded)` tells you the budget was exceeded but not which call was expensive. `Error(Contract, #3)` tells you the contract returned error number three but not what three means.
 
-Today, developers debug these errors by grepping through Stellar Core source code, adding print statements, or asking on Discord. Prism is the missing diagnostic layer designed to give you the answer in seconds, not hours.
+Today, developers debug these errors by grepping through Stellar Core source code, adding print statements, or asking on Discord. Grat is the missing diagnostic layer designed to give you the answer in seconds, not hours.
 
 ## The 3-Tier Model
 
-Prism is organized into three tiers of depth, each building on the one before it.
+Grat is organized into three tiers of depth, each building on the one before it.
 
 <CardGroup cols={3}>
   <Card title="Tier 1: Decode" icon="magnifying-glass">
@@ -33,9 +33,9 @@ Prism is organized into three tiers of depth, each building on the one before it
 
 ## Supported Networks
 
-| Network | Decode (Tier 1) | Replay (Tier 2–3) | Source |
-|---|---|---|---|
-| Mainnet | Yes | Yes | Soroban RPC + History Archives |
-| Testnet | Yes | Yes | Soroban RPC + History Archives |
-| Futurenet | Yes | Limited | Soroban RPC (archive coverage varies) |
-| Custom | Yes | Yes | User-configured RPC endpoint + archives |
+| Network   | Decode (Tier 1) | Replay (Tier 2–3) | Source                                  |
+| --------- | --------------- | ----------------- | --------------------------------------- |
+| Mainnet   | Yes             | Yes               | Soroban RPC + History Archives          |
+| Testnet   | Yes             | Yes               | Soroban RPC + History Archives          |
+| Futurenet | Yes             | Limited           | Soroban RPC (archive coverage varies)   |
+| Custom    | Yes             | Yes               | User-configured RPC endpoint + archives |

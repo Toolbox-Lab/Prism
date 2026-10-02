@@ -1,5 +1,3 @@
-
-
 use chrono::{DateTime, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -19,7 +17,7 @@ struct GitHubRelease {
 }
 
 fn cache_file_path() -> Option<PathBuf> {
-    dirs::cache_dir().map(|dir| dir.join("prism").join("version_check.json"))
+    dirs::cache_dir().map(|dir| dir.join("grat").join("version_check.json"))
 }
 
 pub async fn check_for_updates() -> Option<String> {
@@ -40,12 +38,12 @@ async fn check_for_updates_internal() -> anyhow::Result<Option<String>> {
     }
 
     let client = Client::builder()
-        .user_agent("prism-cli-updater")
+        .user_agent("grat-cli-updater")
         .timeout(Duration::from_secs(2))
         .build()?;
 
     let response = client
-        .get("https://api.github.com/repos/prism/prism/releases/latest")
+        .get("https://api.github.com/repos/grat/grat/releases/latest")
         .send()
         .await?
         .error_for_status()?;

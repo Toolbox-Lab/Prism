@@ -1,4 +1,13 @@
+use crate::decode::chain_analyzer::CallChain;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AuthEntryInfo {
+    pub auth_type: String,
+    pub address: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub contract_id: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -40,6 +49,8 @@ pub struct ContractErrorInfo {
     pub error_name: Option<String>,
 
     pub doc_comment: Option<String>,
+
+    pub learn_more: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,6 +68,12 @@ pub struct TransactionContext {
     pub fee: FeeBreakdown,
 
     pub resources: ResourceSummary,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub operation_index: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub operation_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +81,7 @@ pub struct FeeBreakdown {
     pub total_charged_fee: i64,
     pub inclusion_fee: i64,
     pub resource_fee: i64,
+    pub refundable_resource_fee: i64,
     pub refundable_fee: i64,
     pub non_refundable_fee: i64,
     pub bid_fee: Option<i64>,
@@ -76,19 +94,15 @@ pub struct ResourceSummary {
     pub memory_bytes_used: u64,
     pub memory_bytes_limit: u64,
     pub read_bytes: u64,
+    pub read_bytes_limit: u64,
     pub write_bytes: u64,
 }
 
-/// Pinpoints the exact contract and function where a cross-contract call chain failed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FailureAttribution {
-    /// The contract address that directly caused the failure.
     pub contract_address: String,
-    /// The function name at the point of failure, if determinable.
     pub function_name: Option<String>,
-    /// The call depth at which the failure occurred (0 = top-level invoker).
     pub call_depth: usize,
-    /// Human-readable description of where in the call chain the failure originated.
     pub origin_description: String,
 }
 
@@ -116,14 +130,30 @@ pub struct DiagnosticReport {
 
     pub related_errors: Vec<String>,
 
-    /// Present when a cross-contract call chain was detected and the failure
-    /// was attributed to a specific sub-contract, not the top-level invoker.
     pub cross_contract_attribution: Option<FailureAttribution>,
 
-    /// Decoded hex strings for ed25519 signatures found in auth entries.
-    /// Malformed or empty byte sequences produce a human-readable error label.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub auth_signatures: Vec<String>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub auth_entries: Vec<AuthEntryInfo>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub failing_contract_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub call_chain: Option<CallChain>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub resource_diagnostics: Option<crate::decode::resource_analyzer::ResourceDiagnostics>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub operation_index: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub operation_count: Option<usize>,
+
+    pub learn_more: String,
 }
 
 impl DiagnosticReport {
@@ -142,6 +172,14 @@ impl DiagnosticReport {
             related_errors: Vec::new(),
             cross_contract_attribution: None,
             auth_signatures: Vec::new(),
+            auth_entries: Vec::new(),
+            failing_contract_id: None,
+            call_chain: None,
+            resource_diagnostics: None,
+            operation_index: None,
+            operation_count: None,
+            learn_more: "https://developers.stellar.org/docs/learn/smart-contracts/errors"
+                .to_string(),
         }
     }
 }

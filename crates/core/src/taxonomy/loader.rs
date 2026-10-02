@@ -1,13 +1,13 @@
-use crate::error::{PrismError, PrismResult};
+use crate::error::{GratError, GratResult};
 use crate::taxonomy::schema::{ErrorCategory, TaxonomyEntry, TaxonomySchema};
 use std::collections::HashMap;
 
 pub struct TaxonomyParser;
 
 impl TaxonomyParser {
-    pub fn parse(input: &str) -> PrismResult<TaxonomySchema> {
+    pub fn parse(input: &str) -> GratResult<TaxonomySchema> {
         toml::from_str(input)
-            .map_err(|e| PrismError::TaxonomyError(format!("TOML parse error: {e}")))
+            .map_err(|e| GratError::TaxonomyError(format!("TOML parse error: {e}")))
     }
 }
 
@@ -18,7 +18,38 @@ pub struct TaxonomyDatabase {
 }
 
 impl TaxonomyDatabase {
-    pub fn load_embedded() -> PrismResult<Self> {
+    pub fn load_latest() -> GratResult<Self> {
+        if let Some(db_path) = crate::taxonomy::updater::db_file_path() {
+            if db_path.exists() {
+                if db_path.is_dir() {
+                    if let Ok(db) = Self::load_from_dir(&db_path) {
+                        return Ok(db);
+                    }
+                } else if let Ok(content) = std::fs::read_to_string(&db_path) {
+                    if let Ok(schema) = TaxonomyParser::parse(&content) {
+                        let mut db = Self {
+                            entries: HashMap::new(),
+                            all_entries: Vec::new(),
+                        };
+                        for entry in schema.errors {
+                            db.entries
+                                .insert((entry.category.clone(), entry.code), entry.clone());
+                            db.all_entries.push(entry);
+                        }
+                        tracing::info!(
+                            "Loaded {} taxonomy entries from downloaded file",
+                            db.entries.len()
+                        );
+                        return Ok(db);
+                    }
+                }
+            }
+        }
+
+        Self::load_embedded()
+    }
+
+    pub fn load_embedded() -> GratResult<Self> {
         let mut db = Self {
             entries: HashMap::new(),
             all_entries: Vec::new(),
@@ -56,25 +87,25 @@ impl TaxonomyDatabase {
         Ok(db)
     }
 
-    pub fn load_from_dir(dir: &std::path::Path) -> PrismResult<Self> {
+    pub fn load_from_dir(dir: &std::path::Path) -> GratResult<Self> {
         let mut db = Self {
             entries: HashMap::new(),
             all_entries: Vec::new(),
         };
 
         for entry in std::fs::read_dir(dir)
-            .map_err(|e| PrismError::TaxonomyError(format!("Cannot read taxonomy dir: {e}")))?
+            .map_err(|e| GratError::TaxonomyError(format!("Cannot read taxonomy dir: {e}")))?
         {
-            let entry = entry.map_err(|e| PrismError::TaxonomyError(e.to_string()))?;
+            let entry = entry.map_err(|e| GratError::TaxonomyError(e.to_string()))?;
             let path = entry.path();
 
             if path.extension().is_some_and(|ext| ext == "toml") {
                 let content = std::fs::read_to_string(&path).map_err(|e| {
-                    PrismError::TaxonomyError(format!("Cannot read {}: {e}", path.display()))
+                    GratError::TaxonomyError(format!("Cannot read {}: {e}", path.display()))
                 })?;
 
                 let schema = TaxonomyParser::parse(&content).map_err(|e| {
-                    PrismError::TaxonomyError(format!("Parse error in {}: {e}", path.display()))
+                    GratError::TaxonomyError(format!("Parse error in {}: {e}", path.display()))
                 })?;
 
                 for entry in schema.errors {
@@ -96,6 +127,19 @@ impl TaxonomyDatabase {
         self.all_entries
             .iter()
             .filter(|e| &e.category == category)
+            .collect()
+    }
+
+    pub fn search(&self, query: &str) -> Vec<&TaxonomyEntry> {
+        let query = query.to_lowercase();
+        self.all_entries
+            .iter()
+            .filter(|entry| {
+                entry.name.to_lowercase().contains(&query)
+                    || entry.category.to_string().to_lowercase().contains(&query)
+                    || entry.summary.to_lowercase().contains(&query)
+                    || entry.detailed_explanation.to_lowercase().contains(&query)
+            })
             .collect()
     }
 
@@ -184,6 +228,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "decode")]
     fn taxonomy_covers_tier1_static_mapping_codes() {
         let db = TaxonomyDatabase::load_embedded().expect("Taxonomy should load");
 
@@ -219,6 +264,20 @@ mod tests {
             (
                 ErrorCategory::Value,
                 crate::decode::mappings::value::VALUE_ERROR_DETAILS
+                    .iter()
+                    .map(|detail| (detail.code, detail.name))
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                ErrorCategory::Wasm,
+                crate::decode::mappings::wasm::WASM_ERROR_DETAILS
+                    .iter()
+                    .map(|detail| (detail.code, detail.name))
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                ErrorCategory::Contract,
+                crate::decode::mappings::contract::CONTRACT_ERROR_DETAILS
                     .iter()
                     .map(|detail| (detail.code, detail.name))
                     .collect::<Vec<_>>(),

@@ -1,15 +1,17 @@
 ---
 title: "Decode Engine"
-description: "How Prism translates XDR results into human-readable errors."
+description: "How Grat translates XDR results into human-readable errors."
 ---
 
 The Decode Engine is the core of Tier 1 diagnostics.
 
 ## Process
+
 1. **Extraction**: It takes a `TransactionResult` and extracts the specific error variant.
 2. **Classification**: Categorizes the error (e.g., `HostError`, `ContractError`).
 3. **Enrichment**: Maps the code to the [Error Taxonomy](/concepts/error-taxonomy).
 4. **Resolution**: Fetches and parses WASM custom sections to resolve custom contract errors.
 
 ## Performance
+
 Designed to complete in < 2 seconds for a standard mainnet transaction.

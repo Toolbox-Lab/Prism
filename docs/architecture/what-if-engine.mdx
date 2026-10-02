@@ -6,11 +6,14 @@ description: "Non-destructive re-simulation of transactions."
 The What-If Engine allows developers to test hypotheses by modifying the inputs of a failed transaction.
 
 ## Input Patches
+
 It supports patching four main categories:
+
 1. **Function Arguments**: Modify the values passed to the contract.
 2. **Auth Context**: Add or remove authorizations.
 3. **Ledger State**: Change existing ledger entries before execution.
 4. **Resource Limits**: Increase CPU/Memory/Footprint limits.
 
 ## Comparison Tracing
+
 The engine runs both the original and the modified execution, producing a side-by-side trace that highlights the exact moment the results diverge.

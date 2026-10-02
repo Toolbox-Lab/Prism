@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PrismConfig {
+pub struct GratConfig {
     pub default_network: Network,
 
     pub networks: Vec<NetworkConfig>,
@@ -14,7 +14,7 @@ pub struct PrismConfig {
     pub max_cache_size_mb: u64,
 }
 
-impl Default for PrismConfig {
+impl Default for GratConfig {
     fn default() -> Self {
         Self {
             default_network: Network::Testnet,

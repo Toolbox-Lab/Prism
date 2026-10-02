@@ -6,8 +6,10 @@ description: "Managing interactive debugging state."
 The Breakpoint Controller evaluates conditions during replay and manages the interactive execution state.
 
 ## Breakpoint Types
+
 - **Static**: Specific contract addresses or function names.
 - **Dynamic**: Budget thresholds (e.g., "break when CPU usage > 500k") or storage access patterns.
 
 ## State Snapshots
+
 To support backward stepping without a full re-execution, the controller snapshots the execution context at every breakpoint.

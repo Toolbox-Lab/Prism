@@ -22,7 +22,7 @@ related_errors = ["host.context.internal_error"]
 source_file = "soroban-env-host/src/host.rs"
 
 [[errors.common_causes]]
-description = "The transaction reached a host state that Prism cannot classify more specifically"
+description = "The transaction reached a host state that Grat cannot classify more specifically"
 likelihood = "medium"
 
 [[errors.common_causes]]
@@ -53,6 +53,8 @@ execution context, such as using a host capability before the host is ready or o
 allowed invocation lifecycle. This usually points to contract or caller behavior, not a broken \
 network environment.
 """
+related_errors = []
+source_file = "soroban-env-host/src/host.rs"
 
 [[errors.common_causes]]
 description = "Contract code or a host integration called an environment action outside its valid lifecycle"
@@ -63,8 +65,6 @@ description = "Review where the host function is called and move it into a valid
 difficulty = "medium"
 requires_upgrade = false
 
-related_errors = []
-source_file = "soroban-env-host/src/host.rs"
 
 [[errors]]
 id = "host.context.internal_error"
@@ -78,6 +78,8 @@ detailed_explanation = """
 Internal errors indicate a bug or unexpected state in the Soroban host itself, not in the \
 contract code. These are rare, and should be reported to the Stellar/Soroban team.
 """
+related_errors = []
+source_file = "soroban-env-host/src/host.rs"
 
 [[errors.common_causes]]
 description = "Bug in the Soroban host runtime"
@@ -88,5 +90,3 @@ description = "Report the issue to the Stellar/Soroban GitHub repository with th
 difficulty = "easy"
 requires_upgrade = false
 
-related_errors = []
-source_file = "soroban-env-host/src/host.rs"

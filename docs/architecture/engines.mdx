@@ -1,16 +1,20 @@
 ---
 title: "The Engines"
-description: "The core components that power Prism's diagnostics."
+description: "The core components that power Grat's diagnostics."
 ---
 
 ## Decode Engine
+
 The Decode Engine is responsible for the Tier 1 fast path. It parses transaction results, extracts diagnostic event chains, and maps them to the Error Taxonomy. It uses `wasmparser` to read contract metadata for custom error resolution.
 
 ## Replay Engine
+
 The Replay Engine handles state reconstruction. It uses a **History Archive Client** to fetch and decompress ledger snapshots from S3 or GCS backends. Once state is reconstructed, it executes the transaction in a modified Soroban sandbox that intercepts and records every host function call.
 
 ## Breakpoint Controller
+
 During replay, the Breakpoint Controller evaluates conditions (function entry, storage access, budget thresholds) and snapshots the execution state. This enables "backward" stepping without re-executing the entire transaction.
 
 ## What-If Engine
+
 The What-If Engine allows for non-destructive re-simulation. It accepts patches to the original execution context and produces a comparison trace that highlights exactly where the modified execution diverges from the original.

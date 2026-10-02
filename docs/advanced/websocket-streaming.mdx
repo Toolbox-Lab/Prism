@@ -1,16 +1,16 @@
 ---
 title: "WebSocket Streaming"
-description: "How Prism streams real-time traces to the web interface."
+description: "How Grat streams real-time traces to the web interface."
 ---
 
-Prism uses a WebSocket-based streaming architecture to provide real-time feedback during long-running state reconstructions and transaction replays.
+Grat uses a WebSocket-based streaming architecture to provide real-time feedback during long-running state reconstructions and transaction replays.
 
 ## Connection Flow
 
-1. **Establishment**: The web client connects to `prism serve`.
+1. **Establishment**: The web client connects to `grat serve`.
 2. **Request**: Client sends a JSON payload: `{"tx_hash": "abc123..."}`.
 3. **Execution**: The server spawns an independent trace task.
-4. **Streaming**: 
+4. **Streaming**:
    - `trace_started`: Initial event.
    - `trace_node`: Sent for every execution step (throttled to 5ms).
    - `resource_update`: Periodic progress on budget consumption.

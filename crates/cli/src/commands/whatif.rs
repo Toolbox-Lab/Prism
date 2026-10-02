@@ -1,11 +1,8 @@
-
-
 use clap::Args;
-use prism_core::types::config::NetworkConfig;
+use grat_core::types::config::NetworkConfig;
 
 #[derive(Args)]
 pub struct WhatifArgs {
-
     pub tx_hash: String,
 
     #[arg(long)]
@@ -22,7 +19,7 @@ pub async fn run(
 
     let patches = if let Some(patch_file) = &args.modify {
         let patch_content = std::fs::read_to_string(patch_file)?;
-        let patches: Vec<prism_core::debugger::whatif::WhatIfPatch> =
+        let patches: Vec<grat_core::debugger::whatif::WhatIfPatch> =
             serde_json::from_str(&patch_content)?;
         crate::output::print_whatif_status(
             &args.tx_hash,
@@ -42,7 +39,7 @@ pub async fn run(
             tx_hash: &'a str,
             patch_file: Option<&'a str>,
             patch_count: Option<usize>,
-            patches: &'a Option<Vec<prism_core::debugger::whatif::WhatIfPatch>>,
+            patches: &'a Option<Vec<grat_core::debugger::whatif::WhatIfPatch>>,
         }
 
         let payload = WhatIfSavePayload {

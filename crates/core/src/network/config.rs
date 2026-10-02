@@ -1,4 +1,4 @@
-use crate::error::{PrismError, PrismResult};
+use crate::error::{GratError, GratResult};
 use crate::rpc::jsonrpc::{GetHealthParams, JsonRpcRequest, JsonRpcTransport};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -31,10 +31,10 @@ pub enum Network {
 impl Network {
     pub const LOCAL: &str = "local";
 
-    pub fn parse(value: &str) -> PrismResult<Self> {
+    pub fn parse(value: &str) -> GratResult<Self> {
         let trimmed = value.trim();
         if trimmed.is_empty() {
-            return Err(PrismError::ConfigError(
+            return Err(GratError::ConfigError(
                 "network selector cannot be empty".to_string(),
             ));
         }
@@ -97,7 +97,7 @@ impl fmt::Display for Network {
 }
 
 impl FromStr for Network {
-    type Err = PrismError;
+    type Err = GratError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::parse(s)
@@ -136,6 +136,9 @@ pub struct NetworkConfig {
     pub api_key: Option<String>,
 
     pub request_timeout_secs: u64,
+
+    #[serde(default)]
+    pub no_cache: bool,
 }
 
 impl NetworkConfig {
@@ -150,6 +153,7 @@ impl NetworkConfig {
                 .collect(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -164,6 +168,7 @@ impl NetworkConfig {
                 .collect(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -178,6 +183,7 @@ impl NetworkConfig {
                 .collect(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -189,6 +195,7 @@ impl NetworkConfig {
             archive_urls: Vec::new(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -204,6 +211,7 @@ impl NetworkConfig {
             archive_urls: Vec::new(),
             api_key: None,
             request_timeout_secs: 30,
+            no_cache: false,
         }
     }
 
@@ -238,7 +246,7 @@ pub fn resolve_network(network_str: &str) -> NetworkConfig {
     }
 }
 
-pub fn resolve_network_target(network_str: &str) -> PrismResult<Network> {
+pub fn resolve_network_target(network_str: &str) -> GratResult<Network> {
     Network::parse(network_str)
 }
 

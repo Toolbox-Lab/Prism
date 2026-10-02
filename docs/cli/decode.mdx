@@ -1,5 +1,5 @@
 ---
-title: "prism decode"
+title: "grat decode"
 sidebarTitle: "decode"
 description: "Decode a transaction failure and identify the root cause."
 icon: "magnifying-glass"
@@ -10,27 +10,26 @@ The `decode` command is the entry point for most debugging sessions. It provides
 ## Usage
 
 ```bash
-prism decode <TX_HASH> [FLAGS]
+grat decode <TX_HASH> [FLAGS]
 ```
 
 ## Flags
 
-| Flag | Description |
-| --- | --- |
-| `--network` | Specify the network (`mainnet`, `testnet`, `futurenet`). Default: `testnet`. |
-| `--rpc-url` | Use a custom Soroban RPC endpoint. |
-| `--raw` | Decode a raw error string from logs instead of a transaction hash. |
-| `--output json` | Output the diagnostic report in JSON format. |
+| Flag            | Description                                                                  |
+| --------------- | ---------------------------------------------------------------------------- |
+| `--network`     | Specify the network (`mainnet`, `testnet`, `futurenet`). Default: `testnet`. |
+| `--rpc-url`     | Use a custom Soroban RPC endpoint.                                           |
+| `--raw`         | Decode a raw error string from logs instead of a transaction hash.           |
+| `--output json` | Output the diagnostic report in JSON format.                                 |
 
 ## Example
 
 <CodeGroup>
-```bash Terminal
-prism decode d5c3... --network mainnet
-```
+  ```bash Terminal grat decode d5c3... --network mainnet ```
 </CodeGroup>
 
 **Output:**
+
 ```text
 ✔ Transaction Fetched
 ✔ Error Classified: Contract
