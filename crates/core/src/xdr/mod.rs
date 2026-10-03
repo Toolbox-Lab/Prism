@@ -1,4 +1,4 @@
 pub mod cmp;
 pub mod codec;
-#[id(feature = "decode")]
+#[cfg(feature = "decode")]
 pub mod diff;
