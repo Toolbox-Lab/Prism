@@ -22,7 +22,10 @@ impl ReturnValueDecoder {
         type_def: Option<&ScSpecTypeDef>,
         contract_spec: Option<&ContractSpec>,
     ) -> Value {
-        Self::decode_value(val, type_def, contract_spec)
+        RecursiveTypeDecoder::new().decode(
+            val,
+            type_def.map(|type_def| TypeRef::new(type_def, contract_spec)),
+        )
     }
 
     /// Decodes a raw return `ScVal` into a formatted String (e.g. JSON string or pretty representation).

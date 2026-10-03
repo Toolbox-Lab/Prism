@@ -401,7 +401,7 @@ fn compact_json(value: &Value) -> String {
 }
 
 fn format_scval(value: &ScVal) -> String {
-    compact_json(&crate::decode::scval_to_json(value))
+    compact_json(&crate::decode::scval_to_json(value, None))
 }
 
 fn is_soroban_operation(operation: &Operation) -> bool {

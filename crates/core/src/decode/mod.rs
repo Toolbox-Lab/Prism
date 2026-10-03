@@ -18,6 +18,7 @@ pub mod json_to_scval;
 pub mod mappings;
 /// Envelope-level decoding that emits one diagnostic report per operation.
 pub mod multi_op_decoder;
+pub mod recursive_decoder;
 pub mod report;
 pub mod resource_analyzer;
 pub mod return_decoder;
@@ -37,6 +38,7 @@ pub use enum_decoder::EnumDecoder;
 pub use function_call_decoder::{DecodedArgument, DecodedFunctionCall, FunctionCallDecoder};
 pub use json_to_scval::json_to_scval;
 pub use multi_op_decoder::{decode_transaction_with_op_filter, MultiOpDecoder};
+pub use recursive_decoder::{RecursiveTypeDecoder, TypeRef};
 pub use resource_analyzer::{
     MetricDiagnostic, MetricKind, ResourceDiagnostics, ResourceUsageAnalyzer, TransactionResultMeta,
 };

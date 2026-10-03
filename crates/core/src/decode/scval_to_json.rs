@@ -32,7 +32,11 @@ const MAX_SCVAL_DEPTH: usize = 100;
 /// The conversion never fails and never panics: unsupported combinations
 /// simply degrade to a best-effort JSON representation, and nesting beyond
 /// [`MAX_SCVAL_DEPTH`] is truncated in place rather than recursed into.
-pub fn scval_to_json(val: &ScVal) -> Value {
+pub fn scval_to_json(val: &ScVal, type_ref: Option<TypeRef<'_>>) -> Value {
+    if let Some(type_ref) = type_ref {
+        return crate::decode::recursive_decoder::RecursiveTypeDecoder::new()
+            .decode(val, Some(type_ref));
+    }
     convert(val, 0)
 }
 

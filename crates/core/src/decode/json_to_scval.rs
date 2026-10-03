@@ -270,7 +270,7 @@ mod tests {
         ];
 
         for case in cases {
-            let json = scval_to_json(&case);
+            let json = scval_to_json(&case, None);
             let parsed = json_to_scval(&json).expect("should parse");
 
             // For strings, scval_to_json might have been passed a Symbol, but json_to_scval will parse it back as String.
@@ -301,7 +301,7 @@ mod tests {
             .unwrap(),
         )));
 
-        let json = scval_to_json(&map);
+        let json = scval_to_json(&map, None);
         // This should be the fallback array mode
         assert!(json.is_array());
 
