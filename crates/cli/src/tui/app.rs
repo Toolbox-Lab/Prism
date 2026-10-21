@@ -5,6 +5,8 @@ pub async fn launch(tx_hash: &str, network: &NetworkConfig) -> anyhow::Result<()
         tx_hash: tx_hash.to_string(),
         selected_panel: crate::tui::state::Panel::Timeline,
         scroll_offset: 0,
+        selected_invocation: None,
+        state_diff: grat_core::types::trace::StateDiff::default(),
     };
 
     for panel in [
@@ -26,6 +28,6 @@ pub async fn launch(tx_hash: &str, network: &NetworkConfig) -> anyhow::Result<()
         "Selected panel: {:?} (scroll offset: {})",
         state.selected_panel, state.scroll_offset
     );
-    println!("(Not yet implemented — requires ratatui setup)");
+    println!("(Not yet implemented – requires ratatui setup)");
     Ok(())
 }
