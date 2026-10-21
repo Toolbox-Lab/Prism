@@ -1,0 +1,18 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "main",
+    "origin",
+    "solver/issue-489-109-a0"
+  ],
+  "parent": {
+    "main": null,
+    "origin": "main",
+    "solver/issue-489-109-a0": "main"
+  },
+  "order": [
+    "main",
+    "origin",
+    "solver/issue-489-109-a0"
+  ]
+}
