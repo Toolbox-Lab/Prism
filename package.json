@@ -2,7 +2,7 @@
   "name": "grat-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "Soroban Transaction Debugger — From cryptic error to root cause in one command.",
+  "description": "Soroban Transaction Debugger \u2014 From cryptic error to root cause in one command.",
   "scripts": {
     "dev:web": "pnpm --filter grat-web dev",
     "dev:server": "pnpm --filter grat-server dev",
