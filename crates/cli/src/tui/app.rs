@@ -20,7 +20,7 @@ use ratatui::{
 
 use super::{
     state::{Panel, TuiState},
-    widgets::{controls, timeline},
+    widgets::{controls, inspector, timeline},
 };
 
 /// Restore the terminal on normal exit, I/O errors, and panic unwinding.
@@ -129,6 +129,10 @@ fn render(frame: &mut Frame<'_>, state: &TuiState) {
         state.scroll_offset,
         state.selected_panel == Panel::Timeline,
     );
+    let detail_sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(6), Constraint::Min(0)])
+        .split(panels[1]);
     let details = state.entries.get(state.scroll_offset).map_or_else(
         || "No recorded invocations. [q] quits.".to_owned(),
         |entry| {
@@ -145,8 +149,15 @@ fn render(frame: &mut Frame<'_>, state: &TuiState) {
     frame.render_widget(
         Paragraph::new(details)
             .wrap(Wrap { trim: true })
-            .block(panel("Inspector", state.selected_panel == Panel::Inspector)),
-        panels[1],
+            .block(panel("Invocation", state.selected_panel == Panel::Inspector)),
+        detail_sections[0],
+    );
+    inspector::render_inspector(
+        frame,
+        detail_sections[1],
+        &state.state_diff,
+        state.selected_invocation.as_ref(),
+        state.scroll_offset,
     );
     controls::render(frame, sections[2], state);
 }
@@ -178,9 +189,23 @@ mod tests {
         assert_eq!(state.scroll_offset, 0);
         press(&mut state, KeyCode::Char('s'));
         assert_eq!(state.entries[state.scroll_offset].function, "child");
+        assert_eq!(
+            state
+                .selected_invocation
+                .as_ref()
+                .map(|invocation| invocation.function_name.as_str()),
+            Some("child")
+        );
         press(&mut state, KeyCode::Up);
         press(&mut state, KeyCode::Char('o'));
         assert_eq!(state.entries[state.scroll_offset].function, "sibling");
+        assert_eq!(
+            state
+                .selected_invocation
+                .as_ref()
+                .map(|invocation| invocation.function_name.as_str()),
+            Some("sibling")
+        );
         press(&mut state, KeyCode::Char('j'));
         assert_eq!(state.scroll_offset, 2);
         assert_eq!(state.replay_status(), "Replay: End 3/3");

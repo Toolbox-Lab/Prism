@@ -1,4 +1,4 @@
-use grat_core::types::trace::{ContractInvocation, ExecutionTrace, ResourceProfile};
+use grat_core::types::trace::{ContractInvocation, ExecutionTrace, ResourceProfile, StateDiff};
 
 pub struct TuiState {
     pub tx_hash: String,
@@ -6,6 +6,8 @@ pub struct TuiState {
     pub ledger_sequence: u32,
     pub selected_panel: Panel,
     pub scroll_offset: usize,
+    pub selected_invocation: Option<ContractInvocation>,
+    pub state_diff: StateDiff,
     pub entries: Vec<TraceEntry>,
     pub invocations: Vec<ContractInvocation>,
     pub resources: ResourceProfile,
@@ -20,8 +22,9 @@ pub struct TraceEntry {
     pub is_error: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Panel {
+    #[default]
     Timeline,
     Inspector,
     Controls,
@@ -31,12 +34,15 @@ impl TuiState {
     pub fn new(trace: ExecutionTrace) -> Self {
         let mut entries = Vec::new();
         append_invocations(&trace.invocations, 0, &mut entries);
+        let selected_invocation = invocation_at(&trace.invocations, 0).cloned();
         Self {
             tx_hash: trace.tx_hash,
             network: trace.network,
             ledger_sequence: trace.ledger_sequence,
             selected_panel: Panel::Timeline,
             scroll_offset: 0,
+            selected_invocation,
+            state_diff: trace.state_diff,
             entries,
             invocations: trace.invocations,
             resources: trace.resource_profile,
@@ -56,10 +62,12 @@ impl TuiState {
             .scroll_offset
             .saturating_add(1)
             .min(self.entries.len().saturating_sub(1));
+        self.update_selected_invocation();
     }
 
     pub fn previous(&mut self) {
         self.scroll_offset = self.scroll_offset.saturating_sub(1);
+        self.update_selected_invocation();
     }
 
     /// Advance past descendants of the selected recorded invocation.
@@ -74,6 +82,11 @@ impl TuiState {
             .skip(self.scroll_offset + 1)
             .find(|(_, entry)| entry.depth <= current.depth)
             .map_or(self.entries.len().saturating_sub(1), |(index, _)| index);
+        self.update_selected_invocation();
+    }
+
+    fn update_selected_invocation(&mut self) {
+        self.selected_invocation = invocation_at(&self.invocations, self.scroll_offset).cloned();
     }
 
     pub fn can_step(&self) -> bool {
@@ -92,6 +105,30 @@ impl TuiState {
             )
         }
     }
+}
+
+fn invocation_at(
+    invocations: &[ContractInvocation],
+    target: usize,
+) -> Option<&ContractInvocation> {
+    fn visit<'a>(
+        invocations: &'a [ContractInvocation],
+        target: &mut usize,
+    ) -> Option<&'a ContractInvocation> {
+        for invocation in invocations {
+            if *target == 0 {
+                return Some(invocation);
+            }
+            *target -= 1;
+            if let Some(found) = visit(&invocation.sub_invocations, target) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    let mut target = target;
+    visit(invocations, &mut target)
 }
 
 fn append_invocations(
