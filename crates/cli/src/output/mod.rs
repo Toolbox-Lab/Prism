@@ -109,12 +109,16 @@ pub fn print_whatif_status(
     tx_hash: &str,
     patch_file: Option<&str>,
     patch_count: Option<usize>,
+    divergence_point: Option<usize>,
     output_format: &str,
 ) -> anyhow::Result<()> {
+    let divergence = divergence_point.map_or_else(|| "none".to_string(), |d| d.to_string());
     match OutputFormat::parse(output_format) {
         OutputFormat::Short => match (patch_file, patch_count) {
             (Some(path), Some(count)) => {
-                println!("Status: Ready | Tx: {tx_hash} | Patches: {count} | Source: {path}");
+                println!(
+                    "Status: Ready | Tx: {tx_hash} | Patches: {count} | Divergence: {divergence} | Source: {path}"
+                );
             }
             _ => println!("Status: MissingModifyFile | Tx: {tx_hash}"),
         },
@@ -123,12 +127,19 @@ pub fn print_whatif_status(
                 "tx_hash": tx_hash,
                 "patch_file": patch_file,
                 "patch_count": patch_count,
+                "divergence_point": divergence_point,
                 "ready": patch_file.is_some(),
             });
             println!("{}", serde_json::to_string_pretty(&payload)?);
         }
         OutputFormat::Human => match patch_file {
-            Some(path) => println!("Patches loaded from {path}"),
+            Some(path) => {
+                println!("Patches loaded from {path}");
+                if let Some(count) = patch_count {
+                    println!("Patch count: {count}");
+                }
+                println!("Divergence point: {divergence}");
+            }
             None => {
                 println!(
                     "No --modify file provided. Use a JSON patch file to specify modifications."
