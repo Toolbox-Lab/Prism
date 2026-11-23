@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use grat_core::debugger::whatif::WhatIfResult;
 use grat_core::types::{
     report::DiagnosticReport,
     trace::{DiffChangeType, ExecutionTrace, ResourceProfile, StateDiff},
@@ -140,6 +141,93 @@ pub fn print_whatif_status(
     Ok(())
 }
 
+pub fn print_whatif_result(
+    result: &WhatIfResult,
+    patch_count: usize,
+    output_format: &str,
+) -> anyhow::Result<()> {
+    match OutputFormat::parse(output_format) {
+        OutputFormat::Short => println!("{}", format_whatif_summary(result, patch_count)),
+        OutputFormat::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&whatif_json(result, patch_count))?
+        ),
+        OutputFormat::Human => {
+            let (original, modified) = (&result.original, &result.modified);
+            println!("{}", renderers::render_section_header("What-If Simulation"));
+            println!("Transaction:      {}", original.tx_hash);
+            println!("Patches applied:  {patch_count}");
+            println!(
+                "Divergence point: {}",
+                result.divergence_point.map_or_else(
+                    || "none (matches the original run)".to_string(),
+                    |p| p.to_string()
+                )
+            );
+            println!("Summary:          {}", result.summary);
+            println!();
+            println!("{:<16}{:>16}{:>16}", "", "Original", "Modified");
+            for (label, before, after) in [
+                (
+                    "Invocations",
+                    original.invocations.len() as u64,
+                    modified.invocations.len() as u64,
+                ),
+                (
+                    "State changes",
+                    original.state_diff.entries.len() as u64,
+                    modified.state_diff.entries.len() as u64,
+                ),
+                (
+                    "CPU",
+                    original.resource_profile.total_cpu,
+                    modified.resource_profile.total_cpu,
+                ),
+                (
+                    "Memory",
+                    original.resource_profile.total_memory,
+                    modified.resource_profile.total_memory,
+                ),
+                (
+                    "Write bytes",
+                    original.resource_profile.total_write_bytes,
+                    modified.resource_profile.total_write_bytes,
+                ),
+            ] {
+                println!("{label:<16}{before:>16}{after:>16}");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn format_whatif_summary(result: &WhatIfResult, patch_count: usize) -> String {
+    format!(
+        "Status: Complete | Tx: {} | Patches: {} | Divergence: {} | Invocations: {} -> {} | Changes: {} -> {}",
+        result.original.tx_hash,
+        patch_count,
+        result
+            .divergence_point
+            .map_or_else(|| "none".to_string(), |p| p.to_string()),
+        result.original.invocations.len(),
+        result.modified.invocations.len(),
+        result.original.state_diff.entries.len(),
+        result.modified.state_diff.entries.len()
+    )
+}
+
+fn whatif_json(result: &WhatIfResult, patch_count: usize) -> serde_json::Value {
+    serde_json::json!({
+        "tx_hash": result.original.tx_hash,
+        "patch_count": patch_count,
+        "divergence_point": result.divergence_point,
+        "summary": result.summary,
+        "original": result.original,
+        "modified": result.modified,
+    })
+}
+
 fn format_trace_summary(trace: &ExecutionTrace) -> String {
     format!(
         "Status: Complete | Tx: {} | Invocations: {} | Changes: {} | CPU: {}/{} | Write: {}/{}",
@@ -199,11 +287,60 @@ fn format_state_diff_summary(diff: &StateDiff) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::OutputFormat;
+    use super::{format_whatif_summary, whatif_json, OutputFormat};
+    use grat_core::debugger::whatif::WhatIfResult;
+    use grat_core::types::trace::ExecutionTrace;
 
     #[test]
     fn parses_short_and_compact_as_short_mode() {
         assert_eq!(OutputFormat::parse("short"), OutputFormat::Short);
         assert_eq!(OutputFormat::parse("compact"), OutputFormat::Short);
+    }
+
+    fn trace(tx_hash: &str) -> ExecutionTrace {
+        ExecutionTrace {
+            tx_hash: tx_hash.to_string(),
+            ledger_sequence: 100,
+            network: "testnet".to_string(),
+            invocations: Vec::new(),
+            state_diff: Default::default(),
+            resource_profile: Default::default(),
+            diagnostic_events: Vec::new(),
+        }
+    }
+
+    fn whatif_result(divergence_point: Option<usize>) -> WhatIfResult {
+        WhatIfResult {
+            original: trace("abc123"),
+            modified: trace("abc123"),
+            divergence_point,
+            summary: "Argument 0 changed".to_string(),
+        }
+    }
+
+    #[test]
+    fn whatif_summary_shows_patch_count_and_divergence_point() {
+        let summary = format_whatif_summary(&whatif_result(Some(3)), 2);
+        assert!(summary.starts_with("Status: Complete | Tx: abc123 | Patches: 2 | Divergence: 3 |"));
+    }
+
+    #[test]
+    fn whatif_summary_reports_no_divergence() {
+        let summary = format_whatif_summary(&whatif_result(None), 1);
+        assert!(summary.contains("| Divergence: none |"), "{summary}");
+    }
+
+    #[test]
+    fn whatif_json_includes_both_runs() {
+        let json = whatif_json(&whatif_result(Some(0)), 4);
+        assert_eq!(json["tx_hash"], "abc123");
+        assert_eq!(json["patch_count"], 4);
+        assert_eq!(json["divergence_point"], 0);
+        assert_eq!(json["summary"], "Argument 0 changed");
+        assert_eq!(json["original"]["tx_hash"], "abc123");
+        assert_eq!(json["modified"]["ledger_sequence"], 100);
+
+        let none = whatif_json(&whatif_result(None), 1);
+        assert!(none["divergence_point"].is_null());
     }
 }
