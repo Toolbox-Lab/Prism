@@ -1,5 +1,7 @@
 name: CI
-on:  push:
+
+on:
+  push:
     branches: ["main", "master"]
   pull_request:
     branches: ["main", "master"]
@@ -23,11 +25,8 @@ jobs:
         with:
           shared-key: "rust-cache"
 
-      - name: Format code
-        run: cargo fmt --all
-
       - name: Check formatting
-        run: cargo fmt --all
+        run: cargo fmt --all -- --check
 
       - name: Build
         run: cargo build --workspace --all-targets --all-features
@@ -58,15 +57,15 @@ jobs:
       - name: Get pnpm store directory
         shell: bash
         run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_EN
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
       - name: Setup pnpm cache
         uses: actions/cache@v4
         with:
-          path: $ { env.STORE_PATH }
-          key: $) { runner.os }}-pnpm-store-$) { hashFiles('**/pnpm-lock.yaml') }}
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            $) { runner.os }}-pnpm-store-
+            ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
