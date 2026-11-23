@@ -90,11 +90,7 @@ pub fn ledger_cache_key(ledger_sequence: u32, key: &str) -> String {
 }
 
 /// Fetches a value unless caching is disabled via the CLI `--no-cache` flag.
-pub async fn get_if_enabled<P, V>(
-    provider: &P,
-    no_cache: bool,
-    key: &str,
-) -> GratResult<Option<V>>
+pub async fn get_if_enabled<P, V>(provider: &P, no_cache: bool, key: &str) -> GratResult<Option<V>>
 where
     P: CacheProvider + ?Sized,
     V: DeserializeOwned + Send,
