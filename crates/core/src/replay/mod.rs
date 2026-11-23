@@ -17,15 +17,40 @@ pub async fn replay_transaction(
     network: &NetworkConfig,
 ) -> GratResult<ExecutionTrace> {
     let ledger_state = state::reconstruct_state(tx_hash, network).await?;
+    replay_with_state(tx_hash, network, &ledger_state, sandbox::MEM_BYTES_CEILING).await
+}
+
+/// Replays `tx_hash` against an already reconstructed (and possibly patched)
+/// ledger state, using `memory_limit` bytes as the sandbox memory ceiling.
+///
+/// This is the shared execution path behind [`replay_transaction`] and the
+/// what-if simulator, which clones and patches the state before calling it.
+pub async fn replay_with_state(
+    tx_hash: &str,
+    network: &NetworkConfig,
+    ledger_state: &state::LedgerState,
+    memory_limit: u64,
+) -> GratResult<ExecutionTrace> {
     let trace_id = TraceId::new();
 
-    let raw_trace = sandbox::execute_with_tracing(&ledger_state, tx_hash, trace_id).await?;
+    let raw_trace =
+        sandbox::execute_with_tracing_limited(ledger_state, tx_hash, trace_id, memory_limit)
+            .await?;
 
-    let trace_tree = trace::build_trace_tree(&raw_trace)?;
+    build_execution_trace(tx_hash, network, ledger_state, &raw_trace)
+}
 
-    let state_diff = differ::compute_diff(&ledger_state, &raw_trace)?;
+fn build_execution_trace(
+    tx_hash: &str,
+    network: &NetworkConfig,
+    ledger_state: &state::LedgerState,
+    raw_trace: &sandbox::SandboxResult,
+) -> GratResult<ExecutionTrace> {
+    let trace_tree = trace::build_trace_tree(raw_trace)?;
 
-    let profile = profiler::generate_profile(&raw_trace, &state_diff)?;
+    let state_diff = differ::compute_diff(ledger_state, raw_trace)?;
+
+    let profile = profiler::generate_profile(raw_trace, &state_diff)?;
 
     let diagnostic_events = walk_diagnostic_events(&raw_trace.diagnostic_events)
         .into_iter()

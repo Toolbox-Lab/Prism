@@ -63,15 +63,30 @@ pub struct SandboxResult {
 /// consensus), the network's exact per-transaction memory ceiling isn't
 /// fetched here — this only needs to sit comfortably above real usage so
 /// tracing is never cut short by an artificial memory limit.
-const MEM_BYTES_CEILING: u64 = 500 * 1024 * 1024;
+pub const MEM_BYTES_CEILING: u64 = 500 * 1024 * 1024;
 
+pub async fn execute_with_tracing(
+    state: &LedgerState,
+    tx_hash: &str,
+    trace_id: TraceId,
+) -> GratResult<SandboxResult> {
+    execute_with_tracing_limited(state, tx_hash, trace_id, MEM_BYTES_CEILING).await
+}
+
+/// Same as [`execute_with_tracing`], but with an explicit memory ceiling in
+/// bytes. Used by the what-if simulator to replay under patched limits.
 #[allow(clippy::too_many_lines)]
-pub async fn execute_with_tracing(state: &LedgerState, tx_hash: &str, trace_id: TraceId) -> GratResult<SandboxResult> {
+pub async fn execute_with_tracing_limited(
+    state: &LedgerState,
+    tx_hash: &str,
+    trace_id: TraceId,
+    memory_limit: u64,
+) -> GratResult<SandboxResult> {
     let inv = &state.invocation;
 
     let budget = Budget::try_from_configs(
         inv.cpu_instructions_limit.max(1),
-        MEM_BYTES_CEILING,
+        memory_limit.max(1),
         inv.cpu_cost_params.clone(),
         inv.mem_cost_params.clone(),
     )
