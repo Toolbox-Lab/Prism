@@ -40,6 +40,26 @@ pub async fn replay_with_state(
     build_execution_trace(tx_hash, network, ledger_state, &raw_trace)
 }
 
+/// Converts raw XDR diagnostic events into the display-oriented
+/// [`DiagnosticEvent`] form, preserving their order as the timeline position.
+pub fn structure_diagnostic_events(
+    events: &[stellar_xdr::curr::DiagnosticEvent],
+) -> Vec<DiagnosticEvent> {
+    walk_diagnostic_events(events)
+        .into_iter()
+        .enumerate()
+        .map(|(timeline_position, event)| DiagnosticEvent {
+            event_type: event.kind.to_string(),
+            topics: event.topics.iter().map(scval_to_readable_string).collect(),
+            data: std::collections::HashMap::from([(
+                "value".to_string(),
+                scval_to_readable_string(&event.data),
+            )]),
+            timeline_position,
+        })
+        .collect()
+}
+
 fn build_execution_trace(
     tx_hash: &str,
     network: &NetworkConfig,
@@ -52,19 +72,7 @@ fn build_execution_trace(
 
     let profile = profiler::generate_profile(raw_trace, &state_diff)?;
 
-    let diagnostic_events = walk_diagnostic_events(&raw_trace.diagnostic_events)
-        .into_iter()
-        .enumerate()
-        .map(|(timeline_position, event)| DiagnosticEvent {
-            event_type: event.kind.to_string(),
-            topics: event.topics.iter().map(scval_to_readable_string).collect(),
-            data: std::collections::HashMap::from([(
-                "value".to_string(),
-                scval_to_readable_string(&event.data),
-            )]),
-            timeline_position,
-        })
-        .collect();
+    let diagnostic_events = structure_diagnostic_events(&raw_trace.diagnostic_events);
 
     let auth_chains = ledger_state
         .invocation
