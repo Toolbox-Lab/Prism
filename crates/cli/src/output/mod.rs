@@ -46,7 +46,13 @@ pub fn format_trace(trace: &ExecutionTrace, output_format: &str) -> anyhow::Resu
     Ok(match OutputFormat::parse(output_format) {
         OutputFormat::Json => serde_json::to_string_pretty(trace)?,
         OutputFormat::Short => format_trace_summary(trace),
-        OutputFormat::Human => format!("{trace:#?}"),
+        OutputFormat::Human => {
+            use termcolor::{Buffer, ColorChoice};
+            let mut buffer = Buffer::no_color();
+            trace_tree::render_trace_tree(&mut buffer, trace)
+                .map_err(|error| anyhow::anyhow!("failed to render trace tree: {error}"))?;
+            String::from_utf8_lossy(&buffer.into_inner()).into_owned()
+        }
     })
 }
 

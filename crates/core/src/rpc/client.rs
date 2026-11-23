@@ -235,6 +235,7 @@ impl SorobanRpcClient {
 
         for attempt in 0..=MAX_RETRIES {
             if attempt > 0 {
+                crate::rpc::record_rpc_retry(method);
                 let delay = backoff_duration(attempt);
                 tracing::debug!(
                     method,
@@ -253,6 +254,7 @@ impl SorobanRpcClient {
             match self.client.post(&self.rpc_url).json(&request).send().await {
                 Ok(response) => {
                     let status = response.status();
+                    crate::rpc::record_rpc_request(method, &status.as_u16().to_string());
                     let elapsed_ms = started.elapsed().as_millis();
                     // Exact latency delta recorded into the HistogramVec.
                     let duration_secs = started.elapsed().as_secs_f64();
@@ -326,6 +328,7 @@ impl SorobanRpcClient {
                         .map_err(|e| GratError::RpcError(format!("Response parse error: {e}")))?;
 
                     if let Some(err) = rpc_response.error {
+                        crate::rpc::record_rpc_error(&err.code.to_string());
                         tracing::debug!(
                             method,
                             endpoint = %self.rpc_url,
@@ -342,6 +345,8 @@ impl SorobanRpcClient {
                         .ok_or_else(|| GratError::RpcError("Empty result in RPC response".into()));
                 }
                 Err(e) => {
+                    crate::rpc::record_rpc_error("transport");
+                    crate::rpc::record_rpc_request(method, "transport");
                     let elapsed_ms = started.elapsed().as_millis();
                     let duration_secs = started.elapsed().as_secs_f64();
                     crate::rpc::record_rpc_duration(&self.rpc_url, method, duration_secs);
