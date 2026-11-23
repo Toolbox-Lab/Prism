@@ -12,6 +12,19 @@ pub fn colors_enabled() -> bool {
     COLOR_ENABLED.load(Ordering::Relaxed)
 }
 
+/// Decide whether colored output should be used. `--no-color` and the
+/// `NO_COLOR` environment variable (https://no-color.org) both disable it.
+pub fn resolve_color_enabled(no_color_flag: bool) -> bool {
+    color_enabled_for(no_color_flag, std::env::var_os("NO_COLOR").as_deref())
+}
+
+fn color_enabled_for(no_color_flag: bool, no_color_env: Option<&std::ffi::OsStr>) -> bool {
+    if no_color_flag {
+        return false;
+    }
+    !matches!(no_color_env, Some(v) if !v.is_empty())
+}
+
 #[derive(Clone, Copy)]
 pub struct ColorPalette {
     pub error: Style,
@@ -216,5 +229,14 @@ mod tests {
             !colors_enabled(),
             "inner guard should have restored the disabled state"
         );
+    }
+
+    #[test]
+    fn color_resolution_honors_flag_and_no_color_env() {
+        use std::ffi::OsStr;
+        assert!(color_enabled_for(false, None));
+        assert!(color_enabled_for(false, Some(OsStr::new(""))));
+        assert!(!color_enabled_for(true, None));
+        assert!(!color_enabled_for(false, Some(OsStr::new("1"))));
     }
 }
