@@ -960,6 +960,7 @@ mod tests {
                 ..ResourceProfile::default()
             },
             diagnostic_events: Vec::new(),
+            auth_chains: Vec::new(),
         }
     }
 
