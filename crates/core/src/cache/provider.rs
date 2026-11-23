@@ -7,6 +7,7 @@ use crate::error::GratResult;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::future::Future;
+use std::sync::Arc;
 
 /// Unified contract for caching backends (in-memory, disk, or Wasm-specific),
 /// allowing them to be substituted without changing consuming logic.
@@ -45,6 +46,80 @@ pub trait CacheProvider: Send + Sync {
 
     /// Removes all entries from the cache.
     fn clear(&self) -> impl Future<Output = GratResult<()>> + Send;
+}
+
+impl<P: CacheProvider + ?Sized> CacheProvider for Arc<P> {
+    fn get<V>(&self, key: &str) -> impl Future<Output = GratResult<Option<V>>> + Send
+    where
+        V: DeserializeOwned + Send,
+    {
+        self.as_ref().get(key)
+    }
+
+    fn put<V>(&self, key: &str, value: &V) -> impl Future<Output = GratResult<()>> + Send
+    where
+        V: Serialize + Sync,
+    {
+        self.as_ref().put(key, value)
+    }
+
+    fn remove(&self, key: &str) -> impl Future<Output = GratResult<()>> + Send {
+        self.as_ref().remove(key)
+    }
+
+    fn clear(&self) -> impl Future<Output = GratResult<()>> + Send {
+        self.as_ref().clear()
+    }
+}
+
+/// Key prefixes for the specialized caches layered over a [`CacheProvider`].
+/// Namespacing lets several caches share one backend without collisions.
+pub const WASM_CACHE_PREFIX: &str = "wasm:";
+pub const SPEC_CACHE_PREFIX: &str = "spec:";
+pub const LEDGER_CACHE_PREFIX: &str = "ledger:";
+pub const METADATA_CACHE_PREFIX: &str = "metadata:";
+
+/// Builds a namespaced key for a cache entry.
+pub fn cache_key(prefix: &str, key: &str) -> String {
+    format!("{prefix}{key}")
+}
+
+/// Builds the key for a ledger entry snapshot at a given ledger sequence.
+pub fn ledger_cache_key(ledger_sequence: u32, key: &str) -> String {
+    cache_key(LEDGER_CACHE_PREFIX, &format!("{ledger_sequence}:{key}"))
+}
+
+/// Fetches a value unless caching is disabled via the CLI `--no-cache` flag.
+pub async fn get_if_enabled<P, V>(
+    provider: &P,
+    no_cache: bool,
+    key: &str,
+) -> GratResult<Option<V>>
+where
+    P: CacheProvider + ?Sized,
+    V: DeserializeOwned + Send,
+{
+    if no_cache {
+        return Ok(None);
+    }
+    provider.get(key).await
+}
+
+/// Stores a value unless caching is disabled via the CLI `--no-cache` flag.
+pub async fn put_if_enabled<P, V>(
+    provider: &P,
+    no_cache: bool,
+    key: &str,
+    value: &V,
+) -> GratResult<()>
+where
+    P: CacheProvider + ?Sized,
+    V: Serialize + Sync,
+{
+    if no_cache {
+        return Ok(());
+    }
+    provider.put(key, value).await
 }
 
 #[cfg(test)]
