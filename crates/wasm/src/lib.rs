@@ -328,7 +328,9 @@ mod tests {
             name: "ContractError".try_into().unwrap(),
             cases: vec![
                 ScSpecUdtErrorEnumCaseV0 {
-                    doc: "Caller is not authorized to perform action".try_into().unwrap(),
+                    doc: "Caller is not authorized to perform action"
+                        .try_into()
+                        .unwrap(),
                     name: "Unauthorized".try_into().unwrap(),
                     value: 1,
                 },
@@ -353,21 +355,33 @@ mod tests {
     fn test_resolve_contract_error_success() {
         let wasm = sample_contract_wasm();
 
-        let res = resolve_contract_error_inner(&wasm, 1).unwrap().expect("should find error");
+        let res = resolve_contract_error_inner(&wasm, 1)
+            .unwrap()
+            .expect("should find error");
         assert_eq!(res.name, "ContractError::Unauthorized");
         assert_eq!(res.code, 1);
-        assert_eq!(res.doc, Some("Caller is not authorized to perform action".to_string()));
+        assert_eq!(
+            res.doc,
+            Some("Caller is not authorized to perform action".to_string())
+        );
         assert_eq!(res.variant, Some("Unauthorized".to_string()));
-        assert_eq!(res.docstring, Some("Caller is not authorized to perform action".to_string()));
+        assert_eq!(
+            res.docstring,
+            Some("Caller is not authorized to perform action".to_string())
+        );
 
-        let res2 = resolve_contract_error_inner(&wasm, 2).unwrap().expect("should find error");
+        let res2 = resolve_contract_error_inner(&wasm, 2)
+            .unwrap()
+            .expect("should find error");
         assert_eq!(res2.name, "ContractError::InsufficientBalance");
         assert_eq!(res2.code, 2);
         assert_eq!(res2.doc, Some("Account balance is too low".to_string()));
         assert_eq!(res2.variant, Some("InsufficientBalance".to_string()));
 
         // Case with empty docstring falls back to enum docstring
-        let res3 = resolve_contract_error_inner(&wasm, 3).unwrap().expect("should find error");
+        let res3 = resolve_contract_error_inner(&wasm, 3)
+            .unwrap()
+            .expect("should find error");
         assert_eq!(res3.name, "ContractError::Expired");
         assert_eq!(res3.code, 3);
         assert_eq!(res3.doc, Some("General contract errors".to_string()));

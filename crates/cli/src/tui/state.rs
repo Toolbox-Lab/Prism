@@ -107,10 +107,7 @@ impl TuiState {
     }
 }
 
-fn invocation_at(
-    invocations: &[ContractInvocation],
-    target: usize,
-) -> Option<&ContractInvocation> {
+fn invocation_at(invocations: &[ContractInvocation], target: usize) -> Option<&ContractInvocation> {
     fn visit<'a>(
         invocations: &'a [ContractInvocation],
         target: &mut usize,
