@@ -121,6 +121,7 @@ impl JsonRpcTransport {
 
         for attempt in 0..=self.max_retries {
             if attempt > 0 {
+                crate::rpc::record_rpc_retry(method);
                 let delay = backoff_duration(attempt);
                 tracing::debug!(
                     attempt,
@@ -139,6 +140,7 @@ impl JsonRpcTransport {
             match self.client.post(&self.endpoint).json(request).send().await {
                 Ok(response) => {
                     let status = response.status();
+                    crate::rpc::record_rpc_request(method, &status.as_u16().to_string());
                     let elapsed_ms = started_at.elapsed().as_millis();
                     // Exact latency delta recorded into the HistogramVec.
                     let duration_secs = started_at.elapsed().as_secs_f64();
@@ -188,6 +190,7 @@ impl JsonRpcTransport {
                         .map_err(|e| GratError::RpcError(format!("response parse error: {e}")))?;
 
                     if let Some(err) = envelope.error {
+                        crate::rpc::record_rpc_error(&err.code.to_string());
                         tracing::debug!(
                             method,
                             endpoint = %self.endpoint,
@@ -203,6 +206,8 @@ impl JsonRpcTransport {
                         .ok_or_else(|| GratError::RpcError("empty result".to_string()));
                 }
                 Err(e) => {
+                    crate::rpc::record_rpc_error("transport");
+                    crate::rpc::record_rpc_request(method, "transport");
                     let duration_secs = started_at.elapsed().as_secs_f64();
                     crate::rpc::record_rpc_duration(&self.endpoint, method, duration_secs);
                     tracing::debug!(

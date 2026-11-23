@@ -5,10 +5,12 @@ pub mod state;
 pub mod trace;
 
 use crate::decode::auth::scval_to_readable_string;
+use crate::decode::auth::AuthChain;
 use crate::decode::walk_diagnostic_events;
 use crate::error::GratResult;
 use crate::types::config::NetworkConfig;
 use crate::types::trace::{DiagnosticEvent, ExecutionTrace, TraceId};
+use stellar_xdr::curr::{Limits, ReadXdr, SorobanAuthorizationEntry};
 
 pub async fn replay_transaction(
     tx_hash: &str,
@@ -39,6 +41,17 @@ pub async fn replay_transaction(
         })
         .collect();
 
+    let auth_chains = ledger_state
+        .invocation
+        .auth_entries_xdr
+        .iter()
+        .filter_map(|bytes| {
+            SorobanAuthorizationEntry::from_xdr(bytes, Limits::none())
+                .ok()
+                .map(|entry| AuthChain::from_entry(&entry))
+        })
+        .collect();
+
     Ok(ExecutionTrace {
         tx_hash: tx_hash.to_string(),
         ledger_sequence: ledger_state.ledger_sequence,
@@ -47,5 +60,6 @@ pub async fn replay_transaction(
         state_diff,
         resource_profile: profile,
         diagnostic_events,
+        auth_chains,
     })
 }
