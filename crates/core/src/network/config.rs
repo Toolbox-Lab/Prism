@@ -25,6 +25,7 @@ pub enum Network {
     #[default]
     Testnet,
     Futurenet,
+    Standalone,
     Custom(String),
 }
 
@@ -44,7 +45,7 @@ impl Network {
             "mainnet" | "main" | "pubnet" | "public" => Self::Mainnet,
             "testnet" | "test" => Self::Testnet,
             "futurenet" | "future" => Self::Futurenet,
-            "local" | "localhost" | "standalone" => Self::Custom(Self::LOCAL.to_string()),
+            "local" | "localhost" | "standalone" => Self::Standalone,
             _ if trimmed.starts_with("http://") || trimmed.starts_with("https://") => {
                 Self::Custom(trimmed.to_string())
             }
@@ -59,12 +60,13 @@ impl Network {
             Self::Mainnet => "mainnet",
             Self::Testnet => "testnet",
             Self::Futurenet => "futurenet",
+            Self::Standalone => "standalone",
             Self::Custom(name) => name.as_str(),
         }
     }
 
     pub fn is_local(&self) -> bool {
-        matches!(self, Self::Custom(name) if name.eq_ignore_ascii_case(Self::LOCAL))
+        matches!(self, Self::Standalone) || matches!(self, Self::Custom(name) if name.eq_ignore_ascii_case(Self::LOCAL))
     }
 
     pub fn config(&self) -> NetworkConfig {
@@ -76,7 +78,7 @@ impl Network {
             Self::Mainnet => MAINNET_PASSPHRASE,
             Self::Testnet => TESTNET_PASSPHRASE,
             Self::Futurenet => FUTURENET_PASSPHRASE,
-            Self::Custom(_) => LOCAL_PASSPHRASE,
+            Self::Standalone | Self::Custom(_) => LOCAL_PASSPHRASE,
         }
     }
 
@@ -85,7 +87,7 @@ impl Network {
             Self::Mainnet => MAINNET_RPC_URL,
             Self::Testnet => TESTNET_RPC_URL,
             Self::Futurenet => FUTURENET_RPC_URL,
-            Self::Custom(_) => LOCAL_RPC_URL,
+            Self::Standalone | Self::Custom(_) => LOCAL_RPC_URL,
         }
     }
 }
@@ -225,6 +227,7 @@ impl NetworkConfig {
             Network::Mainnet => Self::mainnet(),
             Network::Testnet => Self::testnet(),
             Network::Futurenet => Self::futurenet(),
+            Network::Standalone => Self::local(),
             Network::Custom(name) if name.eq_ignore_ascii_case(Network::LOCAL) => Self::local(),
             Network::Custom(name)
                 if name.starts_with("http://") || name.starts_with("https://") =>

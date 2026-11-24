@@ -87,7 +87,9 @@ pub struct SorobanRpcClient {
     client: reqwest::Client,
 
     rpc_url: String,
+    timeout_secs: u64,
 }
+pub type RpcClient = SorobanRpcClient;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -129,10 +131,12 @@ impl SorobanRpcClient {
         Self {
             client,
             rpc_url: config.rpc_url.clone(),
+            timeout_secs: config.request_timeout_secs,
         }
     }
 
     pub fn with_timeout(mut self, timeout_secs: u64) -> Self {
+        self.timeout_secs = timeout_secs;
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         self.client = reqwest::Client::builder()
@@ -366,7 +370,14 @@ impl SorobanRpcClient {
                         error = %e,
                         "RPC request failed"
                     );
-                    last_error = Some(GratError::RpcError(format!("HTTP request failed: {e}")));
+                    last_error = Some(if e.is_timeout() {
+    GratError::NetworkTimeout {
+        method: method.to_string(),
+        timeout_secs: self.timeout_secs,
+    }
+} else {
+    GratError::RpcError(format!("HTTP request failed: {e}"))
+});
                 }
             }
         }
@@ -835,6 +846,7 @@ mod tests {
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.to_lowercase().contains("timeout")
+                || err_msg.to_lowercase().contains("timed out")
                 || err_msg.to_lowercase().contains("error sending request"),
             "Actual error: {err_msg}"
         );
