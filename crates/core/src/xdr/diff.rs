@@ -379,9 +379,9 @@ use super::*;
 use super::{diff_contract_code_entry, diff_contract_data, diff_trustline_entry};
     use crate::types::trace::DiffChangeType;
     use stellar_xdr::curr::{
-        AccountId, Asset, AssetCode12, AssetCode4, ContractCodeEntry, ContractCodeEntryExt,
-        ContractDataDurability, ContractDataEntry, ExtensionPoint, Hash, PublicKey, ScMapEntry,
-        ScSymbol, ScVal, StringM, TrustLineEntry, TrustLineEntryExt, TrustLineFlags, Uint256,
+        AssetCode12, AssetCode4, ContractCodeEntry, ContractCodeEntryExt,
+        ContractDataDurability, ContractDataEntry, ExtensionPoint, Hash, ScMapEntry, ScSymbol,
+        ScVal, TrustLineEntry, TrustLineEntryExt,
     };
 
     fn contract_code(hash: [u8; 32]) -> ContractCodeEntry {
@@ -548,7 +548,7 @@ use super::{diff_contract_code_entry, diff_contract_data, diff_trustline_entry};
             asset,
             balance,
             limit,
-            flags: TrustLineFlags::from_bits_truncate(flags),
+            flags,
             ext: TrustLineEntryExt::V0,
         }
     }

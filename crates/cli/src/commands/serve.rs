@@ -222,7 +222,9 @@ async fn stream_trace_replay(
 
     let trace_id = grat_core::types::trace::TraceId::new();
     let result =
-        match grat_core::replay::sandbox::execute_with_tracing(&ledger_state, tx_hash, trace_id).await {
+        match grat_core::replay::sandbox::execute_with_tracing(&ledger_state, tx_hash, trace_id)
+            .await
+        {
             Ok(r) => r,
             Err(e) => {
                 let _ = sender.send(TraceStreamMessage::TraceError {
@@ -278,11 +280,17 @@ async fn stream_trace_replay(
             .diagnostic_events
             .iter()
             .enumerate()
-            .map(|(idx, event)| DiagnosticEventMessage {
-                event_type: event.event_type.clone(),
-                topics: event.topics.clone(),
-                data: event.data.clone(),
-                timeline_position: idx,
+            .map(|(idx, event)| {
+                let stellar_xdr::curr::ContractEventBody::V0(body) = &event.event.body;
+                DiagnosticEventMessage {
+                    event_type: format!("{:?}", event.event.type_),
+                    topics: body.topics.iter().map(|t| format!("{t:?}")).collect(),
+                    data: std::collections::HashMap::from([(
+                        "value".to_string(),
+                        format!("{:?}", body.data),
+                    )]),
+                    timeline_position: idx,
+                }
             })
             .collect();
         let _ = sender.send(TraceStreamMessage::DiagnosticEvents {

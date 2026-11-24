@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 grat-core = { workspace = true }
+stellar-xdr = { workspace = true }
 fs2     = "0.4"
 walkdir = "2"
 reqwest = { workspace = true }
