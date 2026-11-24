@@ -15,6 +15,7 @@ struct RpcMetrics {
     request_duration: HistogramVec,
     retries: CounterVec,
     errors: CounterVec,
+    http_errors: CounterVec,
 }
 
 static METRICS: OnceLock<RpcMetrics> = OnceLock::new();
@@ -58,11 +59,21 @@ fn metrics() -> &'static RpcMetrics {
         )
         .expect("failed to register soroban_rpc_errors_total counter");
 
+        let http_errors = register_counter_vec!(
+            opts!(
+                "rpc_http_errors_total",
+                "Total number of HTTP error responses from Soroban RPC nodes (e.g. 500, 429)"
+            ),
+            &["endpoint", "method", "status"]
+        )
+        .expect("failed to register rpc_http_errors_total counter");
+
         RpcMetrics {
             requests,
             request_duration,
             retries,
             errors,
+            http_errors,
         }
     })
 }
@@ -95,8 +106,12 @@ pub fn record_rpc_error(error_code: &str) {
 }
 
 pub fn record_rpc_http_error(endpoint: &str, method: &str, status: u16) {
-    let _ = endpoint;
-    record_rpc_error(&status.to_string());
+    let status = status.to_string();
+    metrics()
+        .http_errors
+        .with_label_values(&[endpoint, method, &status])
+        .inc();
+    record_rpc_error(&status);
 }
 
 pub fn gather_metrics() -> String {
