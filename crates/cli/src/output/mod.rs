@@ -12,6 +12,7 @@ pub mod human;
 pub mod json;
 pub mod renderers;
 pub mod theme;
+pub mod trace_tree;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -43,12 +44,37 @@ pub fn print_diagnostic_report(
     }
 }
 
+pub fn print_diagnostic_reports(
+    reports: &[DiagnosticReport],
+    output_format: &str,
+) -> anyhow::Result<()> {
+    match OutputFormat::parse(output_format) {
+        OutputFormat::Json => {
+            if let [report] = reports {
+                json::print_report(report)
+            } else {
+                println!("{}", serde_json::to_string_pretty(reports)?);
+                Ok(())
+            }
+        }
+        OutputFormat::Short | OutputFormat::Human => {
+            for (i, report) in reports.iter().enumerate() {
+                if reports.len() > 1 {
+                    println!("\n=== Operation {} ===", i + 1);
+                }
+                print_diagnostic_report(report, output_format)?;
+            }
+            Ok(())
+        }
+    }
+}
+
 pub fn format_trace(trace: &ExecutionTrace, output_format: &str) -> anyhow::Result<String> {
     Ok(match OutputFormat::parse(output_format) {
         OutputFormat::Json => serde_json::to_string_pretty(trace)?,
         OutputFormat::Short => format_trace_summary(trace),
         OutputFormat::Human => {
-            use termcolor::{Buffer, ColorChoice};
+            use termcolor::Buffer;
             let mut buffer = Buffer::no_color();
             trace_tree::render_trace_tree(&mut buffer, trace)
                 .map_err(|error| anyhow::anyhow!("failed to render trace tree: {error}"))?;
