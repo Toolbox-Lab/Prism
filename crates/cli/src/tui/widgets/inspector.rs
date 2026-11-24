@@ -169,14 +169,14 @@ fn render_arg_summary(frame: &mut Frame, area: Rect, inv: &ContractInvocation) {
 
     let line = Line::from(vec![
         Span::styled("Args: ", Style::default().fg(Color::Gray)),
-        Span::styled(truncate(&args_display, 80), Style::default().fg(Color::White)),
+        Span::styled(
+            truncate(&args_display, 80),
+            Style::default().fg(Color::White),
+        ),
     ]);
 
     let para = Paragraph::new(line);
-    let summary_area = Rect {
-        height: 1,
-        ..area
-    };
+    let summary_area = Rect { height: 1, ..area };
     frame.render_widget(para, summary_area);
 }
 
@@ -221,12 +221,18 @@ fn build_row(entry: &LedgerEntryDiff) -> Row {
     ])
 }
 
-/// Truncate `s` to at most `max` bytes, appending `…` when shortened.
+/// Truncate `s` to at most `max` bytes without splitting a UTF-8 character.
+/// Append an ellipsis when shortened if the byte budget can hold it.
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
     } else {
-        format!("{}…", &s[..max.saturating_sub(1)])
+        let suffix = if max >= "…".len() { "…" } else { "" };
+        let mut end = max - suffix.len();
+        while !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}{suffix}", &s[..end])
     }
 }
 
@@ -253,6 +259,56 @@ mod tests {
         let result = truncate("abcdefghij", 5);
         assert!(result.len() <= 6, "truncated string should be short");
         assert!(result.ends_with('…'), "should end with ellipsis");
+    }
+
+    #[test]
+    fn truncate_respects_utf8_boundaries_and_byte_budgets() {
+        for value in [
+            "é".repeat(50),
+            "界".repeat(40),
+            "🦀".repeat(30),
+            "ascii".repeat(20),
+        ] {
+            for max in 0..=value.len() {
+                let result = truncate(&value, max);
+                assert!(result.len() <= max, "exceeded {max} bytes: {result:?}");
+                let prefix = result.strip_suffix('…').unwrap_or(&result);
+                assert!(value.starts_with(prefix));
+                if value.len() <= max {
+                    assert_eq!(result, value);
+                } else if max >= "…".len() {
+                    assert!(result.ends_with('…'));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn inspector_renders_unicode_arguments_and_state_values() {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let mut state = crate::tui::state::fixture();
+        let invocation = state.selected_invocation.as_mut().unwrap();
+        invocation.arguments = vec!["é".repeat(50)];
+        let diff = make_diff(vec![LedgerEntryDiff {
+            key: "界".repeat(20),
+            before: Some("🦀".repeat(20)),
+            after: Some("é".repeat(30)),
+            change_type: DiffChangeType::Updated,
+        }]);
+        let mut terminal = Terminal::new(TestBackend::new(120, 24)).unwrap();
+        terminal
+            .draw(|frame| render_inspector(frame, frame.area(), &diff, Some(invocation), 0))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("Inspector") && text.contains("Args:"));
+        assert!(text.contains('é') && text.contains('界') && text.contains('🦀'));
     }
 
     #[test]
@@ -293,14 +349,12 @@ mod tests {
     fn scroll_clamp() {
         // Scroll beyond the list length should not panic in real render;
         // here we just test the clamping arithmetic.
-        let diff = make_diff(vec![
-            LedgerEntryDiff {
-                key: "k1".to_string(),
-                before: None,
-                after: Some("v1".to_string()),
-                change_type: DiffChangeType::Created,
-            },
-        ]);
+        let diff = make_diff(vec![LedgerEntryDiff {
+            key: "k1".to_string(),
+            before: None,
+            after: Some("v1".to_string()),
+            change_type: DiffChangeType::Created,
+        }]);
         let visible: Vec<&LedgerEntryDiff> = diff
             .entries
             .iter()
