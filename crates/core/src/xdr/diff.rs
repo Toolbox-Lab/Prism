@@ -310,11 +310,9 @@ fn json_string<T: Debug + Serialize>(value: &T) -> String {
 
 #[cfg(test)]
 mod tests {
-use super::*;
-    use stellar_xdr::curr::{
-        AccountEntryExt, AccountId, PublicKey, SequenceNumber, SignerKey, String32, StringM, Thresholds,
-        Uint256, VecM,
-    };
+    use super::*;
+    use crate::types::trace::DiffChangeType;
+    use stellar_xdr::curr::{AccountEntryExt, AccountId, AssetCode12, AssetCode4, ContractCodeEntry, ContractCodeEntryExt, ContractDataDurability, ContractDataEntry, ExtensionPoint, Hash, PublicKey, ScMapEntry, ScSymbol, ScVal, SequenceNumber, SignerKey, String32, StringM, Thresholds, TrustLineEntry, TrustLineEntryExt, Uint256, VecM};
 
     fn dummy_account_entry() -> AccountEntry {
         AccountEntry {
@@ -376,13 +374,6 @@ use super::*;
         assert_eq!(diff.removed_signers[0], signer1);
     }
 
-use super::{diff_contract_code_entry, diff_contract_data, diff_trustline_entry};
-    use crate::types::trace::DiffChangeType;
-    use stellar_xdr::curr::{
-        AccountId, Asset, AssetCode12, AssetCode4, ContractCodeEntry, ContractCodeEntryExt,
-        ContractDataDurability, ContractDataEntry, ExtensionPoint, Hash, PublicKey, ScMapEntry,
-        ScSymbol, ScVal, StringM, TrustLineEntry, TrustLineEntryExt, TrustLineFlags, Uint256,
-    };
 
     fn contract_code(hash: [u8; 32]) -> ContractCodeEntry {
         ContractCodeEntry {
@@ -548,7 +539,7 @@ use super::{diff_contract_code_entry, diff_contract_data, diff_trustline_entry};
             asset,
             balance,
             limit,
-            flags: TrustLineFlags::from_bits_truncate(flags),
+            flags,
             ext: TrustLineEntryExt::V0,
         }
     }

@@ -4,8 +4,54 @@ use flate2::read::GzDecoder;
 use std::io::Read;
 use std::path::Path;
 use stellar_xdr::curr::{
-    BucketEntry, LedgerHeader, LedgerHeaderHistoryEntry, LedgerKey, Limits, ReadXdr, WriteXdr,
+    BucketEntry, LedgerEntry, LedgerEntryData, LedgerHeader, LedgerHeaderHistoryEntry, LedgerKey,
+    LedgerKeyAccount, LedgerKeyClaimableBalance, LedgerKeyConfigSetting, LedgerKeyContractCode,
+    LedgerKeyContractData, LedgerKeyData, LedgerKeyLiquidityPool, LedgerKeyOffer,
+    LedgerKeyTrustLine, LedgerKeyTtl, Limited, Limits, ReadXdr, WriteXdr,
 };
+
+/// Derive the [`LedgerKey`] that identifies a [`LedgerEntry`].
+fn ledger_key_from_entry(entry: &LedgerEntry) -> LedgerKey {
+    match &entry.data {
+        LedgerEntryData::Account(a) => LedgerKey::Account(LedgerKeyAccount {
+            account_id: a.account_id.clone(),
+        }),
+        LedgerEntryData::Trustline(t) => LedgerKey::Trustline(LedgerKeyTrustLine {
+            account_id: t.account_id.clone(),
+            asset: t.asset.clone(),
+        }),
+        LedgerEntryData::Offer(o) => LedgerKey::Offer(LedgerKeyOffer {
+            seller_id: o.seller_id.clone(),
+            offer_id: o.offer_id,
+        }),
+        LedgerEntryData::Data(d) => LedgerKey::Data(LedgerKeyData {
+            account_id: d.account_id.clone(),
+            data_name: d.data_name.clone(),
+        }),
+        LedgerEntryData::ClaimableBalance(c) => {
+            LedgerKey::ClaimableBalance(LedgerKeyClaimableBalance {
+                balance_id: c.balance_id.clone(),
+            })
+        }
+        LedgerEntryData::LiquidityPool(l) => LedgerKey::LiquidityPool(LedgerKeyLiquidityPool {
+            liquidity_pool_id: l.liquidity_pool_id.clone(),
+        }),
+        LedgerEntryData::ContractData(c) => LedgerKey::ContractData(LedgerKeyContractData {
+            contract: c.contract.clone(),
+            key: c.key.clone(),
+            durability: c.durability,
+        }),
+        LedgerEntryData::ContractCode(c) => LedgerKey::ContractCode(LedgerKeyContractCode {
+            hash: c.hash.clone(),
+        }),
+        LedgerEntryData::ConfigSetting(c) => LedgerKey::ConfigSetting(LedgerKeyConfigSetting {
+            config_setting_id: c.discriminant(),
+        }),
+        LedgerEntryData::Ttl(t) => LedgerKey::Ttl(LedgerKeyTtl {
+            key_hash: t.key_hash.clone(),
+        }),
+    }
+}
 
 #[derive(Debug)]
 pub struct ArchiveClient {
@@ -246,14 +292,14 @@ impl ArchiveClient {
                 file: file.clone(),
                 reason: format!("ledger key must be base64 encoded XDR: {e}"),
             })?;
-        let mut key_input = key_bytes.as_slice();
-        let wanted_key = LedgerKey::read_xdr(&mut key_input, Limits::none()).map_err(|e| {
+        let mut key_input = Limited::new(key_bytes.as_slice(), Limits::none());
+        let wanted_key = LedgerKey::read_xdr(&mut key_input).map_err(|e| {
             ArchiveErrorKind::MalformedXdr {
                 file: file.clone(),
                 reason: format!("failed to decode ledger key: {e}"),
             }
         })?;
-        if !key_input.is_empty() {
+        if !key_input.inner.is_empty() {
             return Err(ArchiveErrorKind::MalformedXdr {
                 file,
                 reason: "ledger key contains trailing bytes".to_string(),
@@ -343,9 +389,9 @@ impl ArchiveClient {
                             break;
                         }
                     };
-                let mut stream = bytes.as_slice();
-                while !stream.is_empty() {
-                    let entry = BucketEntry::read_xdr(&mut stream, Limits::none()).map_err(|e| {
+                let mut stream = Limited::new(bytes.as_slice(), Limits::none());
+                while !stream.inner.is_empty() {
+                    let entry = BucketEntry::read_xdr(&mut stream).map_err(|e| {
                         ArchiveErrorKind::MalformedXdr {
                             file: bucket_path.clone(),
                             reason: format!("failed to decode bucket entry: {e}"),
@@ -353,7 +399,7 @@ impl ArchiveClient {
                     })?;
                     match entry {
                         BucketEntry::Liveentry(entry) | BucketEntry::Initentry(entry) => {
-                            let entry_key = LedgerKey::from(&entry);
+                            let entry_key = ledger_key_from_entry(&entry);
                             if entry_key.to_xdr(Limits::none()).ok().as_deref()
                                 == Some(&wanted_key_xdr)
                             {

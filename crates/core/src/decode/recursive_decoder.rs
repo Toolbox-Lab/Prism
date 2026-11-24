@@ -375,6 +375,7 @@ mod tests {
             unions: vec![],
             name: None,
             version: None,
+            metadata: Default::default(),
         };
         let value = map(vec![(
             "inner",
