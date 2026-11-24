@@ -81,12 +81,12 @@ impl CacheStore {
         }
 
         // Ensure we can fit the new entry by evicting least-recently-used files.
-        let current_size = self.total_cache_size()?;
-        if current_size.saturating_add(new_size) > self.max_size {
-            self.evict_lru_to_fit(new_size)?;
-        }
-
         let path = self.entry_path(category, key, ledger_sequence);
+        let existing_size = path.metadata().map(|meta| meta.len()).unwrap_or(0);
+        let current_size = self.total_cache_size()?.saturating_sub(existing_size);
+        if current_size.saturating_add(new_size) > self.max_size {
+            self.evict_lru_to_fit(new_size.saturating_sub(existing_size))?;
+        }
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| GratError::CacheError(format!("Failed to create dir: {e}")))?;
@@ -172,6 +172,7 @@ impl CacheStore {
         }
 
         for path in stale_paths {
+            self.memory.remove(&path.to_string_lossy().into_owned());
             if path.exists() {
                 std::fs::remove_file(&path)
                     .map_err(|e| GratError::CacheError(format!("Failed to prune cache entry: {e}")))?;
@@ -270,6 +271,7 @@ impl CacheStore {
             let (oldest_ts, oldest_file) = files.into_iter().next().expect("checked empty");
 
             let path = oldest_file.path();
+            self.memory.remove(&path.to_string_lossy().into_owned());
             // Best-effort delete.
             std::fs::remove_file(&path).map_err(|e| {
                 GratError::CacheError(format!(
@@ -355,3 +357,24 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 }
+    #[test]
+    fn aggregate_directory_size_stays_within_quota_after_eviction() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = CacheStore::with_max_size_bytes(dir.path().to_path_buf(), 10).unwrap();
+        store.put(CacheCategory::WasmBlob, "a", b"1234", None).unwrap();
+        store.put(CacheCategory::ContractSpec, "b", b"5678", None).unwrap();
+        store.put(CacheCategory::TransactionResult, "c", b"90ab", None).unwrap();
+        assert!(store.total_cache_size().unwrap() <= 10);
+        assert!(store.contains(CacheCategory::TransactionResult, "c", None));
+    }
+
+    #[test]
+    fn memory_tier_is_populated_from_disk_and_remove_invalidates_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = CacheStore::with_max_size_bytes(dir.path().to_path_buf(), 32).unwrap();
+        store.put(CacheCategory::WasmBlob, "hot", b"payload", None).unwrap();
+        assert_eq!(store.get(CacheCategory::WasmBlob, "hot", None).unwrap(), Some(b"payload".to_vec()));
+        store.remove(CacheCategory::WasmBlob, "hot", None).unwrap();
+        assert_eq!(store.get(CacheCategory::WasmBlob, "hot", None).unwrap(), None);
+    }
+
