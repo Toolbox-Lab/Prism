@@ -424,4 +424,35 @@ mod tests {
         let cli = Cli::try_parse_from(["grat", "decode", "abc123"]).expect("cli should parse");
         assert!(!cli.no_cache);
     }
+
+    #[test]
+    fn parses_inspect_tx_hash_and_optional_op_index() {
+        let cli = Cli::try_parse_from(["grat", "inspect", "abc123"]).expect("cli should parse");
+        match cli.command {
+            Commands::Inspect(args) => {
+                assert_eq!(args.tx_hash, "abc123");
+                assert!(args.op_index.is_none());
+            }
+            _ => panic!("expected inspect command"),
+        }
+
+        let cli = Cli::try_parse_from([
+            "grat",
+            "inspect",
+            "abc123",
+            "--op-index",
+            "0",
+            "--save",
+            "op0.json",
+        ])
+        .expect("cli should parse inspect with --op-index and --save");
+        assert_eq!(cli.save.as_deref(), Some("op0.json"));
+        match cli.command {
+            Commands::Inspect(args) => {
+                assert_eq!(args.tx_hash, "abc123");
+                assert_eq!(args.op_index, Some(0));
+            }
+            _ => panic!("expected inspect command"),
+        }
+    }
 }
