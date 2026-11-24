@@ -13,6 +13,7 @@ pub struct TuiState {
     pub resources: ResourceProfile,
 }
 
+#[allow(dead_code)]
 pub struct TraceEntry {
     pub depth: usize,
     pub contract: String,
@@ -57,12 +58,21 @@ impl TuiState {
         };
     }
 
+    /// Move to the next recorded invocation.
     pub fn next(&mut self) {
         self.scroll_offset = self
             .scroll_offset
             .saturating_add(1)
             .min(self.entries.len().saturating_sub(1));
         self.update_selected_invocation();
+    }
+
+    /// Step into the selected invocation.
+    ///
+    /// Recorded traces are walked depth first, so the next frame is the first
+    /// nested invocation when one exists and the next peer invocation otherwise.
+    pub fn step_into(&mut self) {
+        self.next();
     }
 
     pub fn previous(&mut self) {
@@ -107,10 +117,7 @@ impl TuiState {
     }
 }
 
-fn invocation_at(
-    invocations: &[ContractInvocation],
-    target: usize,
-) -> Option<&ContractInvocation> {
+fn invocation_at(invocations: &[ContractInvocation], target: usize) -> Option<&ContractInvocation> {
     fn visit<'a>(
         invocations: &'a [ContractInvocation],
         target: &mut usize,
@@ -185,4 +192,30 @@ pub fn fixture() -> TuiState {
             ..ResourceProfile::default()
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn step_into_advances_to_the_next_recorded_invocation() {
+        let mut state = fixture();
+        state.step_into();
+        assert_eq!(state.entries[state.scroll_offset].function, "child");
+        assert_eq!(
+            state
+                .selected_invocation
+                .as_ref()
+                .map(|invocation| invocation.function_name.as_str()),
+            Some("child")
+        );
+    }
+
+    #[test]
+    fn step_over_skips_descendants_of_the_current_invocation() {
+        let mut state = fixture();
+        state.step_over();
+        assert_eq!(state.entries[state.scroll_offset].function, "sibling");
+    }
 }
