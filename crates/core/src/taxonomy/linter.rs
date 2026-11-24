@@ -269,6 +269,56 @@ fn assigns(line: &str, key: &str) -> bool {
         .is_some_and(|rest| rest.trim_start().starts_with('='))
 }
 
+/// Normalize a TOML table header line to `[a.b]` / `[[a.b]]` form: strip a
+/// trailing comment, whitespace around the brackets and dots, and simple
+/// quotes around key parts (so `[[ errors ]] # note` becomes `[[errors]]` and
+/// `["error".A]` becomes `[error.A]`). Returns `None` for non-header lines.
+fn normalize_header(line: &str) -> Option<String> {
+    let t = line.trim();
+    let (open, close) = if t.starts_with("[[") {
+        ("[[", "]]")
+    } else if t.starts_with('[') {
+        ("[", "]")
+    } else {
+        return None;
+    };
+    let body = &t[open.len()..];
+    // Find the closing bracket outside of quoted key parts.
+    let mut quote: Option<char> = None;
+    let mut end = None;
+    for (i, c) in body.char_indices() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None if c == '"' || c == '\'' => quote = Some(c),
+            None if body[i..].starts_with(close) => {
+                end = Some(i);
+                break;
+            }
+            None => {}
+        }
+    }
+    let end = end?;
+    let rest = body[end + close.len()..].trim_start();
+    if !(rest.is_empty() || rest.starts_with('#')) {
+        return None;
+    }
+    let mut parts = Vec::new();
+    let mut part = String::new();
+    let mut quote: Option<char> = None;
+    for c in body[..end].chars() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => part.push(c),
+            None if c == '"' || c == '\'' => quote = Some(c),
+            None if c == '.' => parts.push(std::mem::take(&mut part).trim().to_string()),
+            None => part.push(c),
+        }
+    }
+    parts.push(part.trim().to_string());
+    Some(format!("{open}{}{close}", parts.join(".")))
+}
+
 /// Locates lines inside a TOML document by table header, so diagnostics can
 /// point at the right place even when ids are empty or duplicated.
 struct LineIndex<'a> {
@@ -282,12 +332,14 @@ impl<'a> LineIndex<'a> {
         }
     }
 
-    /// Indices of lines whose trimmed text is exactly `header`.
+    /// Indices of lines that are the table header `header`, in any valid
+    /// spelling (see [`normalize_header`]).
     fn headers(&self, header: &str) -> Vec<usize> {
+        let wanted = normalize_header(header);
         self.lines
             .iter()
             .enumerate()
-            .filter(|(_, l)| l.trim() == header)
+            .filter(|(_, l)| wanted.is_some() && normalize_header(l) == wanted)
             .map(|(i, _)| i)
             .collect()
     }
@@ -297,9 +349,8 @@ impl<'a> LineIndex<'a> {
     fn block_end(&self, start: usize, prefix: &str) -> usize {
         let sub = format!("{prefix}.");
         for (i, l) in self.lines.iter().enumerate().skip(start + 1) {
-            let t = l.trim();
-            if t.starts_with('[') {
-                let name = t.trim_matches(|c| c == '[' || c == ']').trim();
+            if let Some(h) = normalize_header(l) {
+                let name = h.trim_matches(|c| c == '[' || c == ']');
                 if !name.starts_with(&sub) {
                     return i;
                 }
@@ -318,7 +369,8 @@ impl<'a> LineIndex<'a> {
     /// First line assigning `key` before any table header, 1-based.
     fn find_key_in_table(&self, header: &str, key: &str) -> Option<usize> {
         let start = *self.headers(header).first()?;
-        let end = self.block_end(start, header.trim_matches(|c| c == '[' || c == ']'));
+        let normalized = normalize_header(header)?;
+        let end = self.block_end(start, normalized.trim_matches(|c| c == '[' || c == ']'));
         self.find_key(start, end, key).or(Some(start + 1))
     }
 }
@@ -408,7 +460,7 @@ pub fn lint_category_str(file: &str, content: &str) -> CategoryFileLint {
                         );
                     }
                 }
-                if meta.description.trim().len() < MIN_DESCRIPTION_LEN {
+                if meta.description.trim().chars().count() < MIN_DESCRIPTION_LEN {
                     diags.push(
                         Diagnostic::error(
                             file,
@@ -447,8 +499,16 @@ pub fn lint_category_str(file: &str, content: &str) -> CategoryFileLint {
         }
     };
 
+    // Pair entries with headers by position only when every entry's header
+    // was found; otherwise leave the lines out rather than point at another
+    // entry (e.g. entries written as an inline array).
+    let headers_align = headers.len() == entries.len();
     for (i, raw) in entries.iter().enumerate() {
-        let start = headers.get(i).copied();
+        let start = if headers_align {
+            headers.get(i).copied()
+        } else {
+            None
+        };
         let end = start.map_or(0, |s| idx.block_end(s, "errors"));
         let header_line = start.map(|s| s + 1);
         let line_of = |key: &str| {
@@ -575,7 +635,7 @@ fn lint_entry(
         ("summary", &entry.summary),
         ("detailed_explanation", &entry.detailed_explanation),
     ] {
-        let len = text.trim().len();
+        let len = text.trim().chars().count();
         if len == 0 {
             diags.push(err(field, format!("{field} is empty")));
         } else if len < MIN_DESCRIPTION_LEN {
@@ -621,7 +681,7 @@ fn lint_entry(
     };
     let cause_lines = sub_lines("[[errors.common_causes]]");
     for (n, TaxonomyCause { description, .. }) in entry.common_causes.iter().enumerate() {
-        if description.trim().len() < MIN_DESCRIPTION_LEN {
+        if description.trim().chars().count() < MIN_DESCRIPTION_LEN {
             diags.push(
                 Diagnostic::error(
                     file,
@@ -643,7 +703,7 @@ fn lint_entry(
     }
     let fix_lines = sub_lines("[[errors.suggested_fixes]]");
     for (n, TaxonomyFix { description, .. }) in entry.suggested_fixes.iter().enumerate() {
-        if description.trim().len() < MIN_DESCRIPTION_LEN {
+        if description.trim().chars().count() < MIN_DESCRIPTION_LEN {
             diags.push(
                 Diagnostic::error(
                     file,
@@ -785,21 +845,40 @@ pub fn lint_category_sources(sources: &[(String, String)]) -> LintReport {
     report
 }
 
+/// The `*.toml` regular files directly inside `dir`, sorted by name: the
+/// files [`lint_dir`] lints.
+///
+/// Errors while listing the directory, or while reading the metadata of a
+/// `*.toml` candidate, are returned rather than skipped, so a scan never
+/// passes by silently checking fewer files.
+pub fn taxonomy_files_in(dir: &Path) -> GratResult<Vec<PathBuf>> {
+    let io_err = |what: String| GratError::TaxonomyError(what);
+    let mut paths = Vec::new();
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| io_err(format!("cannot read taxonomy dir {}: {e}", dir.display())))?;
+    for entry in entries {
+        let entry = entry
+            .map_err(|e| io_err(format!("cannot read taxonomy dir {}: {e}", dir.display())))?;
+        let path = entry.path();
+        if !path.extension().is_some_and(|ext| ext == "toml") {
+            continue;
+        }
+        let meta = std::fs::metadata(&path)
+            .map_err(|e| io_err(format!("cannot read {}: {e}", path.display())))?;
+        if meta.is_file() {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
 /// Lint every `*.toml` taxonomy file in `dir` (sorted by name).
 ///
 /// I/O failures (unreadable directory or file) are returned as `Err`;
 /// problems in the files themselves are reported as diagnostics.
 pub fn lint_dir(dir: &Path) -> GratResult<LintReport> {
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
-        .map_err(|e| {
-            GratError::TaxonomyError(format!("cannot read taxonomy dir {}: {e}", dir.display()))
-        })?
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.is_file() && p.extension().is_some_and(|ext| ext == "toml"))
-        .collect();
-    paths.sort();
-
+    let paths = taxonomy_files_in(dir)?;
     let mut sources = Vec::with_capacity(paths.len());
     for path in paths {
         let content = std::fs::read_to_string(&path).map_err(|e| {
@@ -1189,12 +1268,21 @@ pub fn lint_enhanced_file(path: &Path) -> GratResult<LintReport> {
 }
 
 /// Guess the format of a standalone taxonomy file from its contents: a
-/// top-level `error` table or `[metadata]` means the enhanced database.
+/// top-level `error` or `metadata` key (and no `category`/`errors`) means the
+/// enhanced database. Documents that do not parse fall back to looking at
+/// their table headers, so the right validator reports the syntax error.
 pub fn detect_kind(content: &str) -> FileKind {
-    let is_enhanced = content.lines().any(|l| {
-        let t = l.trim();
-        t == "[metadata]" || t.starts_with("[error.") || t.starts_with("[[error.")
-    });
+    let is_enhanced = match content.parse::<toml::Table>() {
+        Ok(table) => {
+            (table.contains_key("error") || table.contains_key("metadata"))
+                && !table.contains_key("category")
+                && !table.contains_key("errors")
+        }
+        Err(_) => content
+            .lines()
+            .filter_map(normalize_header)
+            .any(|h| h == "[metadata]" || h.starts_with("[error.") || h.starts_with("[[error.")),
+    };
     if is_enhanced {
         FileKind::Enhanced
     } else {
@@ -1503,6 +1591,78 @@ detailed_explanation = "Test detailed explanation is also long enough."
         let report = lint_dir(dir.path()).expect("lint dir");
         assert_eq!(report.files.len(), 1);
         assert!(report.is_ok());
+    }
+
+    #[test]
+    fn header_with_comment_or_spaces_keeps_lines_aligned() {
+        let content = format!(
+            "{}\n[[ errors ]] # second\nid = \"test.two\"\ncategory = \"budget\"\ncode = 2\n\
+             name = \"TestTwo\"\nseverity = \"bogus\"\nsummary = \"Test summary is long enough.\"\n\
+             detailed_explanation = \"Test detailed explanation is also long enough.\"\n",
+            RAW_ENTRY.replace("[[errors]]", "[[errors]] # first")
+        );
+        let report = lint_raw(&content);
+        let d = only_error(&report);
+        assert_eq!(d.entry_id.as_deref(), Some("test.two"));
+        assert_eq!(d.field.as_deref(), Some("severity"));
+        assert_eq!(d.line, Some(21));
+    }
+
+    #[test]
+    fn normalize_header_accepts_valid_spellings() {
+        assert_eq!(
+            normalize_header("[[errors]]").as_deref(),
+            Some("[[errors]]")
+        );
+        assert_eq!(
+            normalize_header("  [[ errors ]]  # note").as_deref(),
+            Some("[[errors]]")
+        );
+        assert_eq!(
+            normalize_header("[\"error\" . A]").as_deref(),
+            Some("[error.A]")
+        );
+        assert_eq!(normalize_header("[1, 2],"), None);
+        assert_eq!(normalize_header("id = 1"), None);
+    }
+
+    #[test]
+    fn description_length_counts_characters_not_bytes() {
+        // Five CJK characters are 15 bytes but only 5 characters.
+        let report = lint_raw(&RAW_ENTRY.replace(
+            "summary = \"Test summary is long enough.\"",
+            "summary = \"错误错误错\"",
+        ));
+        let d = only_error(&report);
+        assert_eq!(d.field.as_deref(), Some("summary"));
+        assert!(d.message.contains("too short"), "{d}");
+    }
+
+    #[test]
+    fn detect_kind_uses_parsed_keys() {
+        let quoted = ENHANCED.replace("[error.", "[\"error\".");
+        assert_eq!(detect_kind(&quoted), FileKind::Enhanced);
+        let mentions_metadata = RAW_ENTRY.replace(
+            "detailed_explanation = \"Test detailed explanation is also long enough.\"",
+            "detailed_explanation = \"\"\"\nTest detailed explanation\n[metadata]\nis long enough.\"\"\"",
+        );
+        assert_eq!(detect_kind(&mentions_metadata), FileKind::CategoryData);
+        assert!(lint_raw(&mentions_metadata).is_ok());
+    }
+
+    #[test]
+    fn taxonomy_files_in_lists_sorted_toml_files() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        for name in ["b.toml", "a.toml", "notes.md"] {
+            std::fs::write(dir.path().join(name), "").expect("write");
+        }
+        std::fs::create_dir(dir.path().join("sub.toml")).expect("mkdir");
+        let files = taxonomy_files_in(dir.path()).expect("list");
+        let names: Vec<_> = files
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["a.toml", "b.toml"]);
     }
 
     #[test]

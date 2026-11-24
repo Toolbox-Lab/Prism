@@ -6,9 +6,9 @@
 //!
 //! With no paths, lints the category data files in
 //! `crates/core/src/taxonomy/data/` and the enhanced database
-//! `taxonomy/enhanced_error_taxonomy.toml`. A directory argument is linted as
-//! a set of category data files; a file argument is linted as whichever
-//! format its contents follow.
+//! `taxonomy/enhanced_error_taxonomy.toml`. A directory argument lints every
+//! `*.toml` file in it; each file is linted as whichever format its contents
+//! follow, and the cross-file checks span every category data file given.
 //!
 //! Colors are used only when stdout is a terminal and `NO_COLOR` is unset
 //! (`--no-color` disables them, `FORCE_COLOR`/`CLICOLOR_FORCE` force them).
@@ -16,9 +16,9 @@
 //! 1 otherwise.
 
 use grat_core::taxonomy::linter::{
-    detect_kind, lint_category_sources, lint_dir, lint_enhanced_file, Diagnostic, FileKind, Level,
-    LintReport,
+    lint_category_sources, taxonomy_files_in, Diagnostic, FileKind, Level, LintReport,
 };
+use std::collections::HashSet;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -65,7 +65,30 @@ fn color_enabled(no_color_flag: bool) -> bool {
     if no_color_flag || std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) {
         return false;
     }
-    set("FORCE_COLOR") || set("CLICOLOR_FORCE") || std::io::stdout().is_terminal()
+    set("FORCE_COLOR") || set("CLICOLOR_FORCE") || auto_color_supported()
+}
+
+/// Whether stdout is a terminal that interprets ANSI escape sequences.
+///
+/// A native Windows console can be a terminal without virtual-terminal
+/// processing enabled, in which case the badges would print as raw escape
+/// codes. Without a console API dependency we cannot query or enable it, so
+/// on Windows automatic color is used only under hosts known to handle ANSI
+/// (Windows Terminal, ConEmu, ANSICON, or a `TERM`-setting emulator such as
+/// mintty). `FORCE_COLOR`/`CLICOLOR_FORCE` still turn color on anywhere.
+fn auto_color_supported() -> bool {
+    if !std::io::stdout().is_terminal() {
+        return false;
+    }
+    let term_ok = std::env::var_os("TERM").is_some_and(|t| !t.is_empty() && t != "dumb");
+    if cfg!(windows) {
+        std::env::var_os("WT_SESSION").is_some()
+            || std::env::var_os("ANSICON").is_some()
+            || std::env::var_os("ConEmuANSI").is_some_and(|v| v == "ON")
+            || term_ok
+    } else {
+        true
+    }
 }
 
 fn default_paths() -> Vec<PathBuf> {
@@ -85,64 +108,103 @@ fn display_path(path: &Path) -> PathBuf {
         .unwrap_or(absolute)
 }
 
-fn lint_path(path: &Path) -> Result<LintReport, String> {
-    let shown = display_path(path);
-    if path.is_dir() {
-        let mut report = lint_dir(path).map_err(|e| e.to_string())?;
-        // Re-label files relative to the current directory.
-        let prefix = path.display().to_string();
-        let relabel = |file: &mut String| {
-            if let Some(rest) = file.strip_prefix(&prefix) {
-                *file = shown
-                    .join(rest.trim_start_matches('/'))
-                    .display()
-                    .to_string();
+/// A label for `path` that keeps distinct paths distinct: valid UTF-8 paths
+/// are shown as-is, others with their invalid bytes escaped.
+fn path_label(path: &Path) -> String {
+    match path.to_str() {
+        Some(s) => s.to_string(),
+        None => {
+            let debug = format!("{:?}", path.as_os_str());
+            debug
+                .strip_prefix('"')
+                .and_then(|d| d.strip_suffix('"'))
+                .map_or_else(|| debug.clone(), str::to_string)
+        }
+    }
+}
+
+/// Escape control characters (newlines, ANSI escapes, …) in text taken from
+/// the linted files or the file system, so it cannot break or restyle the
+/// output. The structured report keeps the original values.
+fn clean(text: &str) -> String {
+    if !text.chars().any(char::is_control) {
+        return text.to_string();
+    }
+    text.chars()
+        .map(|c| {
+            if c.is_control() {
+                c.escape_default().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
+}
+
+/// Expand the command-line paths into the files to lint: a directory
+/// contributes exactly the files a directory scan selects
+/// ([`taxonomy_files_in`]), a file contributes itself. Each file is linted
+/// once even when it is named twice or also found through a directory.
+fn collect_files(paths: &[PathBuf], errors: &mut Vec<String>) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for path in paths {
+        if path.is_dir() {
+            match taxonomy_files_in(path) {
+                Ok(found) => files.extend(found),
+                Err(e) => errors.push(e.to_string()),
+            }
+        } else if path.is_file() {
+            files.push(path.clone());
+        } else {
+            errors.push(format!("'{}' is not a file or directory", path_label(path)));
+        }
+    }
+    let mut seen = HashSet::new();
+    files.retain(|p| seen.insert(std::fs::canonicalize(p).unwrap_or_else(|_| p.clone())));
+    files
+}
+
+/// Read every file and lint them together, so that the cross-file checks
+/// (unique ids, non-overlapping codes, related-error references) span all
+/// category data files given, whether named directly or found in a directory.
+fn lint_files(files: &[PathBuf], errors: &mut Vec<String>) -> LintReport {
+    let mut labels = HashSet::new();
+    let mut sources = Vec::with_capacity(files.len());
+    for path in files {
+        let content = match std::fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) => {
+                errors.push(format!("cannot read {}: {e}", path_label(path)));
+                continue;
             }
         };
-        report.files.iter_mut().for_each(|f| relabel(&mut f.file));
-        report
-            .diagnostics
-            .iter_mut()
-            .for_each(|d| relabel(&mut d.file));
-        return Ok(report);
+        // Labels are the report's file keys, so they must be unique.
+        let base = path_label(&display_path(path));
+        let mut label = base.clone();
+        let mut n = 2;
+        while !labels.insert(label.clone()) {
+            label = format!("{base} [{n}]");
+            n += 1;
+        }
+        sources.push((label, content));
     }
-    if path.is_file() {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-        let name = shown.display().to_string();
-        return Ok(match detect_kind(&content) {
-            FileKind::Enhanced => {
-                let mut report = lint_enhanced_file(path).map_err(|e| e.to_string())?;
-                report
-                    .files
-                    .iter_mut()
-                    .for_each(|f| f.file.clone_from(&name));
-                report
-                    .diagnostics
-                    .iter_mut()
-                    .for_each(|d| d.file.clone_from(&name));
-                report
-            }
-            FileKind::CategoryData => lint_category_sources(&[(name, content)]),
-        });
-    }
-    Err(format!("'{}' is not a file or directory", path.display()))
+    lint_category_sources(&sources)
 }
 
 fn print_diagnostic(style: &Style, d: &Diagnostic) {
-    let mut location = d.file.clone();
+    let mut location = clean(&d.file);
     if let Some(line) = d.line {
         location.push_str(&format!(":{line}"));
     }
     let mut subject = String::new();
     if let Some(id) = &d.entry_id {
-        subject.push_str(id);
+        subject.push_str(&clean(id));
     }
     if let Some(field) = &d.field {
         if !subject.is_empty() {
             subject.push_str(" › ");
         }
-        subject.push_str(field);
+        subject.push_str(&clean(field));
     }
     let subject = if subject.is_empty() {
         String::new()
@@ -154,27 +216,8 @@ fn print_diagnostic(style: &Style, d: &Diagnostic) {
         style.level(d.level),
         style.dim(&location),
         subject,
-        d.message
+        clean(&d.message)
     );
-}
-
-/// Lint each file once, even when it is named twice or also sits in a
-/// directory that is linted.
-fn dedupe_paths(paths: &mut Vec<PathBuf>) {
-    let mut seen = std::collections::HashSet::new();
-    paths.retain(|p| seen.insert(std::fs::canonicalize(p).unwrap_or_else(|_| p.clone())));
-    let dirs: Vec<PathBuf> = paths
-        .iter()
-        .filter(|p| p.is_dir())
-        .filter_map(|p| std::fs::canonicalize(p).ok())
-        .collect();
-    paths.retain(|p| {
-        p.is_dir()
-            || !std::fs::canonicalize(p)
-                .ok()
-                .and_then(|c| c.parent().map(Path::to_path_buf))
-                .is_some_and(|parent| dirs.contains(&parent))
-    });
 }
 
 fn main() -> ExitCode {
@@ -194,22 +237,17 @@ fn main() -> ExitCode {
     if paths.is_empty() {
         paths = default_paths();
     }
-    dedupe_paths(&mut paths);
     let style = Style {
         color: color_enabled(no_color),
     };
 
-    let mut report = LintReport::default();
-    let mut io_failures = 0usize;
-    for path in &paths {
-        match lint_path(path) {
-            Ok(r) => report.merge(r),
-            Err(e) => {
-                io_failures += 1;
-                println!("{} {e}", style.fail());
-            }
-        }
+    let mut io_errors = Vec::new();
+    let files = collect_files(&paths, &mut io_errors);
+    let report = lint_files(&files, &mut io_errors);
+    for e in &io_errors {
+        println!("{} {}", style.fail(), clean(e));
     }
+    let io_failures = io_errors.len();
 
     println!("Linting {} taxonomy file(s)…", report.files.len());
     for file in &report.files {
@@ -240,7 +278,7 @@ fn main() -> ExitCode {
         }
         println!(
             "{badge} {} {}",
-            file.file,
+            clean(&file.file),
             style.dim(&format!("({counts})"))
         );
         for d in diags {
@@ -268,5 +306,81 @@ fn main() -> ExitCode {
     } else {
         println!("{} taxonomy lint failed: {summary}", style.fail());
         ExitCode::FAILURE
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CATEGORY: &str = r#"
+[category]
+name = "Test"
+description = "Test data (must be long enough)"
+source_module = "test"
+
+[[errors]]
+id = "test.err"
+category = "budget"
+code = 1
+name = "TestErr"
+severity = "Error"
+summary = "Test summary is long enough."
+detailed_explanation = "Test detailed explanation is also long enough."
+"#;
+
+    #[test]
+    fn clean_escapes_control_characters() {
+        assert_eq!(clean("plain › text"), "plain › text");
+        assert_eq!(clean("a\nb\x1b[31m"), "a\\nb\\u{1b}[31m");
+    }
+
+    #[test]
+    fn explicit_non_toml_file_is_kept_next_to_its_directory() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(dir.path().join("a.toml"), CATEGORY).expect("write");
+        std::fs::write(dir.path().join("b.txt"), "not toml [").expect("write");
+        let mut errors = Vec::new();
+        let files = collect_files(
+            &[
+                dir.path().to_path_buf(),
+                dir.path().join("b.txt"),
+                dir.path().join("a.toml"),
+            ],
+            &mut errors,
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(files.len(), 2, "{files:?}");
+        let report = lint_files(&files, &mut errors);
+        assert_eq!(report.files.len(), 2);
+        assert!(!report.is_ok(), "malformed b.txt must fail the lint");
+    }
+
+    #[test]
+    fn cross_file_checks_span_explicit_files() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let a = dir.path().join("a.toml");
+        let b = dir.path().join("b.toml");
+        std::fs::write(&a, CATEGORY).expect("write");
+        std::fs::write(&b, CATEGORY.replace("code = 1", "code = 2")).expect("write");
+        let mut errors = Vec::new();
+        let files = collect_files(&[a, b], &mut errors);
+        let report = lint_files(&files, &mut errors);
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.is_error() && d.message.contains("duplicate")),
+            "{:#?}",
+            report.diagnostics
+        );
+    }
+
+    #[test]
+    fn missing_path_is_reported() {
+        let mut errors = Vec::new();
+        let files = collect_files(&[PathBuf::from("/definitely/not/here")], &mut errors);
+        assert!(files.is_empty());
+        assert_eq!(errors.len(), 1);
     }
 }
