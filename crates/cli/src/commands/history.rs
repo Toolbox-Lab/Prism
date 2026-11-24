@@ -1,5 +1,4 @@
 use std::{
-    env,
     fs,
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
@@ -48,13 +47,8 @@ pub fn append_to_history(tx_hash: &str) -> anyhow::Result<()> {
 }
 
 fn history_path() -> anyhow::Result<PathBuf> {
-    let home = if let Some(home) = env::var_os("HOME") {
-        PathBuf::from(home)
-    } else if let Some(profile) = env::var_os("USERPROFILE") {
-        PathBuf::from(profile)
-    } else {
-        PathBuf::from(".")
-    };
+    let home =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
     Ok(home.join(HISTORY_DIR).join(HISTORY_FILE))
 }
 
@@ -89,12 +83,17 @@ fn relative_time(timestamp: u64) -> String {
     let now = now_unix();
     let diff = now.saturating_sub(timestamp);
     if diff < 60 {
-        format!("{diff} seconds ago")
+        elapsed_time(diff, "second")
     } else if diff < 3600 {
-        format!("{} minutes ago", diff / 60)
+        elapsed_time(diff / 60, "minute")
     } else if diff < 86400 {
-        format!("{} hours ago", diff / 3600)
+        elapsed_time(diff / 3600, "hour")
     } else {
-        format!("{} days ago", diff / 86400)
+        elapsed_time(diff / 86400, "day")
     }
+}
+
+fn elapsed_time(amount: u64, unit: &str) -> String {
+    let suffix = if amount == 1 { "" } else { "s" };
+    format!("{amount} {unit}{suffix} ago")
 }
