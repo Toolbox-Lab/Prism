@@ -1,9 +1,11 @@
 use crate::error::{GratError, GratResult};
 
+use dashmap::DashMap;
 use std::cmp::Ordering;
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 
@@ -31,6 +33,9 @@ impl CacheCategory {
 pub struct CacheStore {
     cache_dir: PathBuf,
     max_size: u64,
+    /// Concurrent L1 cache; filesystem entries are the persistent L2 tier.
+    memory: DashMap<String, Vec<u8>>,
+    write_lock: Arc<Mutex<()>>,
 }
 
 impl CacheStore {
@@ -45,6 +50,8 @@ impl CacheStore {
         Ok(Self {
             cache_dir,
             max_size: max_size_bytes,
+            memory: DashMap::new(),
+            write_lock: Arc::new(Mutex::new(())),
         })
     }
 
@@ -64,6 +71,7 @@ impl CacheStore {
         value: &[u8],
         ledger_sequence: Option<u32>,
     ) -> GratResult<()> {
+        let _write_guard = self.write_lock.lock().map_err(|_| GratError::CacheError("Cache write lock poisoned".to_string()))?;
         let new_size = value.len() as u64;
         if new_size > self.max_size {
             return Err(GratError::CacheError(format!(
@@ -86,6 +94,7 @@ impl CacheStore {
 
         std::fs::write(&path, value)
             .map_err(|e| GratError::CacheError(format!("Failed to write cache entry: {e}")))?;
+        self.memory.insert(path.to_string_lossy().into_owned(), value.to_vec());
         Ok(())
     }
 
@@ -96,6 +105,11 @@ impl CacheStore {
         ledger_sequence: Option<u32>,
     ) -> GratResult<Option<Vec<u8>>> {
         let path = self.entry_path(category, key, ledger_sequence);
+        let memory_key = path.to_string_lossy().into_owned();
+        if let Some(value) = self.memory.get(&memory_key) {
+            touch_file(&path);
+            return Ok(Some(value.clone()));
+        }
         if path.exists() {
             // Explicitly update access metadata to ensure LRU eviction works even if atime is disabled.
             if let Ok(file) = std::fs::OpenOptions::new().write(true).open(&path) {
@@ -108,6 +122,7 @@ impl CacheStore {
             }
             let data = std::fs::read(&path)
                 .map_err(|e| GratError::CacheError(format!("Failed to read cache entry: {e}")))?;
+            self.memory.insert(memory_key, data.clone());
             Ok(Some(data))
         } else {
             Ok(None)
@@ -125,6 +140,7 @@ impl CacheStore {
         ledger_sequence: Option<u32>,
     ) -> GratResult<()> {
         let path = self.entry_path(category, key, ledger_sequence);
+        self.memory.remove(&path.to_string_lossy().into_owned());
         if path.exists() {
             std::fs::remove_file(&path)
                 .map_err(|e| GratError::CacheError(format!("Failed to remove cache entry: {e}")))?;
@@ -166,6 +182,7 @@ impl CacheStore {
     }
 
     pub fn clear(&self) -> GratResult<()> {
+        self.memory.clear();
         if self.cache_dir.exists() {
             std::fs::remove_dir_all(&self.cache_dir)
                 .map_err(|e| GratError::CacheError(format!("Failed to clear cache: {e}")))?;
@@ -264,6 +281,13 @@ impl CacheStore {
             // If deletion succeeded, loop will re-check size.
             let _ = oldest_ts;
         }
+    }
+}
+
+fn touch_file(path: &Path) {
+    if let Ok(file) = std::fs::OpenOptions::new().write(true).open(path) {
+        let now = SystemTime::now();
+        let _ = file.set_times(std::fs::FileTimes::new().set_accessed(now).set_modified(now));
     }
 }
 
