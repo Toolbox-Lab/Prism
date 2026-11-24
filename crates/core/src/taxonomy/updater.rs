@@ -85,9 +85,10 @@ pub async fn check_and_update(offline: bool) -> GratResult<()> {
         return Ok(());
     };
 
-    if let Some(parent) = db_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
+    let Some(parent) = db_path.parent() else {
+        return Ok(());
+    };
+    let _ = fs::create_dir_all(parent);
 
     // Stage beside the database so concurrent updates cannot overwrite each
     // other's temporary file and the final rename stays on the same filesystem.

@@ -169,14 +169,14 @@ fn render_arg_summary(frame: &mut Frame, area: Rect, inv: &ContractInvocation) {
 
     let line = Line::from(vec![
         Span::styled("Args: ", Style::default().fg(Color::Gray)),
-        Span::styled(truncate(&args_display, 80), Style::default().fg(Color::White)),
+        Span::styled(
+            truncate(&args_display, 80),
+            Style::default().fg(Color::White),
+        ),
     ]);
 
     let para = Paragraph::new(line);
-    let summary_area = Rect {
-        height: 1,
-        ..area
-    };
+    let summary_area = Rect { height: 1, ..area };
     frame.render_widget(para, summary_area);
 }
 
@@ -226,7 +226,14 @@ fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
     } else {
-        format!("{}…", &s[..max.saturating_sub(1)])
+        let content_limit = max.saturating_sub("…".len());
+        let end = s
+            .char_indices()
+            .map(|(index, _)| index)
+            .take_while(|index| *index <= content_limit)
+            .last()
+            .unwrap_or(0);
+        format!("{}…", &s[..end])
     }
 }
 
@@ -293,14 +300,12 @@ mod tests {
     fn scroll_clamp() {
         // Scroll beyond the list length should not panic in real render;
         // here we just test the clamping arithmetic.
-        let diff = make_diff(vec![
-            LedgerEntryDiff {
-                key: "k1".to_string(),
-                before: None,
-                after: Some("v1".to_string()),
-                change_type: DiffChangeType::Created,
-            },
-        ]);
+        let diff = make_diff(vec![LedgerEntryDiff {
+            key: "k1".to_string(),
+            before: None,
+            after: Some("v1".to_string()),
+            change_type: DiffChangeType::Created,
+        }]);
         let visible: Vec<&LedgerEntryDiff> = diff
             .entries
             .iter()
