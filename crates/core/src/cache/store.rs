@@ -356,7 +356,6 @@ mod tests {
         store.clear().unwrap();
         let _ = std::fs::remove_dir_all(dir);
     }
-}
     #[test]
     fn aggregate_directory_size_stays_within_quota_after_eviction() {
         let dir = tempfile::tempdir().unwrap();
@@ -377,4 +376,4 @@ mod tests {
         store.remove(CacheCategory::WasmBlob, "hot", None).unwrap();
         assert_eq!(store.get(CacheCategory::WasmBlob, "hot", None).unwrap(), None);
     }
-
+}
