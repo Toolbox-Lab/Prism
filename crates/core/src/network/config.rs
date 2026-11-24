@@ -192,7 +192,7 @@ impl NetworkConfig {
 
     pub fn local() -> Self {
         Self {
-            network: Network::Custom(Network::LOCAL.to_string()),
+            network: Network::Standalone,
             rpc_url: LOCAL_RPC_URL.to_string(),
             network_passphrase: LOCAL_PASSPHRASE.to_string(),
             archive_urls: Vec::new(),
@@ -277,11 +277,10 @@ mod tests {
     }
 
     #[test]
-    fn parses_local_aliases_as_custom_local_network() {
-        assert_eq!(
-            Network::parse("standalone").unwrap(),
-            Network::Custom(Network::LOCAL.to_string())
-        );
+    fn parses_local_aliases_as_standalone_network() {
+        assert_eq!(Network::parse("standalone").unwrap(), Network::Standalone);
+        assert_eq!(Network::parse("local").unwrap(), Network::Standalone);
+        assert_eq!(Network::parse("localhost").unwrap(), Network::Standalone);
         assert!(Network::parse("local").unwrap().is_local());
     }
 
@@ -289,10 +288,23 @@ mod tests {
     fn resolves_local_network_defaults() {
         let config = resolve_network("local");
 
+        assert_eq!(config.network, Network::Standalone);
         assert!(config.network.is_local());
         assert_eq!(config.rpc_url, LOCAL_RPC_URL);
         assert_eq!(config.network_passphrase, LOCAL_PASSPHRASE);
         assert!(config.archive_urls.is_empty());
+    }
+
+    #[test]
+    fn standalone_config_round_trips_through_serde() {
+        let config = Network::Standalone.config();
+        assert_eq!(config.network, Network::Standalone);
+
+        let json = serde_json::to_string(&config).expect("config should serialize");
+        let parsed: NetworkConfig = serde_json::from_str(&json).expect("config should parse");
+
+        assert_eq!(parsed.network, Network::Standalone);
+        assert_eq!(parsed.rpc_url, LOCAL_RPC_URL);
     }
 
     #[test]
