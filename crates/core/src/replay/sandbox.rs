@@ -54,6 +54,12 @@ pub struct SandboxResult {
 
     pub total_memory: u64,
 
+    /// CPU instruction limit the sandbox budget was built with.
+    pub cpu_limit: u64,
+
+    /// Memory limit, in bytes, the sandbox budget was built with.
+    pub memory_limit: u64,
+
     pub diagnostic_events: Vec<DiagnosticEvent>,
 }
 
@@ -84,9 +90,12 @@ pub async fn execute_with_tracing_limited(
 ) -> GratResult<SandboxResult> {
     let inv = &state.invocation;
 
+    let cpu_limit = inv.cpu_instructions_limit.max(1);
+    let memory_limit = memory_limit.max(1);
+
     let budget = Budget::try_from_configs(
-        inv.cpu_instructions_limit.max(1),
-        memory_limit.max(1),
+        cpu_limit,
+        memory_limit,
         inv.cpu_cost_params.clone(),
         inv.mem_cost_params.clone(),
     )
@@ -210,6 +219,8 @@ pub async fn execute_with_tracing_limited(
         final_state,
         total_cpu,
         total_memory,
+        cpu_limit,
+        memory_limit,
         diagnostic_events,
     })
 }
