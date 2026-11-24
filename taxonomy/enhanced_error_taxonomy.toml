@@ -27,8 +27,6 @@ soroban_docs_url = "https://soroban.stellar.org/docs/reference/errors#zero-balan
 # NEW: Since Protocol Version
 [error.ZERO_BALANCE.protocol]
 since_version = 19
-deprecated_in = null
-removed_in = null
 
 # NEW: Contract-specific examples
 [[error.ZERO_BALANCE.examples]]
