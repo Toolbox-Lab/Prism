@@ -63,7 +63,7 @@ pub struct SandboxResult {
 /// consensus), the network's exact per-transaction memory ceiling isn't
 /// fetched here — this only needs to sit comfortably above real usage so
 /// tracing is never cut short by an artificial memory limit.
-const MEM_BYTES_CEILING: u64 = 500 * 1024 * 1024;
+pub(crate) const MEM_BYTES_CEILING: u64 = 500 * 1024 * 1024;
 
 #[allow(clippy::too_many_lines)]
 pub async fn execute_with_tracing(state: &LedgerState, tx_hash: &str, trace_id: TraceId) -> GratResult<SandboxResult> {
@@ -199,7 +199,7 @@ pub async fn execute_with_tracing(state: &LedgerState, tx_hash: &str, trace_id: 
     })
 }
 
-fn encode_ttl_entry(key_b64: &str, live_until_ledger_seq: u32) -> GratResult<Vec<u8>> {
+pub(crate) fn encode_ttl_entry(key_b64: &str, live_until_ledger_seq: u32) -> GratResult<Vec<u8>> {
     let key_bytes = STANDARD
         .decode(key_b64)
         .map_err(|e| GratError::XdrDecodingFailed {
