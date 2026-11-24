@@ -105,11 +105,22 @@ pub fn record_rpc_error(error_code: &str) {
     metrics().errors.with_label_values(&[error_code]).inc();
 }
 
+/// The `scheme://host[:port]` of an RPC endpoint, for use as a metric label.
+///
+/// Userinfo, path and query are dropped: providers commonly put API keys in
+/// them, and metric labels are exported to anyone who can scrape `/metrics`.
+fn endpoint_label(endpoint: &str) -> String {
+    match url::Url::parse(endpoint) {
+        Ok(url) if url.has_host() => url.origin().ascii_serialization(),
+        _ => "unknown".to_string(),
+    }
+}
+
 pub fn record_rpc_http_error(endpoint: &str, method: &str, status: u16) {
     let status = status.to_string();
     metrics()
         .http_errors
-        .with_label_values(&[endpoint, method, &status])
+        .with_label_values(&[&endpoint_label(endpoint), method, &status])
         .inc();
     record_rpc_error(&status);
 }
@@ -144,5 +155,18 @@ mod tests {
         assert!(output.contains("soroban_rpc_request_duration_seconds"));
         assert!(output.contains("soroban_rpc_retries_total"));
         assert!(output.contains("soroban_rpc_errors_total"));
+    }
+
+    #[test]
+    fn endpoint_label_drops_credentials_path_and_query() {
+        assert_eq!(
+            endpoint_label("https://user:secret@rpc.example.com:8443/v1/KEY123?apikey=x"),
+            "https://rpc.example.com:8443"
+        );
+        assert_eq!(
+            endpoint_label("http://127.0.0.1:8000"),
+            "http://127.0.0.1:8000"
+        );
+        assert_eq!(endpoint_label("not a url"), "unknown");
     }
 }
