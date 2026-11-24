@@ -183,7 +183,9 @@ async fn main() -> anyhow::Result<()> {
         Commands::Clean(args) => commands::clean::run(args, &cli.output).await?,
         Commands::Db(args) => commands::db::run(args, &cli.output).await?,
         Commands::Auth(args) => commands::auth::run(args, &cli.output).await?,
-        Commands::Diagnostic(args) => commands::diagnostic::run(args).await?,
+        Commands::Diagnostic(args) => {
+            commands::diagnostic::run(args, &network, &loaded_config).await?
+        }
         Commands::History => commands::history::run(&cli.output).await?,
         Commands::Serve(args) => commands::serve::run(args, &network).await?,
         Commands::SearchError(args) => commands::search_error::run(args, &cli.output).await?,
@@ -423,5 +425,15 @@ mod tests {
     fn no_cache_absent_by_default() {
         let cli = Cli::try_parse_from(["grat", "decode", "abc123"]).expect("cli should parse");
         assert!(!cli.no_cache);
+    }
+
+    #[test]
+    fn parses_quiet_flag_for_diagnostic() {
+        let cli = Cli::try_parse_from(["grat", "diagnostic", "--quiet"])
+            .expect("diagnostic should parse with --quiet");
+        match cli.command {
+            Commands::Diagnostic(args) => assert!(args.quiet),
+            _ => panic!("expected diagnostic command"),
+        }
     }
 }
