@@ -111,16 +111,15 @@ fn display_path(path: &Path) -> PathBuf {
 /// A label for `path` that keeps distinct paths distinct: valid UTF-8 paths
 /// are shown as-is, others with their invalid bytes escaped.
 fn path_label(path: &Path) -> String {
-    match path.to_str() {
-        Some(s) => s.to_string(),
-        None => {
-            let debug = format!("{:?}", path.as_os_str());
-            debug
-                .strip_prefix('"')
-                .and_then(|d| d.strip_suffix('"'))
-                .map_or_else(|| debug.clone(), str::to_string)
-        }
+    if let Some(s) = path.to_str() {
+        return s.to_string();
     }
+    // `Debug` on an `OsStr` escapes invalid bytes, keeping the label lossless.
+    let debug = format!("{:?}", path.as_os_str());
+    debug
+        .strip_prefix('"')
+        .and_then(|d| d.strip_suffix('"'))
+        .map_or_else(|| debug.clone(), str::to_string)
 }
 
 /// Escape control characters (newlines, ANSI escapes, …) in text taken from
@@ -380,7 +379,7 @@ detailed_explanation = "Test detailed explanation is also long enough."
     fn missing_path_is_reported() {
         let mut errors = Vec::new();
         let files = collect_files(&[PathBuf::from("/definitely/not/here")], &mut errors);
-        assert!(files.is_empty());
+        assert_eq!(files, Vec::<PathBuf>::new());
         assert_eq!(errors.len(), 1);
     }
 }

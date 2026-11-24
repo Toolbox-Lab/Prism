@@ -289,13 +289,12 @@ fn normalize_header(line: &str) -> Option<String> {
     for (i, c) in body.char_indices() {
         match quote {
             Some(q) if c == q => quote = None,
-            Some(_) => {}
             None if c == '"' || c == '\'' => quote = Some(c),
             None if body[i..].starts_with(close) => {
                 end = Some(i);
                 break;
             }
-            None => {}
+            Some(_) | None => {}
         }
     }
     let end = end?;
@@ -309,10 +308,9 @@ fn normalize_header(line: &str) -> Option<String> {
     for c in body[..end].chars() {
         match quote {
             Some(q) if c == q => quote = None,
-            Some(_) => part.push(c),
             None if c == '"' || c == '\'' => quote = Some(c),
             None if c == '.' => parts.push(std::mem::take(&mut part).trim().to_string()),
-            None => part.push(c),
+            Some(_) | None => part.push(c),
         }
     }
     parts.push(part.trim().to_string());
@@ -860,7 +858,7 @@ pub fn taxonomy_files_in(dir: &Path) -> GratResult<Vec<PathBuf>> {
         let entry = entry
             .map_err(|e| io_err(format!("cannot read taxonomy dir {}: {e}", dir.display())))?;
         let path = entry.path();
-        if !path.extension().is_some_and(|ext| ext == "toml") {
+        if path.extension().is_none_or(|ext| ext != "toml") {
             continue;
         }
         let meta = std::fs::metadata(&path)
