@@ -5,7 +5,7 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::time::Duration;
 
-const TAXONOMY_URL: &str = "https://raw.githubusercontent.com/grat-soroban/grat/main/taxonomy/enhanced_error_taxonomy.toml";
+const TAXONOMY_URL: &str = "https://raw.githubusercontent.com/Killerjunior/Grat/main/taxonomy/enhanced_error_taxonomy.toml";
 
 #[derive(Args)]
 pub struct DbArgs {
@@ -126,8 +126,13 @@ async fn update_taxonomy_database(json: bool) -> Result<()> {
         .parent()
         .context("Taxonomy database path has no parent")?;
     std::fs::create_dir_all(parent).context("Failed to create taxonomy data directory")?;
-    let temp_path = path.with_extension("tmp");
-    std::fs::write(&temp_path, &content).context("Failed to write taxonomy database")?;
+    let (temp_path, mut temp_file) = create_staging_file(parent, &path)?;
+    use std::io::Write;
+    if let Err(error) = temp_file.write_all(content.as_bytes()) {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(error).context("Failed to write taxonomy database");
+    }
+    drop(temp_file);
     if let Err(error) = std::fs::rename(&temp_path, &path) {
         let _ = std::fs::remove_file(&temp_path);
         return Err(error).context("Failed to install taxonomy database");
@@ -140,7 +145,12 @@ async fn update_taxonomy_database(json: bool) -> Result<()> {
             serde_json::to_string_pretty(&serde_json::json!({
                 "status": "ok",
                 "entries": schema.errors.len(),
-                "categories": 1
+                "categories": schema
+                    .errors
+                    .iter()
+                    .map(|entry| &entry.category)
+                    .collect::<HashSet<_>>()
+                    .len()
             }))?
         );
     } else {
@@ -150,4 +160,36 @@ async fn update_taxonomy_database(json: bool) -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn create_staging_file(
+    parent: &std::path::Path,
+    database_path: &std::path::Path,
+) -> Result<(std::path::PathBuf, std::fs::File)> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_STAGING_ID: AtomicU64 = AtomicU64::new(0);
+
+    for _ in 0..100 {
+        let id = NEXT_STAGING_ID.fetch_add(1, Ordering::Relaxed);
+        let staging_path = parent.join(format!(
+            "{}.{}.{}.tmp",
+            database_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("taxonomy"),
+            std::process::id(),
+            id
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&staging_path)
+        {
+            Ok(file) => return Ok((staging_path, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error).context("Failed to create taxonomy staging file"),
+        }
+    }
+
+    bail!("Failed to allocate a unique taxonomy staging file")
 }
