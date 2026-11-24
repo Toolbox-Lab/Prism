@@ -66,7 +66,8 @@ impl Network {
     }
 
     pub fn is_local(&self) -> bool {
-        matches!(self, Self::Standalone) || matches!(self, Self::Custom(name) if name.eq_ignore_ascii_case(Self::LOCAL))
+        matches!(self, Self::Standalone)
+            || matches!(self, Self::Custom(name) if name.eq_ignore_ascii_case(Self::LOCAL))
     }
 
     pub fn config(&self) -> NetworkConfig {

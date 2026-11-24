@@ -116,6 +116,14 @@ pub struct GetTransactionResponse {
     pub result_meta_xdr: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetLatestLedgerResponse {
+    pub id: String,
+    pub protocol_version: u32,
+    pub sequence: u32,
+}
+
 impl SorobanRpcClient {
     pub fn new(config: &NetworkConfig) -> Self {
         let mut headers = HeaderMap::new();
@@ -222,7 +230,7 @@ impl SorobanRpcClient {
         self.call("getEvents", params).await
     }
 
-    pub async fn get_latest_ledger(&self) -> GratResult<serde_json::Value> {
+    pub async fn get_latest_ledger(&self) -> GratResult<GetLatestLedgerResponse> {
         self.call("getLatestLedger", serde_json::json!({})).await
     }
 
@@ -371,13 +379,13 @@ impl SorobanRpcClient {
                         "RPC request failed"
                     );
                     last_error = Some(if e.is_timeout() {
-    GratError::NetworkTimeout {
-        method: method.to_string(),
-        timeout_secs: self.timeout_secs,
-    }
-} else {
-    GratError::RpcError(format!("HTTP request failed: {e}"))
-});
+                        GratError::NetworkTimeout {
+                            method: method.to_string(),
+                            timeout_secs: self.timeout_secs,
+                        }
+                    } else {
+                        GratError::RpcError(format!("HTTP request failed: {e}"))
+                    });
                 }
             }
         }
@@ -445,7 +453,7 @@ mod tests {
 
     /// Minimal valid JSON-RPC 2.0 success body (getLatestLedger shape).
     fn ok_body() -> &'static str {
-        r#"{"jsonrpc":"2.0","id":1,"result":{"id":"test","protocolVersion":"21","sequence":100}}"#
+        r#"{"jsonrpc":"2.0","id":1,"result":{"id":"test","protocolVersion":21,"sequence":100}}"#
     }
 
     fn make_client(addr: std::net::SocketAddr) -> SorobanRpcClient {
