@@ -114,7 +114,12 @@ impl CacheStore {
         }
     }
 
-    pub fn contains(&self, category: CacheCategory, key: &str, ledger_sequence: Option<u32>) -> bool {
+    pub fn contains(
+        &self,
+        category: CacheCategory,
+        key: &str,
+        ledger_sequence: Option<u32>,
+    ) -> bool {
         self.entry_path(category, key, ledger_sequence).exists()
     }
 
@@ -132,7 +137,11 @@ impl CacheStore {
         Ok(())
     }
 
-    pub fn prune_older_than(&self, category: CacheCategory, ledger_sequence: u32) -> GratResult<()> {
+    pub fn prune_older_than(
+        &self,
+        category: CacheCategory,
+        ledger_sequence: u32,
+    ) -> GratResult<()> {
         let base_dir = self.cache_dir.join(category.as_str());
         if !base_dir.exists() {
             return Ok(());
@@ -157,8 +166,9 @@ impl CacheStore {
 
         for path in stale_paths {
             if path.exists() {
-                std::fs::remove_file(&path)
-                    .map_err(|e| GratError::CacheError(format!("Failed to prune cache entry: {e}")))?;
+                std::fs::remove_file(&path).map_err(|e| {
+                    GratError::CacheError(format!("Failed to prune cache entry: {e}"))
+                })?;
             }
         }
 
@@ -298,7 +308,9 @@ mod tests {
         store
             .put(CacheCategory::WasmBlob, "test_key", b"hello", None)
             .unwrap();
-        let result = store.get(CacheCategory::WasmBlob, "test_key", None).unwrap();
+        let result = store
+            .get(CacheCategory::WasmBlob, "test_key", None)
+            .unwrap();
         assert_eq!(result, Some(b"hello".to_vec()));
 
         store.clear().unwrap();
@@ -311,9 +323,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let store = CacheStore::with_max_size_bytes(dir.clone(), 10).unwrap();
 
-        store.put(CacheCategory::WasmBlob, "key1", b"1234", None).unwrap();
+        store
+            .put(CacheCategory::WasmBlob, "key1", b"1234", None)
+            .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(10));
-        store.put(CacheCategory::WasmBlob, "key2", b"5678", None).unwrap();
+        store
+            .put(CacheCategory::WasmBlob, "key2", b"5678", None)
+            .unwrap();
 
         assert!(store.contains(CacheCategory::WasmBlob, "key1", None));
         assert!(store.contains(CacheCategory::WasmBlob, "key2", None));
@@ -321,7 +337,9 @@ mod tests {
         store.get(CacheCategory::WasmBlob, "key1", None).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(10));
 
-        store.put(CacheCategory::WasmBlob, "key3", b"9012", None).unwrap();
+        store
+            .put(CacheCategory::WasmBlob, "key3", b"9012", None)
+            .unwrap();
 
         assert!(store.contains(CacheCategory::WasmBlob, "key1", None));
         assert!(!store.contains(CacheCategory::WasmBlob, "key2", None));

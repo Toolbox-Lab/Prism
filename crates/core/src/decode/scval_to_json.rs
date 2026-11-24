@@ -402,7 +402,10 @@ mod tests {
         // one, the same bytes render as the declared struct with typed fields.
         let val = sym_map(vec![("label", sym("hits")), ("count", ScVal::U64(3))]);
 
-        assert_eq!(scval_to_json(&val, None), json!({ "label": "hits", "count": 3 }));
+        assert_eq!(
+            scval_to_json(&val, None),
+            json!({ "label": "hits", "count": 3 })
+        );
         assert_eq!(
             scval_to_json_with_contract_spec(&val, &counter_spec()),
             json!({ "count": 3, "label": "hits" })
@@ -497,17 +500,24 @@ mod tests {
 
     #[test]
     fn timepoint_and_duration_unwrap_to_numbers() {
-        assert_eq!(scval_to_json(&ScVal::Timepoint(TimePoint(100)), None), json!(100));
-        assert_eq!(scval_to_json(&ScVal::Duration(Duration(50)), None), json!(50));
+        assert_eq!(
+            scval_to_json(&ScVal::Timepoint(TimePoint(100)), None),
+            json!(100)
+        );
+        assert_eq!(
+            scval_to_json(&ScVal::Duration(Duration(50)), None),
+            json!(50)
+        );
     }
 
     #[test]
     fn symbol_and_string_become_utf8() {
         assert_eq!(scval_to_json(&sym("hello"), None), json!("hello"));
         assert_eq!(
-            scval_to_json(&ScVal::String(ScString(
-                StringM::try_from(b"world".to_vec()).unwrap()
-            )), None),
+            scval_to_json(
+                &ScVal::String(ScString(StringM::try_from(b"world".to_vec()).unwrap())),
+                None
+            ),
             json!("world")
         );
     }

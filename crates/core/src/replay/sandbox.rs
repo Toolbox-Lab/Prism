@@ -66,7 +66,11 @@ pub struct SandboxResult {
 const MEM_BYTES_CEILING: u64 = 500 * 1024 * 1024;
 
 #[allow(clippy::too_many_lines)]
-pub async fn execute_with_tracing(state: &LedgerState, tx_hash: &str, trace_id: TraceId) -> GratResult<SandboxResult> {
+pub async fn execute_with_tracing(
+    state: &LedgerState,
+    tx_hash: &str,
+    trace_id: TraceId,
+) -> GratResult<SandboxResult> {
     let inv = &state.invocation;
 
     let budget = Budget::try_from_configs(

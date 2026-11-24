@@ -149,7 +149,10 @@ fn render(frame: &mut Frame<'_>, state: &TuiState) {
     frame.render_widget(
         Paragraph::new(details)
             .wrap(Wrap { trim: true })
-            .block(panel("Invocation", state.selected_panel == Panel::Inspector)),
+            .block(panel(
+                "Invocation",
+                state.selected_panel == Panel::Inspector,
+            )),
         detail_sections[0],
     );
     inspector::render_inspector(

@@ -99,7 +99,10 @@ fn format_archive_path_for(
     let hex = format!("{checkpoint_seq:08x}");
     let sub_dir = format!("{}/{}/{}", &hex[0..2], &hex[2..4], &hex[4..6]);
     let cat = category.as_str();
-    format!("{cat}/{sub_dir}/{cat}-{hex}.xdr.{}", compression.extension())
+    format!(
+        "{cat}/{sub_dir}/{cat}-{hex}.xdr.{}",
+        compression.extension()
+    )
 }
 
 fn join_url(base: &str, path: &str) -> String {
@@ -278,11 +281,7 @@ impl ArchiveClient {
         .into())
     }
 
-    pub async fn fetch_ledger_entry(
-        &self,
-        ledger_sequence: u32,
-        key: &str,
-    ) -> GratResult<Vec<u8>> {
+    pub async fn fetch_ledger_entry(&self, ledger_sequence: u32, key: &str) -> GratResult<Vec<u8>> {
         use base64::Engine;
 
         let file = format!("ledger-entry-{ledger_sequence}-{key}");
@@ -293,12 +292,11 @@ impl ArchiveClient {
                 reason: format!("ledger key must be base64 encoded XDR: {e}"),
             })?;
         let mut key_input = Limited::new(key_bytes.as_slice(), Limits::none());
-        let wanted_key = LedgerKey::read_xdr(&mut key_input).map_err(|e| {
-            ArchiveErrorKind::MalformedXdr {
+        let wanted_key =
+            LedgerKey::read_xdr(&mut key_input).map_err(|e| ArchiveErrorKind::MalformedXdr {
                 file: file.clone(),
                 reason: format!("failed to decode ledger key: {e}"),
-            }
-        })?;
+            })?;
         if !key_input.inner.is_empty() {
             return Err(ArchiveErrorKind::MalformedXdr {
                 file,
@@ -306,12 +304,13 @@ impl ArchiveClient {
             }
             .into());
         }
-        let wanted_key_xdr = wanted_key.to_xdr(Limits::none()).map_err(|e| {
-            ArchiveErrorKind::MalformedXdr {
-                file: format!("ledger-entry-{ledger_sequence}-{key}"),
-                reason: format!("failed to encode ledger key: {e}"),
-            }
-        })?;
+        let wanted_key_xdr =
+            wanted_key
+                .to_xdr(Limits::none())
+                .map_err(|e| ArchiveErrorKind::MalformedXdr {
+                    file: format!("ledger-entry-{ledger_sequence}-{key}"),
+                    reason: format!("failed to encode ledger key: {e}"),
+                })?;
 
         let checkpoint_seq = get_checkpoint_seq(ledger_sequence);
         let mut last_error = None;
@@ -429,12 +428,14 @@ impl ArchiveClient {
             return Err(ArchiveErrorKind::FetchFailed {
                 file,
                 reason: "ledger key not found in checkpoint bucket list".to_string(),
-            }.into());
+            }
+            .into());
         }
         Err(ArchiveErrorKind::FetchFailed {
             file,
             reason: last_error.unwrap_or_else(|| "no archive URLs configured".to_string()),
-        }.into())
+        }
+        .into())
     }
 
     pub async fn get_ledger_header(&self, ledger_sequence: u32) -> GratResult<LedgerHeader> {
@@ -750,7 +751,11 @@ mod tests {
             "ledger/00/00/00/ledger-0000003f.xdr.xz"
         );
         assert_eq!(
-            format_archive_path_for(ArchiveCategory::Transactions, 65535, CompressionFormat::Gzip),
+            format_archive_path_for(
+                ArchiveCategory::Transactions,
+                65535,
+                CompressionFormat::Gzip
+            ),
             "transactions/00/00/ff/transactions-0000ffff.xdr.gz"
         );
         assert_eq!(
@@ -794,7 +799,9 @@ mod tests {
     fn test_decompress_gzip_payload() {
         let data = b"gzip payload";
         let compressed = gzip_compress(data);
-        let decompressed = CompressionFormat::Gzip.decompress(&compressed, "test.xdr.gz").unwrap();
+        let decompressed = CompressionFormat::Gzip
+            .decompress(&compressed, "test.xdr.gz")
+            .unwrap();
         assert_eq!(decompressed, data);
     }
 
@@ -802,7 +809,9 @@ mod tests {
     fn test_decompress_xz_payload() {
         let data = b"xz payload";
         let compressed = xz_compress(data);
-        let decompressed = CompressionFormat::Xz.decompress(&compressed, "test.xdr.xz").unwrap();
+        let decompressed = CompressionFormat::Xz
+            .decompress(&compressed, "test.xdr.xz")
+            .unwrap();
         assert_eq!(decompressed, data);
     }
 
@@ -811,10 +820,7 @@ mod tests {
         let err = CompressionFormat::Xz
             .decompress(b"definitely not xz", "test.xdr.xz")
             .unwrap_err();
-        assert!(matches!(
-            err,
-            ArchiveErrorKind::DecompressionFailed { .. }
-        ));
+        assert!(matches!(err, ArchiveErrorKind::DecompressionFailed { .. }));
     }
 
     #[tokio::test]
