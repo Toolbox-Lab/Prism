@@ -132,7 +132,9 @@ impl TaxonomyDatabase {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to parse taxonomy file '{name}': {e}");
+                    return Err(GratError::TaxonomyError(format!(
+                        "Failed to parse embedded taxonomy file '{name}': {e}"
+                    )));
                 }
             }
         }
