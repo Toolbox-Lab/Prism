@@ -331,6 +331,7 @@ mod tests {
                 .unwrap(),
         }));
         let spec = ContractSpec {
+            metadata: Default::default(),
             errors: vec![],
             functions: vec![],
             structs: vec![

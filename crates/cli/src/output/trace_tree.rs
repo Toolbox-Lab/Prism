@@ -323,6 +323,7 @@ mod tests {
         ExecutionTrace,
         ResourceProfile,
         StateDiff,
+        TraceId,
     };
     use termcolor::{ Buffer, ColorChoice };
 
@@ -343,6 +344,7 @@ mod tests {
     #[test]
     fn test_render_simple_tree() {
         let invocation = ContractInvocation {
+            trace_id: TraceId::new(),
             contract_id: "CB...123".to_string(),
             function_name: "transfer".to_string(),
             arguments: vec![
@@ -361,7 +363,8 @@ mod tests {
         let mut buffer = Buffer::no_color();
         render_contract_tree(&mut buffer, &invocation, "", true, 0).unwrap();
 
-        let output = String::from_utf8_lossy(&buffer.into_inner());
+        let bytes = buffer.into_inner();
+        let output = String::from_utf8_lossy(&bytes);
         assert!(output.contains("CB...123"));
         assert!(output.contains("transfer"));
         assert!(output.contains("[OK]"));
