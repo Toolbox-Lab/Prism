@@ -25,7 +25,8 @@ pub async fn replay_transaction(
 
     let state_diff = differ::compute_diff(&ledger_state, &raw_trace)?;
 
-    let profile = profiler::generate_profile(&raw_trace, &state_diff)?;
+    let profile =
+        profiler::generate_profile(&raw_trace, &state_diff, ledger_state.invocation.limits)?;
 
     let diagnostic_events = walk_diagnostic_events(&raw_trace.diagnostic_events)
         .into_iter()

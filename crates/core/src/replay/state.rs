@@ -1,10 +1,12 @@
 use crate::error::{GratError, GratResult};
 use crate::types::config::NetworkConfig;
+use crate::types::trace::ResourceLimits;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use stellar_xdr::curr::{
-    AccountId, ConfigSettingEntry, ConfigSettingId, ContractCostParams, FeeBumpTransactionInnerTx,
+    AccountId, ConfigSettingContractComputeV0, ConfigSettingContractLedgerCostV0,
+    ConfigSettingEntry, ConfigSettingId, ContractCostParams, FeeBumpTransactionInnerTx,
     InvokeHostFunctionOp, LedgerEntry, LedgerEntryData, LedgerKey, LedgerKeyConfigSetting, Limits,
     MuxedAccount, OperationBody, PublicKey, ReadXdr, StateArchivalSettings, Transaction,
     TransactionEnvelope, TransactionExt, TransactionV1Envelope, WriteXdr,
@@ -45,6 +47,10 @@ pub struct InvocationInput {
     /// consensus time; reused as the replay CPU ceiling so a successful mainnet
     /// transaction never gets cut short here.
     pub cpu_instructions_limit: u64,
+
+    /// Network per-transaction limits from the ledger's contract config
+    /// settings, used to contextualise resource usage in `grat profile`.
+    pub limits: ResourceLimits,
 }
 
 #[derive(Debug, Clone)]
@@ -152,15 +158,21 @@ async fn reconstruct_hot_path(
     let cpu_cost_key = config_setting_key(ConfigSettingId::ContractCostParamsCpuInstructions);
     let mem_cost_key = config_setting_key(ConfigSettingId::ContractCostParamsMemoryBytes);
     let archival_key = config_setting_key(ConfigSettingId::StateArchival);
+    let compute_key = config_setting_key(ConfigSettingId::ContractComputeV0);
+    let ledger_cost_key = config_setting_key(ConfigSettingId::ContractLedgerCostV0);
     let cpu_cost_key_b64 = encode_key(&cpu_cost_key)?;
     let mem_cost_key_b64 = encode_key(&mem_cost_key)?;
     let archival_key_b64 = encode_key(&archival_key)?;
+    let compute_key_b64 = encode_key(&compute_key)?;
+    let ledger_cost_key_b64 = encode_key(&ledger_cost_key)?;
 
     let mut all_keys = read_only_keys.clone();
     all_keys.extend(read_write_keys.iter().cloned());
     all_keys.push(cpu_cost_key_b64.clone());
     all_keys.push(mem_cost_key_b64.clone());
     all_keys.push(archival_key_b64.clone());
+    all_keys.push(compute_key_b64.clone());
+    all_keys.push(ledger_cost_key_b64.clone());
 
     let response = rpc.get_ledger_entries(&all_keys).await?;
     let entries_json = response
@@ -175,6 +187,8 @@ async fn reconstruct_hot_path(
     let mut cpu_cost_params: Option<ContractCostParams> = None;
     let mut mem_cost_params: Option<ContractCostParams> = None;
     let mut archival_settings: Option<StateArchivalSettings> = None;
+    let mut compute_settings: Option<ConfigSettingContractComputeV0> = None;
+    let mut ledger_cost_settings: Option<ConfigSettingContractLedgerCostV0> = None;
 
     for entry_json in entries_json {
         let key_b64 = entry_json.get("key").and_then(serde_json::Value::as_str);
@@ -226,6 +240,18 @@ async fn reconstruct_hot_path(
             {
                 archival_settings = Some(s);
             }
+        } else if key_b64 == compute_key_b64 {
+            if let LedgerEntryData::ConfigSetting(ConfigSettingEntry::ContractComputeV0(c)) =
+                ledger_entry.data
+            {
+                compute_settings = Some(c);
+            }
+        } else if key_b64 == ledger_cost_key_b64 {
+            if let LedgerEntryData::ConfigSetting(ConfigSettingEntry::ContractLedgerCostV0(c)) =
+                ledger_entry.data
+            {
+                ledger_cost_settings = Some(c);
+            }
         } else {
             if let Some(live_until) = entry_json
                 .get("liveUntilLedgerSeq")
@@ -255,6 +281,24 @@ async fn reconstruct_hot_path(
                 .to_string(),
         )
     })?;
+
+    // The compute/ledger-cost settings carry the per-transaction ceilings a
+    // mainnet transaction is validated against. They are optional here: a
+    // missing setting only means `grat profile` cannot show usage percentages.
+    let limits = ResourceLimits {
+        cpu_instructions: compute_settings.as_ref().map_or(0, |c| {
+            u64::try_from(c.tx_max_instructions.max(0)).unwrap_or(0)
+        }),
+        memory_bytes: compute_settings
+            .as_ref()
+            .map_or(0, |c| u64::from(c.tx_memory_limit)),
+        read_bytes: ledger_cost_settings
+            .as_ref()
+            .map_or(0, |c| u64::from(c.tx_max_read_bytes)),
+        write_bytes: ledger_cost_settings
+            .as_ref()
+            .map_or(0, |c| u64::from(c.tx_max_write_bytes)),
+    };
 
     let source_account = muxed_account_to_account_id(&tx.source_account);
     let host_function_xdr = encode_xdr(&invoke_op.host_function, "HostFunction")?;
@@ -296,6 +340,7 @@ async fn reconstruct_hot_path(
             min_persistent_entry_ttl: archival_settings.min_persistent_ttl,
             max_entry_ttl: archival_settings.max_entry_ttl,
             cpu_instructions_limit: u64::from(soroban_data.resources.instructions),
+            limits,
         },
     })
 }

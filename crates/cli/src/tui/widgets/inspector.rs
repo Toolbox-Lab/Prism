@@ -169,19 +169,19 @@ fn render_arg_summary(frame: &mut Frame, area: Rect, inv: &ContractInvocation) {
 
     let line = Line::from(vec![
         Span::styled("Args: ", Style::default().fg(Color::Gray)),
-        Span::styled(truncate(&args_display, 80), Style::default().fg(Color::White)),
+        Span::styled(
+            truncate(&args_display, 80),
+            Style::default().fg(Color::White),
+        ),
     ]);
 
     let para = Paragraph::new(line);
-    let summary_area = Rect {
-        height: 1,
-        ..area
-    };
+    let summary_area = Rect { height: 1, ..area };
     frame.render_widget(para, summary_area);
 }
 
 /// Build a coloured [`Row`] for a single [`LedgerEntryDiff`].
-fn build_row(entry: &LedgerEntryDiff) -> Row {
+fn build_row(entry: &LedgerEntryDiff) -> Row<'_> {
     let (label, row_style) = match entry.change_type {
         DiffChangeType::Created => (
             Span::styled("+ Added", Style::default().fg(Color::Green)),
@@ -221,12 +221,16 @@ fn build_row(entry: &LedgerEntryDiff) -> Row {
     ])
 }
 
-/// Truncate `s` to at most `max` bytes, appending `…` when shortened.
+/// Truncate `s` to at most `max` characters, appending `…` when shortened.
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    if s.chars().count() <= max {
         s.to_string()
+    } else if max == 0 {
+        String::new()
     } else {
-        format!("{}…", &s[..max.saturating_sub(1)])
+        let mut truncated: String = s.chars().take(max - 1).collect();
+        truncated.push('…');
+        truncated
     }
 }
 
@@ -251,7 +255,10 @@ mod tests {
     #[test]
     fn truncate_long_string() {
         let result = truncate("abcdefghij", 5);
-        assert!(result.len() <= 6, "truncated string should be short");
+        assert!(
+            result.chars().count() <= 5,
+            "truncated string should be no longer than the limit"
+        );
         assert!(result.ends_with('…'), "should end with ellipsis");
     }
 
@@ -293,14 +300,12 @@ mod tests {
     fn scroll_clamp() {
         // Scroll beyond the list length should not panic in real render;
         // here we just test the clamping arithmetic.
-        let diff = make_diff(vec![
-            LedgerEntryDiff {
-                key: "k1".to_string(),
-                before: None,
-                after: Some("v1".to_string()),
-                change_type: DiffChangeType::Created,
-            },
-        ]);
+        let diff = make_diff(vec![LedgerEntryDiff {
+            key: "k1".to_string(),
+            before: None,
+            after: Some("v1".to_string()),
+            change_type: DiffChangeType::Created,
+        }]);
         let visible: Vec<&LedgerEntryDiff> = diff
             .entries
             .iter()

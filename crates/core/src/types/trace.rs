@@ -77,9 +77,30 @@ pub struct StateDiff {
     pub entries: Vec<LedgerEntryDiff>,
 }
 
+/// Per-transaction resource ceilings from the ledger's `ConfigSettingEntry`
+/// contract, i.e. the network limits a transaction competes against. All zero
+/// when the settings could not be fetched, in which case percentages are
+/// reported as zero rather than fabricated.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResourceLimits {
+    pub cpu_instructions: u64,
+
+    pub memory_bytes: u64,
+
+    pub read_bytes: u64,
+
+    pub write_bytes: u64,
+}
+
+/// One host function aggregated across every call site, ranked by exclusive
+/// CPU cost (time spent in the host function itself, excluding host functions
+/// it called).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceHotspot {
     pub location: String,
+
+    #[serde(default)]
+    pub call_count: u64,
 
     pub cpu_instructions: u64,
 

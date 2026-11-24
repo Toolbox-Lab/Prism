@@ -57,12 +57,11 @@ pub struct SandboxResult {
     pub diagnostic_events: Vec<DiagnosticEvent>,
 }
 
-/// Generous fixed ceiling for the replay memory budget. Unlike the CPU
-/// instruction limit (which is taken directly from the transaction's own
-/// recorded `SorobanResources`, so it matches what actually ran at
-/// consensus), the network's exact per-transaction memory ceiling isn't
-/// fetched here — this only needs to sit comfortably above real usage so
-/// tracing is never cut short by an artificial memory limit.
+/// Generous fixed ceiling for the replay memory budget. The network's
+/// per-transaction memory limit is fetched for reporting (`ResourceLimits`),
+/// but is deliberately not reused as the replay ceiling: host versions differ
+/// slightly in their accounting, and the goal here is to never cut a trace
+/// short, not to re-validate the transaction.
 const MEM_BYTES_CEILING: u64 = 500 * 1024 * 1024;
 
 #[allow(clippy::too_many_lines)]

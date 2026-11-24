@@ -348,6 +348,12 @@ mod tests {
         ScSpecTypeDef, ScString, ScSymbol, ScVec, StringM, TimePoint,
     };
 
+    /// Spec-less rendering: the one-argument form the tests were written
+    /// against, before `scval_to_json` grew a `type_ref` parameter.
+    fn scval_to_json(val: &ScVal) -> serde_json::Value {
+        super::scval_to_json(val, None)
+    }
+
     fn sym(s: &str) -> ScVal {
         ScVal::Symbol(ScSymbol(StringM::try_from(s.as_bytes().to_vec()).unwrap()))
     }
