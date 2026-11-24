@@ -278,12 +278,7 @@ async fn stream_trace_replay(
             .diagnostic_events
             .iter()
             .enumerate()
-            .map(|(idx, event)| DiagnosticEventMessage {
-                event_type: event.event_type.clone(),
-                topics: event.topics.clone(),
-                data: event.data.clone(),
-                timeline_position: idx,
-            })
+            .map(|(idx, event)| diagnostic_event_message(event, idx))
             .collect();
         let _ = sender.send(TraceStreamMessage::DiagnosticEvents {
             events: diagnostic_messages,
@@ -295,4 +290,50 @@ async fn stream_trace_replay(
     });
 
     Ok(())
+}
+
+/// Render an XDR diagnostic event into the shape the web trace viewer expects.
+fn diagnostic_event_message(
+    event: &stellar_xdr::curr::DiagnosticEvent,
+    timeline_position: usize,
+) -> DiagnosticEventMessage {
+    use grat_core::decode::scval_to_json;
+    use stellar_xdr::curr::{ContractEventBody, ContractEventType, ScVal};
+
+    fn render(val: &ScVal) -> String {
+        match scval_to_json(val, None) {
+            serde_json::Value::String(s) => s,
+            other => other.to_string(),
+        }
+    }
+
+    let event_type = match event.event.type_ {
+        ContractEventType::System => "system",
+        ContractEventType::Contract => "contract",
+        ContractEventType::Diagnostic => "diagnostic",
+    }
+    .to_string();
+
+    let ContractEventBody::V0(body) = &event.event.body;
+    let topics = body.topics.iter().map(render).collect();
+
+    let mut data = std::collections::HashMap::new();
+    match &body.data {
+        ScVal::Map(Some(map)) => {
+            for entry in map.iter() {
+                data.insert(render(&entry.key), render(&entry.val));
+            }
+        }
+        ScVal::Void => {}
+        other => {
+            data.insert("value".to_string(), render(other));
+        }
+    }
+
+    DiagnosticEventMessage {
+        event_type,
+        topics,
+        data,
+        timeline_position,
+    }
 }

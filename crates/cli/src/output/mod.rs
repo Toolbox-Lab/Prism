@@ -12,6 +12,7 @@ pub mod human;
 pub mod json;
 pub mod renderers;
 pub mod theme;
+pub mod trace_tree;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -312,6 +313,7 @@ mod tests {
             state_diff: Default::default(),
             resource_profile: Default::default(),
             diagnostic_events: Vec::new(),
+            auth_chains: Vec::new(),
         }
     }
 
