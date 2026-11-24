@@ -306,6 +306,27 @@ mod tests {
     }
 
     #[test]
+    fn parses_diff_with_output_json_and_save_flags() {
+        let cli = Cli::try_parse_from([
+            "grat",
+            "--output",
+            "json",
+            "--save",
+            "diff.json",
+            "diff",
+            "0123456789abcdef",
+        ])
+        .expect("cli should parse diff with options");
+
+        assert_eq!(cli.output, "json");
+        assert_eq!(cli.save.as_deref(), Some("diff.json"));
+        match cli.command {
+            Commands::Diff(args) => assert_eq!(args.tx_hash, "0123456789abcdef"),
+            _ => panic!("expected diff command"),
+        }
+    }
+
+    #[test]
     fn parses_save_flag_for_trace() {
         let tx_hash = "a".repeat(64);
         let cli = Cli::try_parse_from(["grat", "--save", "report.json", "trace", &tx_hash])

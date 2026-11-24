@@ -278,11 +278,21 @@ async fn stream_trace_replay(
             .diagnostic_events
             .iter()
             .enumerate()
-            .map(|(idx, event)| DiagnosticEventMessage {
-                event_type: event.event_type.clone(),
-                topics: event.topics.clone(),
-                data: event.data.clone(),
-                timeline_position: idx,
+            .map(|(idx, event)| {
+                let (topics, data) = match &event.event.body {
+                    stellar_xdr::curr::ContractEventBody::V0(v0) => {
+                        let topics = v0.topics.iter().map(|t| format!("{t:?}")).collect();
+                        let mut map = std::collections::HashMap::new();
+                        map.insert("raw".to_string(), format!("{:?}", v0.data));
+                        (topics, map)
+                    }
+                };
+                DiagnosticEventMessage {
+                    event_type: format!("{:?}", event.event.type_),
+                    topics,
+                    data,
+                    timeline_position: idx,
+                }
             })
             .collect();
         let _ = sender.send(TraceStreamMessage::DiagnosticEvents {

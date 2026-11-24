@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn truncate_long_string() {
         let result = truncate("abcdefghij", 5);
-        assert!(result.len() <= 6, "truncated string should be short");
+        assert!(result.chars().count() <= 5, "truncated string should be short");
         assert!(result.ends_with('…'), "should end with ellipsis");
     }
 

@@ -12,6 +12,7 @@ pub mod human;
 pub mod json;
 pub mod renderers;
 pub mod theme;
+pub mod trace_tree;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -312,6 +313,7 @@ mod tests {
             state_diff: Default::default(),
             resource_profile: Default::default(),
             diagnostic_events: Vec::new(),
+            auth_chains: Vec::new(),
         }
     }
 
@@ -348,5 +350,40 @@ mod tests {
 
         let none = whatif_json(&whatif_result(None), 1);
         assert!(none["divergence_point"].is_null());
+    }
+
+    #[test]
+    fn state_diff_summary_counts_changes_correctly() {
+        use super::format_state_diff_summary;
+        use grat_core::types::trace::{DiffChangeType, LedgerEntryDiff, StateDiff};
+
+        let diff = StateDiff {
+            entries: vec![
+                LedgerEntryDiff {
+                    key: "k1".into(),
+                    before: None,
+                    after: Some("v1".into()),
+                    change_type: DiffChangeType::Created,
+                },
+                LedgerEntryDiff {
+                    key: "k2".into(),
+                    before: Some("v2a".into()),
+                    after: Some("v2b".into()),
+                    change_type: DiffChangeType::Updated,
+                },
+                LedgerEntryDiff {
+                    key: "k3".into(),
+                    before: Some("v3".into()),
+                    after: None,
+                    change_type: DiffChangeType::Deleted,
+                },
+            ],
+        };
+
+        let summary = format_state_diff_summary(&diff);
+        assert_eq!(
+            summary,
+            "Status: Complete | Changes: 3 | Created: 1 | Updated: 1 | Deleted: 1"
+        );
     }
 }

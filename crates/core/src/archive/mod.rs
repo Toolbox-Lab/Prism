@@ -4,7 +4,8 @@ use flate2::read::GzDecoder;
 use std::io::Read;
 use std::path::Path;
 use stellar_xdr::curr::{
-    BucketEntry, LedgerHeader, LedgerHeaderHistoryEntry, LedgerKey, Limits, ReadXdr, WriteXdr,
+    BucketEntry, LedgerEntry, LedgerHeader, LedgerHeaderHistoryEntry, LedgerKey, Limited, Limits,
+    ReadXdr, WriteXdr,
 };
 
 #[derive(Debug)]
@@ -247,13 +248,14 @@ impl ArchiveClient {
                 reason: format!("ledger key must be base64 encoded XDR: {e}"),
             })?;
         let mut key_input = key_bytes.as_slice();
-        let wanted_key = LedgerKey::read_xdr(&mut key_input, Limits::none()).map_err(|e| {
+        let mut limited_key = Limited::new(&mut key_input, Limits::none());
+        let wanted_key = LedgerKey::read_xdr(&mut limited_key).map_err(|e| {
             ArchiveErrorKind::MalformedXdr {
                 file: file.clone(),
                 reason: format!("failed to decode ledger key: {e}"),
             }
         })?;
-        if !key_input.is_empty() {
+        if !limited_key.inner.is_empty() {
             return Err(ArchiveErrorKind::MalformedXdr {
                 file,
                 reason: "ledger key contains trailing bytes".to_string(),
@@ -344,8 +346,9 @@ impl ArchiveClient {
                         }
                     };
                 let mut stream = bytes.as_slice();
-                while !stream.is_empty() {
-                    let entry = BucketEntry::read_xdr(&mut stream, Limits::none()).map_err(|e| {
+                let mut limited_stream = Limited::new(&mut stream, Limits::none());
+                while !limited_stream.inner.is_empty() {
+                    let entry = BucketEntry::read_xdr(&mut limited_stream).map_err(|e| {
                         ArchiveErrorKind::MalformedXdr {
                             file: bucket_path.clone(),
                             reason: format!("failed to decode bucket entry: {e}"),
@@ -353,7 +356,7 @@ impl ArchiveClient {
                     })?;
                     match entry {
                         BucketEntry::Liveentry(entry) | BucketEntry::Initentry(entry) => {
-                            let entry_key = LedgerKey::from(&entry);
+                            let entry_key = ledger_entry_to_key(&entry);
                             if entry_key.to_xdr(Limits::none()).ok().as_deref()
                                 == Some(&wanted_key_xdr)
                             {
@@ -507,6 +510,66 @@ pub fn parse_ledger_header_stream(
     }
 
     Ok(entries)
+}
+
+fn ledger_entry_to_key(entry: &LedgerEntry) -> LedgerKey {
+    match &entry.data {
+        stellar_xdr::curr::LedgerEntryData::Account(e) => {
+            LedgerKey::Account(stellar_xdr::curr::LedgerKeyAccount {
+                account_id: e.account_id.clone(),
+            })
+        }
+        stellar_xdr::curr::LedgerEntryData::Trustline(e) => {
+            LedgerKey::Trustline(stellar_xdr::curr::LedgerKeyTrustLine {
+                account_id: e.account_id.clone(),
+                asset: e.asset.clone(),
+            })
+        }
+        stellar_xdr::curr::LedgerEntryData::Offer(e) => {
+            LedgerKey::Offer(stellar_xdr::curr::LedgerKeyOffer {
+                seller_id: e.seller_id.clone(),
+                offer_id: e.offer_id,
+            })
+        }
+        stellar_xdr::curr::LedgerEntryData::Data(e) => {
+            LedgerKey::Data(stellar_xdr::curr::LedgerKeyData {
+                account_id: e.account_id.clone(),
+                data_name: e.data_name.clone(),
+            })
+        }
+        stellar_xdr::curr::LedgerEntryData::ClaimableBalance(e) => {
+            LedgerKey::ClaimableBalance(stellar_xdr::curr::LedgerKeyClaimableBalance {
+                balance_id: e.balance_id.clone(),
+            })
+        }
+        stellar_xdr::curr::LedgerEntryData::LiquidityPool(e) => {
+            LedgerKey::LiquidityPool(stellar_xdr::curr::LedgerKeyLiquidityPool {
+                liquidity_pool_id: e.liquidity_pool_id.clone(),
+            })
+        }
+        stellar_xdr::curr::LedgerEntryData::ContractData(e) => {
+            LedgerKey::ContractData(stellar_xdr::curr::LedgerKeyContractData {
+                contract: e.contract.clone(),
+                key: e.key.clone(),
+                durability: e.durability,
+            })
+        }
+        stellar_xdr::curr::LedgerEntryData::ContractCode(e) => {
+            LedgerKey::ContractCode(stellar_xdr::curr::LedgerKeyContractCode {
+                hash: e.hash.clone(),
+            })
+        }
+        stellar_xdr::curr::LedgerEntryData::ConfigSetting(e) => {
+            LedgerKey::ConfigSetting(stellar_xdr::curr::LedgerKeyConfigSetting {
+                config_setting_id: e.discriminant(),
+            })
+        }
+        stellar_xdr::curr::LedgerEntryData::Ttl(e) => {
+            LedgerKey::Ttl(stellar_xdr::curr::LedgerKeyTtl {
+                key_hash: e.key_hash.clone(),
+            })
+        }
+    }
 }
 
 fn get_checkpoint_seq(ledger_sequence: u32) -> u32 {
