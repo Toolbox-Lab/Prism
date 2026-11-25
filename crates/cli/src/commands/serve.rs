@@ -222,7 +222,9 @@ async fn stream_trace_replay(
 
     let trace_id = grat_core::types::trace::TraceId::new();
     let result =
-        match grat_core::replay::sandbox::execute_with_tracing(&ledger_state, tx_hash, trace_id).await {
+        match grat_core::replay::sandbox::execute_with_tracing(&ledger_state, tx_hash, trace_id)
+            .await
+        {
             Ok(r) => r,
             Err(e) => {
                 let _ = sender.send(TraceStreamMessage::TraceError {
@@ -274,17 +276,16 @@ async fn stream_trace_replay(
     }
 
     if !result.diagnostic_events.is_empty() {
-        let diagnostic_messages: Vec<DiagnosticEventMessage> = result
-            .diagnostic_events
-            .iter()
-            .enumerate()
-            .map(|(idx, event)| DiagnosticEventMessage {
-                event_type: event.event_type.clone(),
-                topics: event.topics.clone(),
-                data: event.data.clone(),
-                timeline_position: idx,
-            })
-            .collect();
+        let diagnostic_messages: Vec<DiagnosticEventMessage> =
+            grat_core::replay::structure_diagnostic_events(&result.diagnostic_events)
+                .into_iter()
+                .map(|event| DiagnosticEventMessage {
+                    event_type: event.event_type,
+                    topics: event.topics,
+                    data: event.data,
+                    timeline_position: event.timeline_position,
+                })
+                .collect();
         let _ = sender.send(TraceStreamMessage::DiagnosticEvents {
             events: diagnostic_messages,
         });

@@ -874,7 +874,7 @@ mod tests {
 
         let exposition = crate::rpc::gather_rpc_metrics();
         assert!(
-            exposition.contains("rpc_http_errors_total"),
+            exposition.contains("soroban_rpc_errors_total"),
             "error counter missing from exposition:\n{exposition}"
         );
         // At least one of the tracked statuses should appear.

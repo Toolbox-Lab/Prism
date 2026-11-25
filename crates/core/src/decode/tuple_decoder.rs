@@ -6,7 +6,10 @@ use stellar_xdr::curr::{ScSpecTypeDef, ScVal, ScVec};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TupleDecodeError {
     ExpectedVec,
-    LengthMismatch { expected: usize, actual: usize },
+    LengthMismatch {
+        expected: usize,
+        actual: usize,
+    },
     TypeMismatch {
         index: usize,
         expected: String,
