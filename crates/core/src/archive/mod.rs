@@ -1,11 +1,16 @@
 use crate::error::{ArchiveErrorKind, GratError, GratResult};
 use crate::network::NetworkConfig;
-use flate2::read::GzDecoder;
-use std::io::Read;
+use std::io::Write;
 use std::path::Path;
+use std::time::Duration;
 use stellar_xdr::curr::{
-    BucketEntry, LedgerHeader, LedgerHeaderHistoryEntry, LedgerKey, Limits, ReadXdr, WriteXdr,
+    BucketEntry, LedgerHeader, LedgerHeaderHistoryEntry, LedgerKey, Limits, Limited, ReadXdr,
+    TransactionHistoryEntry, WriteXdr,
 };
+
+const MAX_RETRIES: u32 = 3;
+const RETRY_BASE_DELAY_MS: u64 = 100;
+const RETRY_MAX_DELAY_MS: u64 = 5_000;
 
 #[derive(Debug)]
 pub struct ArchiveClient {
@@ -26,6 +31,7 @@ pub struct ArchiveCheckpoint {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveCategory {
+    History,
     Ledger,
     Transactions,
     Results,
@@ -34,10 +40,16 @@ pub enum ArchiveCategory {
 impl ArchiveCategory {
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::History => "history",
             Self::Ledger => "ledger",
             Self::Transactions => "transactions",
             Self::Results => "results",
         }
+    }
+
+    /// Whether this category is stored as an XDR stream (rather than JSON history state).
+    const fn is_xdr(self) -> bool {
+        !matches!(self, Self::History)
     }
 }
 
@@ -53,7 +65,11 @@ fn format_archive_path_for(
     let hex = format!("{checkpoint_seq:08x}");
     let sub_dir = format!("{}/{}/{}", &hex[0..2], &hex[2..4], &hex[4..6]);
     let cat = category.as_str();
-    format!("{cat}/{sub_dir}/{cat}-{hex}.xdr.{}", compression.extension())
+    if category.is_xdr() {
+        format!("{cat}/{sub_dir}/{cat}-{hex}.xdr.{}", compression.extension())
+    } else {
+        format!("{cat}/{sub_dir}/{cat}-{hex}.json")
+    }
 }
 
 fn join_url(base: &str, path: &str) -> String {
@@ -91,12 +107,75 @@ impl CompressionFormat {
         }
     }
 
+    /// Decompresses an in-memory compressed payload.
+    #[cfg(test)]
     fn decompress(self, bytes: &[u8], file_name: &str) -> Result<Vec<u8>, ArchiveErrorKind> {
+        use std::io::Read;
+
+        let mut decompressed = Vec::new();
+        let result = match self {
+            Self::Gzip => flate2::read::GzDecoder::new(bytes).read_to_end(&mut decompressed),
+            Self::Xz => xz2::read::XzDecoder::new(bytes).read_to_end(&mut decompressed),
+        };
+        result.map_err(|e| ArchiveErrorKind::DecompressionFailed {
+            file: file_name.to_string(),
+            reason: e.to_string(),
+        })?;
+        Ok(decompressed)
+    }
+
+    /// Decompresses an HTTP response incrementally: each chunk is fed to the decoder
+    /// as soon as it arrives rather than buffering the whole compressed body first.
+    async fn decompress_stream(
+        self,
+        mut response: reqwest::Response,
+        file_name: &str,
+    ) -> Result<Vec<u8>, ArchiveErrorKind> {
         let mut decompressed = Vec::new();
 
-        let result = match self {
-            Self::Gzip => GzDecoder::new(bytes).read_to_end(&mut decompressed),
-            Self::Xz => xz2::read::XzDecoder::new(bytes).read_to_end(&mut decompressed),
+        let result: std::io::Result<()> = match self {
+            Self::Gzip => {
+                let mut decoder = flate2::write::GzDecoder::new(&mut decompressed);
+                let mut result = Ok(());
+                loop {
+                    let chunk = response.chunk().await.map_err(|e| {
+                        ArchiveErrorKind::FetchFailed {
+                            file: file_name.to_string(),
+                            reason: format!("failed to read response chunk: {e}"),
+                        }
+                    })?;
+                    let Some(chunk) = chunk else { break };
+                    if let Err(e) = decoder.write_all(&chunk) {
+                        result = Err(e);
+                        break;
+                    }
+                }
+                if result.is_ok() {
+                    result = decoder.finish().map(|_| ());
+                }
+                result
+            }
+            Self::Xz => {
+                let mut decoder = xz2::write::XzDecoder::new(&mut decompressed);
+                let mut result = Ok(());
+                loop {
+                    let chunk = response.chunk().await.map_err(|e| {
+                        ArchiveErrorKind::FetchFailed {
+                            file: file_name.to_string(),
+                            reason: format!("failed to read response chunk: {e}"),
+                        }
+                    })?;
+                    let Some(chunk) = chunk else { break };
+                    if let Err(e) = decoder.write_all(&chunk) {
+                        result = Err(e);
+                        break;
+                    }
+                }
+                if result.is_ok() {
+                    result = decoder.finish().map(|_| ());
+                }
+                result
+            }
         };
 
         result.map_err(|e| ArchiveErrorKind::DecompressionFailed {
@@ -108,7 +187,21 @@ impl CompressionFormat {
     }
 }
 
-async fn fetch_and_decompress(
+fn is_retryable(error: &ArchiveErrorKind) -> bool {
+    match error {
+        ArchiveErrorKind::FetchFailed { reason, .. } => {
+            !reason.starts_with("HTTP status 4") || reason.starts_with("HTTP status 429")
+        }
+        _ => false,
+    }
+}
+
+fn retry_delay(attempt: u32) -> Duration {
+    let shift = attempt.min(16);
+    Duration::from_millis(RETRY_BASE_DELAY_MS.saturating_mul(1u64 << shift).min(RETRY_MAX_DELAY_MS))
+}
+
+async fn fetch_and_decompress_once(
     client: &reqwest::Client,
     url: &str,
     file_name: &str,
@@ -129,15 +222,69 @@ async fn fetch_and_decompress(
         });
     }
 
-    let bytes = response
-        .bytes()
+    CompressionFormat::from_url(url)
+        .decompress_stream(response, file_name)
+        .await
+}
+
+async fn fetch_and_decompress(
+    client: &reqwest::Client,
+    url: &str,
+    file_name: &str,
+) -> Result<Vec<u8>, ArchiveErrorKind> {
+    let mut last_error = None;
+
+    for attempt in 0..=MAX_RETRIES {
+        match fetch_and_decompress_once(client, url, file_name).await {
+            Ok(bytes) => return Ok(bytes),
+            Err(error) => {
+                if !is_retryable(&error) {
+                    return Err(error);
+                }
+                tracing::warn!(%url, attempt, %error, "archive fetch failed; retrying");
+                last_error = Some(error);
+                if attempt < MAX_RETRIES {
+                    tokio::time::sleep(retry_delay(attempt)).await;
+                }
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| ArchiveErrorKind::FetchFailed {
+        file: file_name.to_string(),
+        reason: "fetch failed after retries".to_string(),
+    }))
+}
+
+async fn fetch_raw(
+    client: &reqwest::Client,
+    url: &str,
+    file_name: &str,
+) -> Result<Vec<u8>, ArchiveErrorKind> {
+    let response = client
+        .get(url)
+        .send()
         .await
         .map_err(|e| ArchiveErrorKind::FetchFailed {
             file: file_name.to_string(),
-            reason: format!("failed to read response bytes: {e}"),
+            reason: e.to_string(),
         })?;
 
-    CompressionFormat::from_url(url).decompress(&bytes, file_name)
+    if !response.status().is_success() {
+        return Err(ArchiveErrorKind::FetchFailed {
+            file: file_name.to_string(),
+            reason: format!("HTTP status {}", response.status()),
+        });
+    }
+
+    response
+        .bytes()
+        .await
+        .map(|bytes| bytes.to_vec())
+        .map_err(|e| ArchiveErrorKind::FetchFailed {
+            file: file_name.to_string(),
+            reason: format!("failed to read response bytes: {e}"),
+        })
 }
 
 impl ArchiveClient {
@@ -246,14 +393,14 @@ impl ArchiveClient {
                 file: file.clone(),
                 reason: format!("ledger key must be base64 encoded XDR: {e}"),
             })?;
-        let mut key_input = key_bytes.as_slice();
-        let wanted_key = LedgerKey::read_xdr(&mut key_input, Limits::none()).map_err(|e| {
+        let mut key_input = Limited::new(key_bytes.as_slice(), Limits::none());
+        let wanted_key = LedgerKey::read_xdr(&mut key_input).map_err(|e| {
             ArchiveErrorKind::MalformedXdr {
                 file: file.clone(),
                 reason: format!("failed to decode ledger key: {e}"),
             }
         })?;
-        if !key_input.is_empty() {
+        if !key_input.inner.is_empty() {
             return Err(ArchiveErrorKind::MalformedXdr {
                 file,
                 reason: "ledger key contains trailing bytes".to_string(),
@@ -270,7 +417,7 @@ impl ArchiveClient {
         let checkpoint_seq = get_checkpoint_seq(ledger_sequence);
         let mut last_error = None;
         for base_url in &self.archive_urls {
-            let history_path = format_history_path(checkpoint_seq);
+            let history_path = format_archive_path(ArchiveCategory::History, checkpoint_seq);
             let history_url = join_url(base_url, &history_path);
             let history_bytes = match self.client.get(&history_url).send().await {
                 Ok(response) if response.status().is_success() => match response.bytes().await {
@@ -343,9 +490,9 @@ impl ArchiveClient {
                             break;
                         }
                     };
-                let mut stream = bytes.as_slice();
-                while !stream.is_empty() {
-                    let entry = BucketEntry::read_xdr(&mut stream, Limits::none()).map_err(|e| {
+                let mut stream = Limited::new(bytes.as_slice(), Limits::none());
+                while !stream.inner.is_empty() {
+                    let entry = BucketEntry::read_xdr(&mut stream).map_err(|e| {
                         ArchiveErrorKind::MalformedXdr {
                             file: bucket_path.clone(),
                             reason: format!("failed to decode bucket entry: {e}"),
@@ -353,7 +500,7 @@ impl ArchiveClient {
                     })?;
                     match entry {
                         BucketEntry::Liveentry(entry) | BucketEntry::Initentry(entry) => {
-                            let entry_key = LedgerKey::from(&entry);
+                            let entry_key = ledger_entry_key(&entry);
                             if entry_key.to_xdr(Limits::none()).ok().as_deref()
                                 == Some(&wanted_key_xdr)
                             {
@@ -391,11 +538,55 @@ impl ArchiveClient {
         }.into())
     }
 
-    pub async fn get_ledger_header(&self, ledger_sequence: u32) -> GratResult<LedgerHeader> {
-        let checkpoint = self.fetch_checkpoint(ledger_sequence).await?;
+    /// Fetches a single checkpoint category, trying each configured mirror and both
+    /// compression formats in turn. JSON history state is returned as-is; XDR categories
+    /// are decompressed on the fly.
+    pub async fn fetch_category(
+        &self,
+        category: ArchiveCategory,
+        ledger_sequence: u32,
+    ) -> GratResult<Vec<u8>> {
         let checkpoint_seq = get_checkpoint_seq(ledger_sequence);
-        let checkpoint_file = format!("checkpoint-{}", checkpoint_seq);
-        let entries = parse_ledger_header_stream(&checkpoint.ledger_header, &checkpoint_file)?;
+        let mut last_error = None;
+        let compression_formats: &[CompressionFormat] = if category.is_xdr() {
+            &[CompressionFormat::Gzip, CompressionFormat::Xz]
+        } else {
+            &[CompressionFormat::Gzip]
+        };
+
+        for base_url in &self.archive_urls {
+            for &compression in compression_formats {
+                let path = format_archive_path_for(category, checkpoint_seq, compression);
+                let url = join_url(base_url, &path);
+                let result = if category.is_xdr() {
+                    fetch_and_decompress(&self.client, &url, &path).await
+                } else {
+                    fetch_raw(&self.client, &url, &path).await
+                };
+                match result {
+                    Ok(bytes) => return Ok(bytes),
+                    Err(e) => last_error = Some(e),
+                }
+            }
+        }
+
+        Err(ArchiveErrorKind::FetchFailed {
+            file: format!("{}-{checkpoint_seq:08x}", category.as_str()),
+            reason: last_error.map_or_else(
+                || "no archive URLs configured".to_string(),
+                |error| error.to_string(),
+            ),
+        }
+        .into())
+    }
+
+    pub async fn get_ledger_header(&self, ledger_sequence: u32) -> GratResult<LedgerHeader> {
+        let ledger_bytes = self
+            .fetch_category(ArchiveCategory::Ledger, ledger_sequence)
+            .await?;
+        let checkpoint_seq = get_checkpoint_seq(ledger_sequence);
+        let checkpoint_file = format!("checkpoint-{checkpoint_seq}");
+        let entries = parse_ledger_header_stream(&ledger_bytes, &checkpoint_file)?;
 
         for entry in entries {
             if entry.header.ledger_seq == ledger_sequence {
@@ -409,16 +600,20 @@ impl ArchiveClient {
         }
         .into())
     }
-}
 
-fn format_history_path(checkpoint_seq: u32) -> String {
-    let hex = format!("{checkpoint_seq:08x}");
-    format!(
-        "history/{}/{}/{}/history-{hex}.json",
-        &hex[0..2],
-        &hex[2..4],
-        &hex[4..6]
-    )
+    /// Fetches and parses the transaction history entries for the checkpoint that
+    /// contains `ledger_sequence`.
+    pub async fn get_transaction_history(
+        &self,
+        ledger_sequence: u32,
+    ) -> GratResult<Vec<TransactionHistoryEntry>> {
+        let transaction_bytes = self
+            .fetch_category(ArchiveCategory::Transactions, ledger_sequence)
+            .await?;
+        let checkpoint_seq = get_checkpoint_seq(ledger_sequence);
+        let checkpoint_file = format!("checkpoint-{checkpoint_seq}");
+        parse_transaction_history_stream(&transaction_bytes, &checkpoint_file)
+    }
 }
 
 fn format_bucket_path(hash: &str) -> String {
@@ -430,18 +625,74 @@ fn format_bucket_path(hash: &str) -> String {
     )
 }
 
-/// Parses a stream of XDR-encoded `LedgerHeaderHistoryEntry` records using RFC 5531 Record Marking format.
+fn ledger_entry_key(entry: &stellar_xdr::curr::LedgerEntry) -> LedgerKey {
+    use stellar_xdr::curr::{
+        ConfigSettingEntry, LedgerEntryData, LedgerKeyAccount, LedgerKeyClaimableBalance,
+        LedgerKeyContractCode, LedgerKeyContractData, LedgerKeyData, LedgerKeyLiquidityPool,
+        LedgerKeyOffer, LedgerKeyTrustLine, LedgerKeyTtl,
+    };
+
+    match &entry.data {
+        LedgerEntryData::Account(e) => LedgerKey::Account(LedgerKeyAccount {
+            account_id: e.account_id.clone(),
+        }),
+        LedgerEntryData::Trustline(e) => LedgerKey::Trustline(LedgerKeyTrustLine {
+            account_id: e.account_id.clone(),
+            asset: e.asset.clone(),
+        }),
+        LedgerEntryData::Offer(e) => LedgerKey::Offer(LedgerKeyOffer {
+            seller_id: e.seller_id.clone(),
+            offer_id: e.offer_id,
+        }),
+        LedgerEntryData::Data(e) => LedgerKey::Data(LedgerKeyData {
+            account_id: e.account_id.clone(),
+            data_name: e.data_name.clone(),
+        }),
+        LedgerEntryData::ClaimableBalance(e) => {
+            LedgerKey::ClaimableBalance(LedgerKeyClaimableBalance {
+                balance_id: e.balance_id.clone(),
+            })
+        }
+        LedgerEntryData::LiquidityPool(e) => LedgerKey::LiquidityPool(LedgerKeyLiquidityPool {
+            liquidity_pool_id: e.liquidity_pool_id.clone(),
+        }),
+        LedgerEntryData::ContractData(e) => LedgerKey::ContractData(LedgerKeyContractData {
+            contract: e.contract.clone(),
+            key: e.key.clone(),
+            durability: e.durability,
+        }),
+        LedgerEntryData::ContractCode(e) => LedgerKey::ContractCode(LedgerKeyContractCode {
+            hash: e.hash.clone(),
+        }),
+        LedgerEntryData::ConfigSetting(e) => {
+            LedgerKey::ConfigSetting(stellar_xdr::curr::LedgerKeyConfigSetting {
+                config_setting_id: ConfigSettingEntry::discriminant(e),
+            })
+        }
+        LedgerEntryData::Ttl(e) => LedgerKey::Ttl(LedgerKeyTtl {
+            key_hash: e.key_hash.clone(),
+        }),
+    }
+}
+
+/// Parses RFC 5531 record-marked XDR entries of type `T`.
 ///
 /// Each record fragment is preceded by a 4-byte header:
 /// - Highest bit (0x8000_0000): 1 if this fragment is the final fragment of a record, 0 otherwise.
 /// - Lower 31 bits (0x7FFF_FFFF): length of the fragment payload in bytes.
-pub fn parse_ledger_header_stream(
+fn parse_xdr_record_stream<T: ReadXdr>(
     bytes: &[u8],
     file_name: &str,
-) -> GratResult<Vec<LedgerHeaderHistoryEntry>> {
+    type_name: &str,
+) -> GratResult<Vec<T>> {
     let mut cursor = bytes;
     let mut entries = Vec::new();
     let mut record_buf = Vec::new();
+
+    let decode_error = |e: stellar_xdr::curr::Error| ArchiveErrorKind::MalformedXdr {
+        file: file_name.to_string(),
+        reason: format!("failed to decode {type_name}: {e}"),
+    };
 
     while !cursor.is_empty() {
         if cursor.len() < 4 {
@@ -477,21 +728,13 @@ pub fn parse_ledger_header_stream(
         cursor = rest;
 
         if is_last && record_buf.is_empty() {
-            let entry = LedgerHeaderHistoryEntry::from_xdr(fragment_bytes, Limits::none())
-                .map_err(|e| ArchiveErrorKind::MalformedXdr {
-                    file: file_name.to_string(),
-                    reason: format!("failed to decode LedgerHeaderHistoryEntry: {e}"),
-                })?;
+            let entry = T::from_xdr(fragment_bytes, Limits::none()).map_err(decode_error)?;
             entries.push(entry);
         } else {
             record_buf.extend_from_slice(fragment_bytes);
 
             if is_last {
-                let entry = LedgerHeaderHistoryEntry::from_xdr(&record_buf, Limits::none())
-                    .map_err(|e| ArchiveErrorKind::MalformedXdr {
-                        file: file_name.to_string(),
-                        reason: format!("failed to decode LedgerHeaderHistoryEntry: {e}"),
-                    })?;
+                let entry = T::from_xdr(&record_buf, Limits::none()).map_err(decode_error)?;
                 entries.push(entry);
                 record_buf.clear();
             }
@@ -507,6 +750,22 @@ pub fn parse_ledger_header_stream(
     }
 
     Ok(entries)
+}
+
+/// Parses a stream of XDR-encoded `LedgerHeaderHistoryEntry` records using RFC 5531 Record Marking format.
+pub fn parse_ledger_header_stream(
+    bytes: &[u8],
+    file_name: &str,
+) -> GratResult<Vec<LedgerHeaderHistoryEntry>> {
+    parse_xdr_record_stream(bytes, file_name, "LedgerHeaderHistoryEntry")
+}
+
+/// Parses a stream of XDR-encoded `TransactionHistoryEntry` records using RFC 5531 Record Marking format.
+pub fn parse_transaction_history_stream(
+    bytes: &[u8],
+    file_name: &str,
+) -> GratResult<Vec<TransactionHistoryEntry>> {
+    parse_xdr_record_stream(bytes, file_name, "TransactionHistoryEntry")
 }
 
 fn get_checkpoint_seq(ledger_sequence: u32) -> u32 {
@@ -1180,5 +1439,181 @@ mod tests {
             err,
             GratError::ConfigError(ref msg) if msg.contains("timeout")
         ));
+    }
+
+    #[test]
+    fn test_history_category_path_formatting() {
+        assert_eq!(
+            format_archive_path(ArchiveCategory::History, 63),
+            "history/00/00/00/history-0000003f.json"
+        );
+        assert_eq!(
+            format_archive_path(ArchiveCategory::History, 65535),
+            "history/00/00/ff/history-0000ffff.json"
+        );
+        assert_eq!(ArchiveCategory::History.as_str(), "history");
+        assert!(!ArchiveCategory::History.is_xdr());
+        assert!(ArchiveCategory::Ledger.is_xdr());
+    }
+
+    #[test]
+    fn test_parse_transaction_history_stream() {
+        use stellar_xdr::curr::{TransactionHistoryEntryExt, TransactionSet};
+
+        let make_tx_entry = |seq: u32| TransactionHistoryEntry {
+            ledger_seq: seq,
+            tx_set: TransactionSet {
+                previous_ledger_hash: Hash([0; 32]),
+                txs: vec![].try_into().unwrap(),
+            },
+            ext: TransactionHistoryEntryExt::V0,
+        };
+
+        let mut stream = Vec::new();
+        for seq in [64, 65] {
+            let xdr = make_tx_entry(seq).to_xdr(Limits::none()).unwrap();
+            stream.extend(frame_record(&xdr, true));
+        }
+
+        let entries = parse_transaction_history_stream(&stream, "tx.xdr").unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].ledger_seq, 64);
+        assert_eq!(entries[1].ledger_seq, 65);
+    }
+
+    #[test]
+    fn test_parse_transaction_history_stream_multi_fragment() {
+        use stellar_xdr::curr::{TransactionHistoryEntryExt, TransactionSet};
+
+        let entry = TransactionHistoryEntry {
+            ledger_seq: 128,
+            tx_set: TransactionSet {
+                previous_ledger_hash: Hash([1; 32]),
+                txs: vec![].try_into().unwrap(),
+            },
+            ext: TransactionHistoryEntryExt::V0,
+        };
+        let xdr = entry.to_xdr(Limits::none()).unwrap();
+        let mid = xdr.len() / 2;
+        let mut stream = frame_record(&xdr[..mid], false);
+        stream.extend(frame_record(&xdr[mid..], true));
+
+        let entries = parse_transaction_history_stream(&stream, "tx.xdr").unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].ledger_seq, 128);
+    }
+
+    #[test]
+    fn test_retry_delay_backoff() {
+        assert_eq!(retry_delay(0), Duration::from_millis(100));
+        assert_eq!(retry_delay(1), Duration::from_millis(200));
+        assert_eq!(retry_delay(2), Duration::from_millis(400));
+        assert_eq!(retry_delay(3), Duration::from_millis(800));
+        assert_eq!(retry_delay(20), Duration::from_millis(RETRY_MAX_DELAY_MS));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_retries_on_server_error() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_clone = attempts.clone();
+        let payload = gzip_compress(b"eventually available");
+
+        let (url, _handle) =
+            start_recording_mock_server(Arc::new(Mutex::new(Vec::new())), move |_path| {
+                let count = attempts_clone.fetch_add(1, Ordering::SeqCst);
+                if count < 2 {
+                    (500, Vec::new())
+                } else {
+                    (200, payload.clone())
+                }
+            })
+            .await;
+
+        let client = reqwest::Client::new();
+        let url = format!("{url}/ledger/00/00/00/ledger-0000003f.xdr.gz");
+        let bytes = fetch_and_decompress(&client, &url, "ledger-0000003f.xdr.gz")
+            .await
+            .unwrap();
+        assert_eq!(bytes, b"eventually available");
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn test_is_retryable() {
+        let server_error = ArchiveErrorKind::FetchFailed {
+            file: "test".to_string(),
+            reason: "HTTP status 500 Internal Server Error".to_string(),
+        };
+        let not_found = ArchiveErrorKind::FetchFailed {
+            file: "test".to_string(),
+            reason: "HTTP status 404 Not Found".to_string(),
+        };
+        let decompression = ArchiveErrorKind::DecompressionFailed {
+            file: "test".to_string(),
+            reason: "invalid".to_string(),
+        };
+        let rate_limited = ArchiveErrorKind::FetchFailed {
+            file: "test".to_string(),
+            reason: "HTTP status 429 Too Many Requests".to_string(),
+        };
+        assert!(is_retryable(&server_error));
+        assert!(is_retryable(&rate_limited));
+        assert!(!is_retryable(&not_found));
+        assert!(!is_retryable(&decompression));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_category_only_requests_requested_category() {
+        let paths = Arc::new(Mutex::new(Vec::new()));
+        let payload = gzip_compress(b"ledger-only");
+        let payload_clone = payload.clone();
+        let (url, _handle) =
+            start_recording_mock_server(paths.clone(), move |path| {
+                if path.contains("ledger-") {
+                    (200, payload_clone.clone())
+                } else {
+                    (404, Vec::new())
+                }
+            })
+            .await;
+
+        let config = NetworkConfig::custom("test", "", "").with_archive_urls(vec![url]);
+        let client = ArchiveClient::new(&config).unwrap();
+        let bytes = client
+            .fetch_category(ArchiveCategory::Ledger, 64)
+            .await
+            .unwrap();
+        assert_eq!(bytes, b"ledger-only");
+
+        let recorded = paths.lock().unwrap();
+        assert!(recorded.iter().all(|p| p.contains("ledger-")));
+    }
+
+    #[tokio::test]
+    async fn test_get_transaction_history_integration() {
+        use stellar_xdr::curr::{TransactionHistoryEntryExt, TransactionSet};
+
+        let entry = TransactionHistoryEntry {
+            ledger_seq: 64,
+            tx_set: TransactionSet {
+                previous_ledger_hash: Hash([0; 32]),
+                txs: vec![].try_into().unwrap(),
+            },
+            ext: TransactionHistoryEntryExt::V0,
+        };
+        let xdr = entry.to_xdr(Limits::none()).unwrap();
+        let framed = frame_record(&xdr, true);
+
+        let tx_gz = gzip_compress(&framed);
+        let dummy_gz = gzip_compress(&[0; 4]);
+        let (url, _handle) = start_mock_archive_server(dummy_gz.clone(), tx_gz, dummy_gz).await;
+        let config = NetworkConfig::custom("test", "", "").with_archive_urls(vec![url]);
+        let client = ArchiveClient::new(&config).unwrap();
+
+        let entries = client.get_transaction_history(64).await.unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].ledger_seq, 64);
     }
 }
