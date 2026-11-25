@@ -37,8 +37,14 @@ struct Cli {
     )]
     output: String,
 
-    #[arg(long, short, default_value = "testnet", global = true)]
-    network: String,
+    /// Network to use (defaults to the config file's default network, then testnet)
+    #[arg(
+        long,
+        short,
+        value_parser = ["testnet", "mainnet", "futurenet", "standalone"],
+        global = true
+    )]
+    network: Option<String>,
 
     #[arg(long, short, action = ArgAction::Count, global = true)]
     verbose: u8,
@@ -135,9 +141,7 @@ async fn main() -> anyhow::Result<()> {
     let _update_check_handle = tokio::spawn(version_check::check_for_updates());
     let _taxonomy_update_handle =
         tokio::spawn(grat_core::taxonomy::updater::check_and_update(cli.offline));
-    let loaded_config = config::ConfigManager::new(cli.config_path.clone())
-        .and_then(|manager| manager.load())
-        .ok();
+    let loaded_config = config::load_config(cli.config_path.as_deref())?;
 
     tracing_subscriber::fmt()
         .with_env_filter(build_log_filter(cli.verbose))
@@ -149,16 +153,17 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::debug!(
         output = %cli.output,
-        network_arg = %cli.network,
+        network_arg = ?cli.network,
         verbose = cli.verbose,
         no_color = cli.no_color,
-        config_loaded = loaded_config.is_some(),
+        config_default_network = %loaded_config.default_network.as_key(),
         "CLI arguments parsed"
     );
 
-    output::theme::set_color_enabled(!cli.no_color);
+    output::theme::set_color_enabled(output::theme::resolve_color_enabled(cli.no_color));
 
-    let mut network = grat_core::network::config::resolve_network(&cli.network);
+    let network_name = config::effective_network_name(cli.network.as_deref(), &loaded_config);
+    let mut network = config::resolve_network_config(&network_name, &loaded_config);
     if let Some(ref rpc_url) = cli.rpc_url {
         network.rpc_url = rpc_url.clone();
     }
@@ -403,6 +408,48 @@ mod tests {
         let cli = Cli::try_parse_from(["grat", "decode", "abc123", "--no-cache"])
             .expect("cli should parse with --no-cache");
         assert!(cli.no_cache);
+    }
+
+    #[test]
+    fn network_defaults_to_none_so_config_can_supply_it() {
+        let cli = Cli::try_parse_from(["grat", "db", "update"]).expect("cli should parse");
+        assert!(cli.network.is_none());
+    }
+
+    #[test]
+    fn accepts_all_documented_networks() {
+        for name in ["testnet", "mainnet", "futurenet", "standalone"] {
+            let cli = Cli::try_parse_from(["grat", "--network", name, "db", "update"])
+                .expect("network should parse");
+            assert_eq!(cli.network.as_deref(), Some(name));
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_network() {
+        assert!(Cli::try_parse_from(["grat", "--network", "bogus", "db", "update"]).is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_output_format() {
+        assert!(Cli::try_parse_from(["grat", "--output", "xml", "db", "update"]).is_err());
+    }
+
+    #[test]
+    fn parses_rpc_url_and_rejects_invalid_url() {
+        let cli =
+            Cli::try_parse_from(["grat", "--rpc-url", "http://localhost:9000", "db", "update"])
+                .expect("cli should parse");
+        assert_eq!(cli.rpc_url.as_deref(), Some("http://localhost:9000"));
+        assert!(Cli::try_parse_from(["grat", "--rpc-url", "not a url", "db", "update"]).is_err());
+    }
+
+    #[test]
+    fn parses_no_color_and_offline_flags() {
+        let cli = Cli::try_parse_from(["grat", "--no-color", "--offline", "db", "update"])
+            .expect("cli should parse");
+        assert!(cli.no_color);
+        assert!(cli.offline);
     }
 
     #[test]

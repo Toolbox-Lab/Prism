@@ -1,96 +1,60 @@
-use colored::Colorize;
-use grat_core::types::report::{DiagnosticReport, Severity};
-use std::collections::HashMap;
+use grat_core::types::report::DiagnosticReport;
 use tabled::{settings::Style, Table, Tabled};
 
 pub struct ErrorSummaryList;
 
 #[derive(Tabled)]
 struct ErrorSummaryRow {
-    #[tabled(rename = "Severity")]
-    severity: String,
-    #[tabled(rename = "Category")]
+    #[tabled(rename = "Transaction Hash")]
+    tx_hash: String,
+    #[tabled(rename = "Error Category")]
     category: String,
     #[tabled(rename = "Error Name")]
     name: String,
-    #[tabled(rename = "Count")]
-    count: usize,
-    #[tabled(rename = "Message")]
-    message: String,
+    #[tabled(rename = "Failing Contract ID")]
+    failing_contract_id: String,
 }
 
 impl ErrorSummaryList {
-    pub fn render(reports: &[DiagnosticReport]) {
-        if reports.is_empty() {
+    pub fn render(batch_results: &[(String, Vec<DiagnosticReport>)]) {
+        let report_count = batch_results
+            .iter()
+            .map(|(_, reports)| reports.len())
+            .sum::<usize>();
+        if report_count == 0 {
             println!("No errors found in the provided batch.");
             return;
         }
 
-        // Group by category, name, and severity
-        let mut grouped: HashMap<(String, String, String), (usize, String)> = HashMap::new();
+        let mut rows = Vec::new();
 
-        for report in reports {
-            let sev_str = match report.severity {
-                Severity::Fatal => "Fatal",
-                Severity::Error => "Error",
-                Severity::Warning => "Warning",
-                Severity::Info => "Info",
-            }
-            .to_string();
-
-            let key = (
-                report.error_category.clone(),
-                report.error_name.clone(),
-                sev_str,
-            );
-            let entry = grouped.entry(key).or_insert((0, report.summary.clone()));
-            entry.0 += 1;
-        }
-
-        let mut rows: Vec<ErrorSummaryRow> = grouped
-            .into_iter()
-            .map(|((category, name, severity), (count, message))| {
-                let sev_str = match severity.as_str() {
-                    "Fatal" => "FATAL".red().bold().to_string(),
-                    "Error" => "ERROR".red().to_string(),
-                    "Warning" => "WARN".yellow().to_string(),
-                    "Info" => "INFO".blue().to_string(),
-                    _ => severity,
+        for (tx_hash, reports) in batch_results {
+            for report in reports {
+                let failing_contract_id = report
+                    .failing_contract_id
+                    .clone()
+                    .unwrap_or_else(|| "-".to_string());
+                let row = ErrorSummaryRow {
+                    tx_hash: tx_hash.clone(),
+                    category: report.error_category.clone(),
+                    name: report.error_name.clone(),
+                    failing_contract_id,
                 };
-
-                ErrorSummaryRow {
-                    severity: sev_str,
-                    category,
-                    name,
-                    count,
-                    message,
+                if !rows.iter().any(|existing: &ErrorSummaryRow| {
+                    existing.tx_hash == row.tx_hash
+                        && existing.category == row.category
+                        && existing.name == row.name
+                        && existing.failing_contract_id == row.failing_contract_id
+                }) {
+                    rows.push(row);
                 }
-            })
-            .collect();
-
-        // Sort by severity (Fatal > Error > Warning > Info) then count descending
-        rows.sort_by(|a, b| {
-            let sev_a = severity_weight(&a.severity);
-            let sev_b = severity_weight(&b.severity);
-            sev_b.cmp(&sev_a).then(b.count.cmp(&a.count))
-        });
+            }
+        }
 
         let mut table = Table::new(rows);
         table.with(Style::rounded());
 
         println!("\n=== Batch Decoding Summary ===");
         println!("{}", table);
-    }
-}
-
-fn severity_weight(sev_str: &str) -> u8 {
-    if sev_str.contains("FATAL") {
-        4
-    } else if sev_str.contains("ERROR") {
-        3
-    } else if sev_str.contains("WARN") {
-        2
-    } else {
-        1
     }
 }

@@ -498,6 +498,7 @@ mod tests {
                 warnings: Vec::new(),
             },
             diagnostic_events: Vec::new(),
+            auth_chains: Vec::new(),
         }
     }
 

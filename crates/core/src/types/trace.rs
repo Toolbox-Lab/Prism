@@ -1,3 +1,4 @@
+use crate::decode::auth::AuthChain;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -138,4 +139,7 @@ pub struct ExecutionTrace {
     pub resource_profile: ResourceProfile,
 
     pub diagnostic_events: Vec<DiagnosticEvent>,
+
+    #[serde(default)]
+    pub auth_chains: Vec<AuthChain>,
 }

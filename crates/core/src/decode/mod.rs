@@ -18,9 +18,13 @@ pub mod json_to_scval;
 pub mod mappings;
 /// Envelope-level decoding that emits one diagnostic report per operation.
 pub mod multi_op_decoder;
+/// Offline decoding of raw base64 XDR for `grat decode --raw`.
+pub mod raw_xdr;
 pub mod recursive_decoder;
 pub mod report;
 pub mod resource_analyzer;
+/// Plain-English causes and fixes for transaction and operation result codes.
+pub mod result_guidance;
 pub mod return_decoder;
 pub mod scval_to_json;
 pub mod struct_decoder;
@@ -39,6 +43,7 @@ pub use enum_decoder::EnumDecoder;
 pub use function_call_decoder::{DecodedArgument, DecodedFunctionCall, FunctionCallDecoder};
 pub use json_to_scval::json_to_scval;
 pub use multi_op_decoder::{decode_transaction_with_op_filter, MultiOpDecoder};
+pub use raw_xdr::decode_raw_xdr;
 pub use recursive_decoder::{RecursiveTypeDecoder, TypeRef};
 pub use resource_analyzer::{
     MetricDiagnostic, MetricKind, ResourceDiagnostics, ResourceUsageAnalyzer, TransactionResultMeta,
