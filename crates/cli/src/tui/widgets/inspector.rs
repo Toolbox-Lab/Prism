@@ -26,9 +26,9 @@ use ratatui::{
 /// * `area`       – Terminal rectangle allocated to this widget.
 /// * `state_diff` – Storage state changes computed for the current trace.
 /// * `selected`   – The currently focused invocation frame (used for the
-///                  header title and argument summary).
+///   header title and argument summary).
 /// * `scroll`     – Number of diff rows already scrolled past (modified by
-///                  the caller via up/down key events).
+///   the caller via up/down key events).
 pub fn render_inspector(
     frame: &mut Frame,
     area: Rect,
@@ -181,7 +181,7 @@ fn render_arg_summary(frame: &mut Frame, area: Rect, inv: &ContractInvocation) {
 }
 
 /// Build a coloured [`Row`] for a single [`LedgerEntryDiff`].
-fn build_row(entry: &LedgerEntryDiff) -> Row {
+fn build_row(entry: &LedgerEntryDiff) -> Row<'_> {
     let (label, row_style) = match entry.change_type {
         DiffChangeType::Created => (
             Span::styled("+ Added", Style::default().fg(Color::Green)),
