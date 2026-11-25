@@ -1,10 +1,12 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{Args, Subcommand};
 use dialoguer::Select;
 use rpassword::prompt_password;
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 #[derive(Args)]
 pub struct AuthArgs {
@@ -21,7 +23,6 @@ pub enum AuthCommands {
         #[arg(long)]
         config_path: Option<String>,
     },
-
     Logout {
         #[arg(long)]
         provider: Option<String>,
@@ -33,7 +34,8 @@ pub enum AuthCommands {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct AuthConfig {
-    credentials: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    credentials: HashMap<String, String>,
 }
 
 pub async fn run(args: AuthArgs, output_format: &str) -> Result<()> {
@@ -41,124 +43,101 @@ pub async fn run(args: AuthArgs, output_format: &str) -> Result<()> {
         AuthCommands::Login {
             provider,
             config_path,
-        } => login(provider, config_path, output_format).await,
+        } => login(provider, config_path, output_format),
         AuthCommands::Logout {
             provider,
             config_path,
-        } => logout(provider, config_path, output_format).await,
+        } => logout(provider, config_path, output_format),
     }
 }
 
-async fn login(
+fn login(
     provider_param: Option<String>,
     config_path: Option<String>,
     output_format: &str,
 ) -> Result<()> {
     let palette = crate::output::theme::ColorPalette::default();
-
     let provider = match provider_param {
-        Some(p) => p,
+        Some(provider) => provider,
         None => select_provider_interactive()?,
     };
-
+    let provider = normalize_provider_name(&provider)?;
     let prompt = format!(
-        "Enter your API key for {}: ",
+        "Enter API key or token for {}: ",
         palette.success_text(&provider)
     );
     let api_key = prompt_password(&prompt)?;
-
     if api_key.trim().is_empty() {
-        eprintln!("{}", palette.error_text("API key cannot be empty."));
-        std::process::exit(1);
+        return Err(anyhow!("API key cannot be empty"));
     }
 
-    match store_credential(&provider, &api_key, config_path).await {
-        Ok(()) => {
-            if matches!(
-                crate::output::OutputFormat::parse(output_format),
-                crate::output::OutputFormat::Json
-            ) {
-                let payload = serde_json::json!({
-                    "status": "ok",
-                    "action": "login",
-                    "provider": provider,
-                    "saved": true,
-                });
-                println!("{}", serde_json::to_string_pretty(&payload)?);
-            } else {
-                println!(
-                    "✓ Credentials for {} saved.",
-                    palette.success_text(&provider)
-                );
-            }
-        }
-        Err(e) => {
-            eprintln!("{} {}", palette.error_text("Error:"), e);
-            std::process::exit(1);
-        }
-    }
+    let config_file = get_config_path(config_path)?;
+    let mut config = load_auth_config(&config_file)?;
+    config.credentials.insert(provider.clone(), api_key);
+    save_auth_config(&config, &config_file)?;
 
+    if is_json_output(output_format) {
+        let payload = serde_json::json!({
+            "status": "ok",
+            "action": "login",
+            "provider": provider,
+            "saved": true,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!(
+            "✓ Credentials for {} saved.",
+            palette.success_text(&provider)
+        );
+    }
     Ok(())
 }
 
-async fn logout(
+fn logout(
     provider_param: Option<String>,
     config_path: Option<String>,
     output_format: &str,
 ) -> Result<()> {
     let palette = crate::output::theme::ColorPalette::default();
-
+    let config_file = get_config_path(config_path)?;
     let provider = match provider_param {
-        Some(p) => p,
-        None => select_provider_for_logout()?,
+        Some(provider) => provider,
+        None => select_provider_for_logout(&config_file)?,
     };
-
-    match remove_credential(&provider, config_path).await {
-        Ok(true) => {
-            if matches!(
-                crate::output::OutputFormat::parse(output_format),
-                crate::output::OutputFormat::Json
-            ) {
-                let payload = serde_json::json!({
-                    "status": "ok",
-                    "action": "logout",
-                    "provider": provider,
-                    "removed": true,
-                });
-                println!("{}", serde_json::to_string_pretty(&payload)?);
-            } else {
-                println!(
-                    "✓ Credentials for {} removed.",
-                    palette.success_text(&provider)
-                );
-            }
-        }
-        Ok(false) => {
-            if matches!(
-                crate::output::OutputFormat::parse(output_format),
-                crate::output::OutputFormat::Json
-            ) {
-                let payload = serde_json::json!({
-                    "status": "ok",
-                    "action": "logout",
-                    "provider": provider,
-                    "removed": false,
-                });
-                println!("{}", serde_json::to_string_pretty(&payload)?);
-            } else {
-                println!(
-                    "No credentials found for {}.",
-                    palette.warning_text(&provider)
-                );
-            }
-        }
-        Err(e) => {
-            eprintln!("{} {}", palette.error_text("Error:"), e);
-            std::process::exit(1);
-        }
+    let provider = normalize_provider_name(&provider)?;
+    let mut config = load_auth_config(&config_file)?;
+    let removed = config.credentials.remove(&provider).is_some();
+    if removed {
+        save_auth_config(&config, &config_file)?;
     }
 
+    if is_json_output(output_format) {
+        let payload = serde_json::json!({
+            "status": "ok",
+            "action": "logout",
+            "provider": provider,
+            "removed": removed,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else if removed {
+        println!(
+            "✓ Credentials for {} removed.",
+            palette.success_text(&provider)
+        );
+    } else {
+        println!(
+            "No credentials found for {}.",
+            palette.warning_text(&provider)
+        );
+    }
     Ok(())
+}
+
+fn is_json_output(output_format: &str) -> bool {
+    matches!(
+        crate::output::OutputFormat::parse(output_format),
+        crate::output::OutputFormat::Json
+    )
 }
 
 fn select_provider_interactive() -> Result<String> {
@@ -171,29 +150,21 @@ fn select_provider_interactive() -> Result<String> {
     match selection {
         0 => Ok("Blockdaemon".to_string()),
         1 => Ok("NowNodes".to_string()),
-        2 => {
-            use dialoguer::Input;
-            let custom = Input::new()
-                .with_prompt("Enter custom provider name:")
-                .interact()?;
-            Ok(custom)
-        }
-        _ => unreachable!(),
+        2 => prompt_custom_provider(),
+        _ => Err(anyhow!("Invalid provider selection")),
     }
 }
 
-fn select_provider_for_logout() -> Result<String> {
+fn select_provider_for_logout(config_file: &Path) -> Result<String> {
     let mut items: Vec<String> = vec![
         "Blockdaemon".to_string(),
         "NowNodes".to_string(),
         "Custom".to_string(),
     ];
-
-    if let Ok(config) = load_auth_config(None) {
-        for provider in config.credentials.keys() {
-            if !items.iter().any(|i| i == provider) {
-                items.push(provider.clone());
-            }
+    let config = load_auth_config(config_file)?;
+    for provider in config.credentials.keys() {
+        if !items.iter().any(|item| item == provider) {
+            items.push(provider.clone());
         }
     }
 
@@ -205,113 +176,99 @@ fn select_provider_for_logout() -> Result<String> {
     match selection {
         0 => Ok("Blockdaemon".to_string()),
         1 => Ok("NowNodes".to_string()),
-        2 => {
-            use dialoguer::Input;
-            let custom = Input::new()
-                .with_prompt("Enter custom provider name:")
-                .interact()?;
-            Ok(custom)
-        }
-        _ => Ok(items[selection].clone()),
+        2 => prompt_custom_provider(),
+        index => items
+            .get(index)
+            .cloned()
+            .ok_or_else(|| anyhow!("Invalid provider selection")),
     }
 }
 
-async fn store_credential(
-    provider: &str,
-    api_key: &str,
-    config_path: Option<String>,
-) -> Result<()> {
-    let normalized_provider = normalize_provider_name(provider);
+fn prompt_custom_provider() -> Result<String> {
+    use dialoguer::Input;
 
-    store_credential_config(&normalized_provider, api_key, config_path).await
-}
-
-async fn store_credential_config(
-    provider: &str,
-    api_key: &str,
-    config_path: Option<String>,
-) -> Result<()> {
-    let config_file = get_config_path(config_path)?;
-    let mut config = load_auth_config(Some(&config_file)).unwrap_or_default();
-
-    config
-        .credentials
-        .insert(provider.to_string(), api_key.to_string());
-
-    save_auth_config(&config, &config_file).await?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&config_file)?.permissions();
-        perms.set_mode(0o600);
-        fs::set_permissions(&config_file, perms)?;
-    }
-
-    Ok(())
-}
-
-async fn remove_credential(provider: &str, config_path: Option<String>) -> Result<bool> {
-    let normalized_provider = normalize_provider_name(provider);
-
-    let config_file = get_config_path(config_path)?;
-    if let Ok(mut config) = load_auth_config(Some(&config_file)) {
-        if config
-            .credentials
-            .remove(&normalized_provider.clone())
-            .is_some()
-        {
-            save_auth_config(&config, &config_file).await?;
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
+    Ok(Input::new()
+        .with_prompt("Enter custom provider name:")
+        .interact_text()?)
 }
 
 #[allow(dead_code)]
 pub fn get_credential(provider: &str) -> Result<Option<String>> {
-    let normalized_provider = normalize_provider_name(provider);
-
-    get_credential_config(&normalized_provider)
+    let provider = normalize_provider_name(provider)?;
+    let config = load_auth_config(&get_config_path(None)?)?;
+    Ok(config.credentials.get(&provider).cloned())
 }
 
-#[allow(dead_code)]
-fn get_credential_config(provider: &str) -> Result<Option<String>> {
-    let config_file = get_config_path(None)?;
-    let config = load_auth_config(Some(&config_file)).unwrap_or_default();
-    Ok(config.credentials.get(provider).cloned())
-}
-
-fn load_auth_config(config_file: Option<&PathBuf>) -> Result<AuthConfig> {
-    let default_path;
-    let config_file = if let Some(p) = config_file {
-        p
-    } else {
-        default_path = get_config_path(None)?;
-        &default_path
+fn load_auth_config(config_file: &Path) -> Result<AuthConfig> {
+    let content = match fs::read(config_file) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(AuthConfig::default());
+        }
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!("Failed to read auth config at {}", config_file.display())
+            });
+        }
     };
-
-    if !config_file.exists() {
-        return Ok(AuthConfig::default());
-    }
-
-    let content = fs::read_to_string(config_file)?;
-    let config: AuthConfig =
-        toml::from_str(&content).map_err(|e| anyhow!("Failed to parse config file: {e}"))?;
-
-    Ok(config)
+    serde_json::from_slice(&content)
+        .with_context(|| format!("Failed to parse auth config at {}", config_file.display()))
 }
 
-async fn save_auth_config(config: &AuthConfig, config_file: &PathBuf) -> Result<()> {
+fn save_auth_config(config: &AuthConfig, config_file: &Path) -> Result<()> {
     if let Some(parent) = config_file.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create config directory {}", parent.display()))?;
+        #[cfg(unix)]
+        if let Some(home_dir) = dirs::home_dir() {
+            let grat_dir = home_dir.join(".grat");
+            if parent == grat_dir {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).with_context(
+                    || format!("Failed to restrict permissions on {}", parent.display()),
+                )?;
+            }
+        }
     }
 
-    let content =
-        toml::to_string_pretty(config).map_err(|e| anyhow!("Failed to serialize config: {e}"))?;
+    let content = serde_json::to_vec_pretty(config).context("Failed to serialize auth config")?;
+    let mut options = OpenOptions::new();
+    options.create(true).write(true).truncate(true);
 
-    fs::write(config_file, content).map_err(|e| anyhow!("Failed to write config file: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        options.mode(0o600);
+        if config_file.exists() {
+            fs::set_permissions(config_file, fs::Permissions::from_mode(0o600)).with_context(
+                || {
+                    format!(
+                        "Failed to restrict permissions on {}",
+                        config_file.display()
+                    )
+                },
+            )?;
+        }
+    }
+
+    let mut file = options
+        .open(config_file)
+        .with_context(|| format!("Failed to open auth config at {}", config_file.display()))?;
+    file.write_all(&content)
+        .with_context(|| format!("Failed to write auth config at {}", config_file.display()))?;
+    file.flush()
+        .with_context(|| format!("Failed to flush auth config at {}", config_file.display()))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(config_file, fs::Permissions::from_mode(0o600)).with_context(|| {
+            format!(
+                "Failed to restrict permissions on {}",
+                config_file.display()
+            )
+        })?;
+    }
 
     Ok(())
 }
@@ -321,88 +278,70 @@ fn get_config_path(override_path: Option<String>) -> Result<PathBuf> {
         return Ok(PathBuf::from(path));
     }
 
-    let project_dirs = directories::ProjectDirs::from("dev", "grat", "grat")
-        .ok_or_else(|| anyhow!("Could not determine config directory"))?;
-
-    Ok(project_dirs.config_dir().join("auth.toml"))
+    let home_dir = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
+    Ok(home_dir.join(".grat").join("auth.json"))
 }
 
-fn normalize_provider_name(provider: &str) -> String {
-    provider.to_lowercase().replace(' ', "-")
+fn normalize_provider_name(provider: &str) -> Result<String> {
+    let provider = provider.trim();
+    if provider.is_empty() {
+        return Err(anyhow!("Provider name cannot be empty"));
+    }
+    Ok(provider.to_lowercase().replace(' ', "-"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use tempfile::TempDir;
 
     #[test]
-    fn test_get_credential_returns_none_when_not_set() {
+    fn auth_config_round_trips_as_json() {
         let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("auth.toml");
+        let config_path = temp_dir.path().join("auth.json");
+        let config = AuthConfig {
+            credentials: HashMap::from([("test-provider".to_string(), "secret".to_string())]),
+        };
 
-        let config = load_auth_config(Some(&config_path)).unwrap();
-        assert!(config.credentials.get("nonexistent").is_none());
-    }
+        save_auth_config(&config, &config_path).unwrap();
+        let loaded = load_auth_config(&config_path).unwrap();
 
-    #[test]
-    fn test_credential_round_trip_via_config_file() {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("auth.toml");
-
-        let provider = "test-provider";
-        let api_key = "test-api-key-123";
-
-        let mut config = AuthConfig::default();
-        config
-            .credentials
-            .insert(provider.to_string(), api_key.to_string());
-
-        let content = toml::to_string_pretty(&config).unwrap();
-        fs::write(&config_path, content).unwrap();
-
-        let loaded = load_auth_config(Some(&config_path)).unwrap();
-        assert_eq!(loaded.credentials.get(provider), Some(&api_key.to_string()));
-    }
-
-    #[test]
-    fn test_empty_key_is_rejected() {
-        let empty_key = "";
-        assert!(empty_key.trim().is_empty());
-
-        let whitespace_key = "   \t\n   ";
-        assert!(whitespace_key.trim().is_empty());
-
-        let valid_key = "sk-1234567890abcdef";
-        assert!(!valid_key.trim().is_empty());
-    }
-
-    #[test]
-    fn test_normalize_provider_name() {
-        assert_eq!(normalize_provider_name("Blockdaemon"), "blockdaemon");
-        assert_eq!(normalize_provider_name("Now Nodes"), "now-nodes");
         assert_eq!(
-            normalize_provider_name("Custom Provider"),
+            loaded.credentials.get("test-provider"),
+            Some(&"secret".to_string())
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn auth_config_is_written_with_restricted_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("private").join("auth.json");
+        save_auth_config(&AuthConfig::default(), &config_path).unwrap();
+
+        assert_eq!(
+            fs::metadata(config_path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    #[test]
+    fn default_auth_config_is_in_grat_home_directory() {
+        let path = get_config_path(None).unwrap();
+        assert_eq!(
+            path,
+            dirs::home_dir().unwrap().join(".grat").join("auth.json")
+        );
+    }
+
+    #[test]
+    fn normalize_provider_name_rejects_empty_names() {
+        assert!(normalize_provider_name("  ").is_err());
+        assert_eq!(
+            normalize_provider_name("Custom Provider").unwrap(),
             "custom-provider"
         );
-        assert_eq!(normalize_provider_name("CUSTOM"), "custom");
-    }
-
-    #[tokio::test]
-    async fn test_save_and_load_auth_config() {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("auth.toml");
-
-        let mut config = AuthConfig::default();
-        config
-            .credentials
-            .insert("test".to_string(), "key123".to_string());
-
-        save_auth_config(&config, &config_path).await.unwrap();
-        assert!(config_path.exists());
-
-        let loaded = load_auth_config(Some(&config_path)).unwrap();
-        assert_eq!(loaded.credentials.get("test"), Some(&"key123".to_string()));
     }
 }
