@@ -14,9 +14,16 @@ const TESTNET_PASSPHRASE: &str = "Test SDF Network ; September 2015";
 const FUTURENET_PASSPHRASE: &str = "Test SDF Future Network ; October 2022";
 const LOCAL_PASSPHRASE: &str = "Standalone Network ; February 2017";
 
-const MAINNET_ARCHIVE_URLS: [&str; 1] = ["https://history.stellar.org/prd/core-live/core_live_001"];
-const TESTNET_ARCHIVE_URLS: [&str; 1] =
-    ["https://history.stellar.org/prd/core-testnet/core_testnet_001"];
+const MAINNET_ARCHIVE_URLS: [&str; 3] = [
+    "https://history.stellar.org/prd/core-live/core_live_001",
+    "https://history.stellar.org/prd/core-live/core_live_002",
+    "https://history.stellar.org/prd/core-live/core_live_003",
+];
+const TESTNET_ARCHIVE_URLS: [&str; 3] = [
+    "https://history.stellar.org/prd/core-testnet/core_testnet_001",
+    "https://history.stellar.org/prd/core-testnet/core_testnet_002",
+    "https://history.stellar.org/prd/core-testnet/core_testnet_003",
+];
 const FUTURENET_ARCHIVE_URLS: [&str; 1] = ["https://history-futurenet.stellar.org"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
