@@ -1,5 +1,5 @@
 # Storage Error Taxonomy
-# Category: Storage â€” errors related to ledger entry access and contract data operations.
+# Category: Storage — errors related to ledger entry access and contract data operations.
 
 [category]
 name = "Storage"
@@ -15,7 +15,7 @@ severity = "Error"
 since_protocol = 20
 summary = "The contract attempted to access a ledger entry not included in the transaction's footprint."
 detailed_explanation = """
-Every Soroban transaction must declare its read/write footprint â€” the set of ledger entries it \
+Every Soroban transaction must declare its read/write footprint — the set of ledger entries it \
 will access. If the contract tries to read or write an entry not in the declared footprint, \
 the host rejects the access. This is a fundamental part of Soroban's parallel execution model.
 """
@@ -50,7 +50,7 @@ severity = "Error"
 since_protocol = 20
 summary = "The contract attempted to read a ledger key that does not exist or has been archived."
 detailed_explanation = """
-The host could not load the requested ledger entry. The key may never have been written, may have
+The host could not load the requested ledger entry. The key may never have been written, may have \
 expired from live state, or may need restoration before the contract can access it.
 """
 related_errors = ["host.storage.access_denied"]
@@ -83,7 +83,7 @@ severity = "Error"
 since_protocol = 20
 summary = "The operation attempted to exceed resource or size limits for ledger data."
 detailed_explanation = """
-The storage operation would exceed a protocol limit for ledger data, such as entry size, footprint
+The storage operation would exceed a protocol limit for ledger data, such as entry size, footprint \
 size, or the amount of data read or written by the transaction.
 """
 related_errors = ["host.budget.exceeded_limit"]
@@ -116,7 +116,7 @@ severity = "Error"
 since_protocol = 20
 summary = "An internal storage failure occurred while accessing contract data."
 detailed_explanation = """
-The storage layer reported an unexpected internal failure. This code alone is not enough to identify
+The storage layer reported an unexpected internal failure. This code alone is not enough to identify \
 the root issue; diagnostic events and transaction context usually provide the next clue.
 """
 related_errors = []
@@ -157,7 +157,7 @@ detailed_explanation = """
 Soroban ledger entries have a time-to-live measured in ledgers. This warning indicates that a \
 contract read or written an entry that is close to expiring. The operation succeeded, but the \
 entry must be extended with extendTTL before it archives or future transactions will fail with \
-EntryNotFound. This is not a blocking error â€” it is a signal to act before the entry is lost.
+EntryNotFound. This is not a blocking error — it is a signal to act before the entry is lost.
 """
 related_errors = ["host.storage.entry_not_found"]
 source_file = "soroban-env-host/src/storage.rs"
@@ -174,4 +174,3 @@ requires_upgrade = false
 description = "Set up automated TTL extension for long-lived contract data"
 difficulty = "medium"
 requires_upgrade = true
-
