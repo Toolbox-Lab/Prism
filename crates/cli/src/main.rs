@@ -197,7 +197,7 @@ async fn main() -> anyhow::Result<()> {
             commands::export::run(args, &network, &cli.output, &cli.quiet).await?;
         }
         Commands::Clean(args) => commands::clean::run(args, &cli.output).await?,
-        Commands::Db(args) => commands::db::run(args, &cli.output).await?,
+        Commands::Db(args) => commands::db::run(args, &cli.output, cli.offline).await?,
         Commands::Auth(args) => commands::auth::run(args, &cli.output).await?,
         Commands::Diagnostic(args) => commands::diagnostic::run(args).await?,
         Commands::History => commands::history::run(&cli.output).await?,

@@ -257,8 +257,8 @@ async fn stream_trace_replay(
                 trace_id: result.trace_id.0.clone(),
                 cpu_used: result.total_cpu,
                 memory_used: result.total_memory,
-                cpu_limit: 100_000_000,
-                memory_limit: 40 * 1024 * 1024,
+                cpu_limit: ledger_state.invocation.limits.cpu_instructions,
+                memory_limit: ledger_state.invocation.limits.memory_bytes,
             });
         }
 
