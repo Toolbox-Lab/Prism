@@ -87,7 +87,9 @@ pub struct SorobanRpcClient {
     client: reqwest::Client,
 
     rpc_url: String,
+    timeout_secs: u64,
 }
+pub type RpcClient = SorobanRpcClient;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -114,6 +116,14 @@ pub struct GetTransactionResponse {
     pub result_meta_xdr: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetLatestLedgerResponse {
+    pub id: String,
+    pub protocol_version: u32,
+    pub sequence: u32,
+}
+
 impl SorobanRpcClient {
     pub fn new(config: &NetworkConfig) -> Self {
         let mut headers = HeaderMap::new();
@@ -129,10 +139,12 @@ impl SorobanRpcClient {
         Self {
             client,
             rpc_url: config.rpc_url.clone(),
+            timeout_secs: config.request_timeout_secs,
         }
     }
 
     pub fn with_timeout(mut self, timeout_secs: u64) -> Self {
+        self.timeout_secs = timeout_secs;
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         self.client = reqwest::Client::builder()
@@ -218,7 +230,7 @@ impl SorobanRpcClient {
         self.call("getEvents", params).await
     }
 
-    pub async fn get_latest_ledger(&self) -> GratResult<serde_json::Value> {
+    pub async fn get_latest_ledger(&self) -> GratResult<GetLatestLedgerResponse> {
         self.call("getLatestLedger", serde_json::json!({})).await
     }
 
@@ -366,7 +378,14 @@ impl SorobanRpcClient {
                         error = %e,
                         "RPC request failed"
                     );
-                    last_error = Some(GratError::RpcError(format!("HTTP request failed: {e}")));
+                    last_error = Some(if e.is_timeout() {
+                        GratError::NetworkTimeout {
+                            method: method.to_string(),
+                            timeout_secs: self.timeout_secs,
+                        }
+                    } else {
+                        GratError::RpcError(format!("HTTP request failed: {e}"))
+                    });
                 }
             }
         }
@@ -434,7 +453,7 @@ mod tests {
 
     /// Minimal valid JSON-RPC 2.0 success body (getLatestLedger shape).
     fn ok_body() -> &'static str {
-        r#"{"jsonrpc":"2.0","id":1,"result":{"id":"test","protocolVersion":"21","sequence":100}}"#
+        r#"{"jsonrpc":"2.0","id":1,"result":{"id":"test","protocolVersion":21,"sequence":100}}"#
     }
 
     fn make_client(addr: std::net::SocketAddr) -> SorobanRpcClient {
@@ -835,6 +854,7 @@ mod tests {
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.to_lowercase().contains("timeout")
+                || err_msg.to_lowercase().contains("timed out")
                 || err_msg.to_lowercase().contains("error sending request"),
             "Actual error: {err_msg}"
         );
@@ -874,7 +894,7 @@ mod tests {
 
         let exposition = crate::rpc::gather_rpc_metrics();
         assert!(
-            exposition.contains("rpc_http_errors_total"),
+            exposition.contains("soroban_rpc_errors_total"),
             "error counter missing from exposition:\n{exposition}"
         );
         // At least one of the tracked statuses should appear.

@@ -223,14 +223,15 @@ fn build_row(entry: &LedgerEntryDiff) -> Row<'_> {
 
 /// Truncate `s` to at most `max` characters, appending `…` when shortened.
 fn truncate(s: &str, max: usize) -> String {
+    // Count characters, not bytes: slicing by byte offset panics on
+    // multi-byte UTF-8 and over-counts the width of the ellipsis.
     if s.chars().count() <= max {
         s.to_string()
     } else if max == 0 {
         String::new()
     } else {
-        let mut truncated: String = s.chars().take(max - 1).collect();
-        truncated.push('…');
-        truncated
+        let kept: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{kept}…")
     }
 }
 
@@ -257,7 +258,7 @@ mod tests {
         let result = truncate("abcdefghij", 5);
         assert!(
             result.chars().count() <= 5,
-            "truncated string should be no longer than the limit"
+            "truncated string should fit within max characters"
         );
         assert!(result.ends_with('…'), "should end with ellipsis");
     }

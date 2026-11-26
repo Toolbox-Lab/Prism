@@ -238,7 +238,6 @@ impl ArchiveClient {
         .into())
     }
 
-    #[allow(clippy::too_many_lines)]
     pub async fn fetch_ledger_entry(&self, ledger_sequence: u32, key: &str) -> GratResult<Vec<u8>> {
         use base64::Engine;
 
@@ -249,19 +248,26 @@ impl ArchiveClient {
                 file: file.clone(),
                 reason: format!("ledger key must be base64 encoded XDR: {e}"),
             })?;
-        let mut key_limited = Limited::new(key_bytes.as_slice(), Limits::none());
+        let mut key_input = Limited::new(key_bytes.as_slice(), Limits::none());
         let wanted_key =
-            LedgerKey::read_xdr(&mut key_limited).map_err(|e| ArchiveErrorKind::MalformedXdr {
+            LedgerKey::read_xdr(&mut key_input).map_err(|e| ArchiveErrorKind::MalformedXdr {
                 file: file.clone(),
                 reason: format!("failed to decode ledger key: {e}"),
             })?;
-        if !key_limited.inner.is_empty() {
+        if !key_input.inner.is_empty() {
             return Err(ArchiveErrorKind::MalformedXdr {
                 file,
                 reason: "ledger key contains trailing bytes".to_string(),
             }
             .into());
         }
+        let wanted_key_xdr =
+            wanted_key
+                .to_xdr(Limits::none())
+                .map_err(|e| ArchiveErrorKind::MalformedXdr {
+                    file: format!("ledger-entry-{ledger_sequence}-{key}"),
+                    reason: format!("failed to encode ledger key: {e}"),
+                })?;
 
         let checkpoint_seq = get_checkpoint_seq(ledger_sequence);
         let mut last_error = None;
@@ -339,10 +345,9 @@ impl ArchiveClient {
                             break;
                         }
                     };
-                let mut stream = bytes.as_slice();
-                while !stream.is_empty() {
-                    let mut limited = Limited::new(stream, Limits::none());
-                    let entry = BucketEntry::read_xdr(&mut limited).map_err(|e| {
+                let mut stream = Limited::new(bytes.as_slice(), Limits::none());
+                while !stream.inner.is_empty() {
+                    let entry = BucketEntry::read_xdr(&mut stream).map_err(|e| {
                         ArchiveErrorKind::MalformedXdr {
                             file: bucket_path.clone(),
                             reason: format!("failed to decode bucket entry: {e}"),
@@ -351,7 +356,10 @@ impl ArchiveClient {
                     stream = limited.inner;
                     match entry {
                         BucketEntry::Liveentry(entry) | BucketEntry::Initentry(entry) => {
-                            if ledger_key_for_entry(&entry) == wanted_key {
+                            let entry_key = ledger_key_for_entry(&entry);
+                            if entry_key.to_xdr(Limits::none()).ok().as_deref()
+                                == Some(&wanted_key_xdr)
+                            {
                                 return entry.to_xdr(Limits::none()).map_err(|e| {
                                     ArchiveErrorKind::MalformedXdr {
                                         file: bucket_path.clone(),
@@ -556,6 +564,49 @@ pub fn parse_ledger_header_stream(
 
 fn get_checkpoint_seq(ledger_sequence: u32) -> u32 {
     (ledger_sequence / 64) * 64 + 63
+}
+
+/// Derives the [`LedgerKey`] that identifies a [`LedgerEntry`].
+fn ledger_key_for_entry(entry: &LedgerEntry) -> LedgerKey {
+    match &entry.data {
+        LedgerEntryData::Account(e) => LedgerKey::Account(LedgerKeyAccount {
+            account_id: e.account_id.clone(),
+        }),
+        LedgerEntryData::Trustline(e) => LedgerKey::Trustline(LedgerKeyTrustLine {
+            account_id: e.account_id.clone(),
+            asset: e.asset.clone(),
+        }),
+        LedgerEntryData::Offer(e) => LedgerKey::Offer(LedgerKeyOffer {
+            seller_id: e.seller_id.clone(),
+            offer_id: e.offer_id,
+        }),
+        LedgerEntryData::Data(e) => LedgerKey::Data(LedgerKeyData {
+            account_id: e.account_id.clone(),
+            data_name: e.data_name.clone(),
+        }),
+        LedgerEntryData::ClaimableBalance(e) => {
+            LedgerKey::ClaimableBalance(LedgerKeyClaimableBalance {
+                balance_id: e.balance_id.clone(),
+            })
+        }
+        LedgerEntryData::LiquidityPool(e) => LedgerKey::LiquidityPool(LedgerKeyLiquidityPool {
+            liquidity_pool_id: e.liquidity_pool_id.clone(),
+        }),
+        LedgerEntryData::ContractData(e) => LedgerKey::ContractData(LedgerKeyContractData {
+            contract: e.contract.clone(),
+            key: e.key.clone(),
+            durability: e.durability,
+        }),
+        LedgerEntryData::ContractCode(e) => LedgerKey::ContractCode(LedgerKeyContractCode {
+            hash: e.hash.clone(),
+        }),
+        LedgerEntryData::ConfigSetting(e) => LedgerKey::ConfigSetting(LedgerKeyConfigSetting {
+            config_setting_id: e.discriminant(),
+        }),
+        LedgerEntryData::Ttl(e) => LedgerKey::Ttl(LedgerKeyTtl {
+            key_hash: e.key_hash.clone(),
+        }),
+    }
 }
 
 #[cfg(test)]

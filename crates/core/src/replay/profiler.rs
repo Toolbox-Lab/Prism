@@ -91,105 +91,18 @@ fn storage_bytes(state_diff: &StateDiff) -> (u64, u64) {
         }
     }
 
-    (read_bytes, write_bytes)
-}
-
-/// Aggregated cost of one host function across every call site.
-#[derive(Default)]
-struct HostCallTotals {
-    calls: u64,
-    cpu: u64,
-    memory: u64,
-}
-
-/// One in-flight `EnvCall`, tracking the budget consumed by nested host calls
-/// so their cost is not double counted in the parent's own cost.
-struct CallFrame {
-    function: String,
-    cpu_at_entry: u64,
-    memory_at_entry: u64,
-    child_cpu: u64,
-    child_memory: u64,
-}
-
-fn rank_host_calls(result: &SandboxResult) -> Vec<ResourceHotspot> {
-    let totals = aggregate_host_calls(&result.events);
-
-    let mut ranked: Vec<(String, HostCallTotals)> = totals.into_iter().collect();
-    ranked.sort_by(|(name_a, a), (name_b, b)| {
-        b.cpu
-            .cmp(&a.cpu)
-            .then_with(|| b.memory.cmp(&a.memory))
-            .then_with(|| a.calls.cmp(&b.calls))
-            .then_with(|| name_a.cmp(name_b))
-    });
-    ranked.truncate(TOP_HOST_CALLS);
-
-    ranked
-        .into_iter()
-        .map(|(function, totals)| ResourceHotspot {
-            location: function,
-            call_count: totals.calls,
-            cpu_instructions: totals.cpu,
-            cpu_percentage: percentage(totals.cpu, result.total_cpu),
-            memory_bytes: totals.memory,
-            memory_percentage: percentage(totals.memory, result.total_memory),
-        })
-        .collect()
-}
-
-/// Pairs `EnvCall`/`EnvRet` events and attributes the budget consumed between
-/// them to the host function. Nested calls are attributed to the innermost
-/// function only, so the reported costs are exclusive and comparable.
-fn aggregate_host_calls(events: &[TraceEvent]) -> HashMap<String, HostCallTotals> {
-    let mut totals: HashMap<String, HostCallTotals> = HashMap::new();
-    let mut stack: Vec<CallFrame> = Vec::new();
-
-    for event in events {
-        match event.event_type {
-            TraceEventType::HostFunctionCall => {
-                stack.push(CallFrame {
-                    function: event_function_name(event),
-                    cpu_at_entry: event_counter(event, "cpu_insns"),
-                    memory_at_entry: event_counter(event, "mem_bytes"),
-                    child_cpu: 0,
-                    child_memory: 0,
-                });
-            }
-            TraceEventType::HostFunctionReturn => {
-                let Some(frame) = stack.pop() else {
-                    continue;
-                };
-                let inclusive_cpu =
-                    event_counter(event, "cpu_insns").saturating_sub(frame.cpu_at_entry);
-                let inclusive_memory =
-                    event_counter(event, "mem_bytes").saturating_sub(frame.memory_at_entry);
-
-                let totals_entry = totals.entry(frame.function).or_default();
-                totals_entry.calls += 1;
-                totals_entry.cpu += inclusive_cpu.saturating_sub(frame.child_cpu);
-                totals_entry.memory += inclusive_memory.saturating_sub(frame.child_memory);
-
-                if let Some(parent) = stack.last_mut() {
-                    parent.child_cpu += inclusive_cpu;
-                    parent.child_memory += inclusive_memory;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    totals
-}
-
-fn event_function_name(event: &TraceEvent) -> String {
-    event
-        .data
-        .get("function")
-        .and_then(|value| value.as_str())
-        .unwrap_or("unknown")
-        .to_string()
-}
+    let mut profile = ResourceProfile {
+        total_cpu: result.total_cpu,
+        cpu_limit: result.cpu_limit,
+        total_memory: result.total_memory,
+        memory_limit: result.memory_limit,
+        total_read_bytes,
+        total_write_bytes,
+        read_limit: 0,
+        write_limit: 0,
+        hotspots: Vec::new(),
+        warnings: Vec::new(),
+    };
 
 fn event_counter(event: &TraceEvent, key: &str) -> u64 {
     event
@@ -429,5 +342,69 @@ mod tests {
         assert_eq!(profile.warnings.len(), 0);
         assert_eq!(profile.cpu_limit, 0);
         assert_eq!(profile.hotspots[0].cpu_percentage, 100.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::trace::TraceId;
+
+    fn sandbox_result(
+        total_cpu: u64,
+        cpu_limit: u64,
+        total_memory: u64,
+        memory_limit: u64,
+    ) -> SandboxResult {
+        SandboxResult {
+            trace_id: TraceId::new(),
+            success: true,
+            events: Vec::new(),
+            final_state: std::collections::HashMap::new(),
+            total_cpu,
+            total_memory,
+            cpu_limit,
+            memory_limit,
+            diagnostic_events: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn profile_records_effective_sandbox_limits() {
+        let result = sandbox_result(1_000, 10_000_000, 2_000, 1_048_576);
+        let profile = generate_profile(
+            &result,
+            &StateDiff {
+                entries: Vec::new(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(profile.cpu_limit, 10_000_000);
+        assert_eq!(profile.memory_limit, 1_048_576);
+        assert!(profile.warnings.is_empty());
+    }
+
+    #[test]
+    fn profile_warns_when_usage_is_near_the_applied_limits() {
+        let result = sandbox_result(95, 100, 960, 1_000);
+        let profile = generate_profile(
+            &result,
+            &StateDiff {
+                entries: Vec::new(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(profile.cpu_limit, 100);
+        assert_eq!(profile.memory_limit, 1_000);
+        assert!(profile
+            .warnings
+            .iter()
+            .any(|w| w.starts_with("CPU usage is at 95%")));
+        assert!(profile
+            .warnings
+            .iter()
+            .any(|w| w.starts_with("Memory usage is at 96%")));
     }
 }

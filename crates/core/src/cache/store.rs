@@ -1,9 +1,11 @@
 use crate::error::{GratError, GratResult};
 
+use dashmap::DashMap;
 use std::cmp::Ordering;
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 
@@ -31,6 +33,9 @@ impl CacheCategory {
 pub struct CacheStore {
     cache_dir: PathBuf,
     max_size: u64,
+    /// Concurrent L1 cache; filesystem entries are the persistent L2 tier.
+    memory: DashMap<String, Vec<u8>>,
+    write_lock: Arc<Mutex<()>>,
 }
 
 impl CacheStore {
@@ -45,6 +50,8 @@ impl CacheStore {
         Ok(Self {
             cache_dir,
             max_size: max_size_bytes,
+            memory: DashMap::new(),
+            write_lock: Arc::new(Mutex::new(())),
         })
     }
 
@@ -64,6 +71,7 @@ impl CacheStore {
         value: &[u8],
         ledger_sequence: Option<u32>,
     ) -> GratResult<()> {
+        let _write_guard = self.write_lock.lock().map_err(|_| GratError::CacheError("Cache write lock poisoned".to_string()))?;
         let new_size = value.len() as u64;
         if new_size > self.max_size {
             return Err(GratError::CacheError(format!(
@@ -73,12 +81,12 @@ impl CacheStore {
         }
 
         // Ensure we can fit the new entry by evicting least-recently-used files.
-        let current_size = self.total_cache_size()?;
-        if current_size.saturating_add(new_size) > self.max_size {
-            self.evict_lru_to_fit(new_size)?;
-        }
-
         let path = self.entry_path(category, key, ledger_sequence);
+        let existing_size = path.metadata().map(|meta| meta.len()).unwrap_or(0);
+        let current_size = self.total_cache_size()?.saturating_sub(existing_size);
+        if current_size.saturating_add(new_size) > self.max_size {
+            self.evict_lru_to_fit(new_size.saturating_sub(existing_size))?;
+        }
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| GratError::CacheError(format!("Failed to create dir: {e}")))?;
@@ -86,6 +94,7 @@ impl CacheStore {
 
         std::fs::write(&path, value)
             .map_err(|e| GratError::CacheError(format!("Failed to write cache entry: {e}")))?;
+        self.memory.insert(path.to_string_lossy().into_owned(), value.to_vec());
         Ok(())
     }
 
@@ -96,6 +105,11 @@ impl CacheStore {
         ledger_sequence: Option<u32>,
     ) -> GratResult<Option<Vec<u8>>> {
         let path = self.entry_path(category, key, ledger_sequence);
+        let memory_key = path.to_string_lossy().into_owned();
+        if let Some(value) = self.memory.get(&memory_key) {
+            touch_file(&path);
+            return Ok(Some(value.clone()));
+        }
         if path.exists() {
             // Explicitly update access metadata to ensure LRU eviction works even if atime is disabled.
             if let Ok(file) = std::fs::OpenOptions::new().write(true).open(&path) {
@@ -108,13 +122,19 @@ impl CacheStore {
             }
             let data = std::fs::read(&path)
                 .map_err(|e| GratError::CacheError(format!("Failed to read cache entry: {e}")))?;
+            self.memory.insert(memory_key, data.clone());
             Ok(Some(data))
         } else {
             Ok(None)
         }
     }
 
-    pub fn contains(&self, category: CacheCategory, key: &str, ledger_sequence: Option<u32>) -> bool {
+    pub fn contains(
+        &self,
+        category: CacheCategory,
+        key: &str,
+        ledger_sequence: Option<u32>,
+    ) -> bool {
         self.entry_path(category, key, ledger_sequence).exists()
     }
 
@@ -125,6 +145,7 @@ impl CacheStore {
         ledger_sequence: Option<u32>,
     ) -> GratResult<()> {
         let path = self.entry_path(category, key, ledger_sequence);
+        self.memory.remove(&path.to_string_lossy().into_owned());
         if path.exists() {
             std::fs::remove_file(&path)
                 .map_err(|e| GratError::CacheError(format!("Failed to remove cache entry: {e}")))?;
@@ -132,7 +153,11 @@ impl CacheStore {
         Ok(())
     }
 
-    pub fn prune_older_than(&self, category: CacheCategory, ledger_sequence: u32) -> GratResult<()> {
+    pub fn prune_older_than(
+        &self,
+        category: CacheCategory,
+        ledger_sequence: u32,
+    ) -> GratResult<()> {
         let base_dir = self.cache_dir.join(category.as_str());
         if !base_dir.exists() {
             return Ok(());
@@ -156,9 +181,11 @@ impl CacheStore {
         }
 
         for path in stale_paths {
+            self.memory.remove(&path.to_string_lossy().into_owned());
             if path.exists() {
-                std::fs::remove_file(&path)
-                    .map_err(|e| GratError::CacheError(format!("Failed to prune cache entry: {e}")))?;
+                std::fs::remove_file(&path).map_err(|e| {
+                    GratError::CacheError(format!("Failed to prune cache entry: {e}"))
+                })?;
             }
         }
 
@@ -166,6 +193,7 @@ impl CacheStore {
     }
 
     pub fn clear(&self) -> GratResult<()> {
+        self.memory.clear();
         if self.cache_dir.exists() {
             std::fs::remove_dir_all(&self.cache_dir)
                 .map_err(|e| GratError::CacheError(format!("Failed to clear cache: {e}")))?;
@@ -253,6 +281,7 @@ impl CacheStore {
             let (oldest_ts, oldest_file) = files.into_iter().next().expect("checked empty");
 
             let path = oldest_file.path();
+            self.memory.remove(&path.to_string_lossy().into_owned());
             // Best-effort delete.
             std::fs::remove_file(&path).map_err(|e| {
                 GratError::CacheError(format!(
@@ -264,6 +293,13 @@ impl CacheStore {
             // If deletion succeeded, loop will re-check size.
             let _ = oldest_ts;
         }
+    }
+}
+
+fn touch_file(path: &Path) {
+    if let Ok(file) = std::fs::OpenOptions::new().write(true).open(path) {
+        let now = SystemTime::now();
+        let _ = file.set_times(std::fs::FileTimes::new().set_accessed(now).set_modified(now));
     }
 }
 
@@ -298,7 +334,9 @@ mod tests {
         store
             .put(CacheCategory::WasmBlob, "test_key", b"hello", None)
             .unwrap();
-        let result = store.get(CacheCategory::WasmBlob, "test_key", None).unwrap();
+        let result = store
+            .get(CacheCategory::WasmBlob, "test_key", None)
+            .unwrap();
         assert_eq!(result, Some(b"hello".to_vec()));
 
         store.clear().unwrap();
@@ -311,9 +349,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let store = CacheStore::with_max_size_bytes(dir.clone(), 10).unwrap();
 
-        store.put(CacheCategory::WasmBlob, "key1", b"1234", None).unwrap();
+        store
+            .put(CacheCategory::WasmBlob, "key1", b"1234", None)
+            .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(10));
-        store.put(CacheCategory::WasmBlob, "key2", b"5678", None).unwrap();
+        store
+            .put(CacheCategory::WasmBlob, "key2", b"5678", None)
+            .unwrap();
 
         assert!(store.contains(CacheCategory::WasmBlob, "key1", None));
         assert!(store.contains(CacheCategory::WasmBlob, "key2", None));
@@ -321,7 +363,9 @@ mod tests {
         store.get(CacheCategory::WasmBlob, "key1", None).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(10));
 
-        store.put(CacheCategory::WasmBlob, "key3", b"9012", None).unwrap();
+        store
+            .put(CacheCategory::WasmBlob, "key3", b"9012", None)
+            .unwrap();
 
         assert!(store.contains(CacheCategory::WasmBlob, "key1", None));
         assert!(!store.contains(CacheCategory::WasmBlob, "key2", None));
@@ -329,5 +373,25 @@ mod tests {
 
         store.clear().unwrap();
         let _ = std::fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn aggregate_directory_size_stays_within_quota_after_eviction() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = CacheStore::with_max_size_bytes(dir.path().to_path_buf(), 10).unwrap();
+        store.put(CacheCategory::WasmBlob, "a", b"1234", None).unwrap();
+        store.put(CacheCategory::ContractSpec, "b", b"5678", None).unwrap();
+        store.put(CacheCategory::TransactionResult, "c", b"90ab", None).unwrap();
+        assert!(store.total_cache_size().unwrap() <= 10);
+        assert!(store.contains(CacheCategory::TransactionResult, "c", None));
+    }
+
+    #[test]
+    fn memory_tier_is_populated_from_disk_and_remove_invalidates_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = CacheStore::with_max_size_bytes(dir.path().to_path_buf(), 32).unwrap();
+        store.put(CacheCategory::WasmBlob, "hot", b"payload", None).unwrap();
+        assert_eq!(store.get(CacheCategory::WasmBlob, "hot", None).unwrap(), Some(b"payload".to_vec()));
+        store.remove(CacheCategory::WasmBlob, "hot", None).unwrap();
+        assert_eq!(store.get(CacheCategory::WasmBlob, "hot", None).unwrap(), None);
     }
 }

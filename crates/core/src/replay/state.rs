@@ -88,12 +88,10 @@ pub async fn reconstruct_state(tx_hash: &str, network: &NetworkConfig) -> GratRe
         .ledger
         .ok_or_else(|| GratError::ReplayError("Cannot determine transaction ledger".to_string()))?;
 
-    let latest: serde_json::Value = rpc.get_latest_ledger().await?;
-    let latest_ledger = latest
-        .get("sequence")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0) as u32;
-    let protocol_version = parse_protocol_version(latest.get("protocolVersion"));
+    let latest = rpc.get_latest_ledger().await?;
+    let latest_ledger = latest.sequence;
+    let protocol_version =
+        parse_protocol_version(Some(&serde_json::json!(latest.protocol_version)));
 
     let age = latest_ledger.saturating_sub(tx_ledger);
 

@@ -1,4 +1,5 @@
 use grat_core::types::trace::{ContractInvocation, ExecutionTrace};
+use std::io::Write;
 use termcolor::WriteColor;
 
 mod tree_chars {
@@ -58,7 +59,10 @@ pub fn render_contract_tree<W: WriteColor>(
     let connector = if is_last {
         tree_chars::CORNER
     } else {
-        tree_chars::BRANCH
+        (
+            tree_chars::BRANCH,
+            prefix.to_string() + tree_chars::CONTINUE,
+        )
     };
 
     write!(writer, "{}", prefix)?;
@@ -323,7 +327,7 @@ pub fn print_trace_tree(trace: &ExecutionTrace) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grat_core::types::trace::ContractInvocation;
+    use grat_core::types::trace::{ContractInvocation, TraceId};
     use termcolor::Buffer;
 
     #[test]
@@ -343,7 +347,7 @@ mod tests {
     #[test]
     fn test_render_simple_tree() {
         let invocation = ContractInvocation {
-            trace_id: grat_core::types::trace::TraceId::new(),
+            trace_id: TraceId::new(),
             contract_id: "CB...123".to_string(),
             function_name: "transfer".to_string(),
             arguments: vec![
