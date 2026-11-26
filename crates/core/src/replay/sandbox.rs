@@ -225,7 +225,7 @@ pub async fn execute_with_tracing_limited(
     })
 }
 
-fn encode_ttl_entry(key_b64: &str, live_until_ledger_seq: u32) -> GratResult<Vec<u8>> {
+pub(crate) fn encode_ttl_entry(key_b64: &str, live_until_ledger_seq: u32) -> GratResult<Vec<u8>> {
     let key_bytes = STANDARD
         .decode(key_b64)
         .map_err(|e| GratError::XdrDecodingFailed {
