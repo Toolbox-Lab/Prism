@@ -1,4 +1,5 @@
 name: CI
+
 on:
   push:
     branches: ["main", "master"]
@@ -24,11 +25,8 @@ jobs:
         with:
           shared-key: "rust-cache"
 
-      - name: Format code
-        run: cargo fmt --all
-
       - name: Check formatting
-        run: cargo fmt --all
+        run: cargo fmt --all -- --check
 
       - name: Build
         run: cargo build --workspace --all-targets --all-features
@@ -59,7 +57,7 @@ jobs:
       - name: Get pnpm store directory
         shell: bash
         run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
       - name: Setup pnpm cache
         uses: actions/cache@v4
