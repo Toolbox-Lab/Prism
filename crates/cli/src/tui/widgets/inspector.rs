@@ -261,6 +261,8 @@ mod tests {
             "truncated string should fit within max characters"
         );
         assert!(result.ends_with('…'), "should end with ellipsis");
+        // Multi-byte input must not be split inside a character.
+        assert_eq!(truncate("ééééééé", 3), "éé…");
     }
 
     #[test]

@@ -10,6 +10,49 @@ use stellar_xdr::curr::{
     LedgerKeyTrustLine, LedgerKeyTtl, Limited, Limits, ReadXdr, WriteXdr,
 };
 
+/// Derive the [`LedgerKey`] that identifies a [`LedgerEntry`].
+fn ledger_key_from_entry(entry: &LedgerEntry) -> LedgerKey {
+    match &entry.data {
+        LedgerEntryData::Account(a) => LedgerKey::Account(LedgerKeyAccount {
+            account_id: a.account_id.clone(),
+        }),
+        LedgerEntryData::Trustline(t) => LedgerKey::Trustline(LedgerKeyTrustLine {
+            account_id: t.account_id.clone(),
+            asset: t.asset.clone(),
+        }),
+        LedgerEntryData::Offer(o) => LedgerKey::Offer(LedgerKeyOffer {
+            seller_id: o.seller_id.clone(),
+            offer_id: o.offer_id,
+        }),
+        LedgerEntryData::Data(d) => LedgerKey::Data(LedgerKeyData {
+            account_id: d.account_id.clone(),
+            data_name: d.data_name.clone(),
+        }),
+        LedgerEntryData::ClaimableBalance(c) => {
+            LedgerKey::ClaimableBalance(LedgerKeyClaimableBalance {
+                balance_id: c.balance_id.clone(),
+            })
+        }
+        LedgerEntryData::LiquidityPool(l) => LedgerKey::LiquidityPool(LedgerKeyLiquidityPool {
+            liquidity_pool_id: l.liquidity_pool_id.clone(),
+        }),
+        LedgerEntryData::ContractData(c) => LedgerKey::ContractData(LedgerKeyContractData {
+            contract: c.contract.clone(),
+            key: c.key.clone(),
+            durability: c.durability,
+        }),
+        LedgerEntryData::ContractCode(c) => LedgerKey::ContractCode(LedgerKeyContractCode {
+            hash: c.hash.clone(),
+        }),
+        LedgerEntryData::ConfigSetting(c) => LedgerKey::ConfigSetting(LedgerKeyConfigSetting {
+            config_setting_id: c.discriminant(),
+        }),
+        LedgerEntryData::Ttl(t) => LedgerKey::Ttl(LedgerKeyTtl {
+            key_hash: t.key_hash.clone(),
+        }),
+    }
+}
+
 #[derive(Debug)]
 pub struct ArchiveClient {
     client: reqwest::Client,
