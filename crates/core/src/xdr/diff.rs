@@ -3,7 +3,9 @@
 use crate::types::trace::{DiffChangeType, LedgerEntryDiff, StateDiff};
 use serde::Serialize;
 use std::fmt::{self, Debug};
-use stellar_xdr::curr::{AccountEntry, ContractCodeEntry, ContractDataEntry, ScMap, ScVal, Signer, TrustLineEntry};
+use stellar_xdr::curr::{
+    AccountEntry, ContractCodeEntry, ContractDataEntry, ScMap, ScVal, Signer, TrustLineEntry,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountEntryDiff {
@@ -97,8 +99,6 @@ pub fn diff_account_entry(old: &AccountEntry, new: &AccountEntry) -> AccountEntr
         removed_signers,
     }
 }
-
-
 
 /// Report a contract WASM code hash rotation.
 ///
@@ -199,7 +199,9 @@ fn format_asset(asset: &stellar_xdr::curr::TrustLineAsset) -> String {
                 .to_owned();
             format!("{code}:{}", a.issuer.to_string())
         }
-        stellar_xdr::curr::TrustLineAsset::PoolShare(pool) => format!("pool_share:{}", hex::encode(&pool.0)),
+        stellar_xdr::curr::TrustLineAsset::PoolShare(pool) => {
+            format!("pool_share:{}", hex::encode(&pool.0))
+        }
     }
 }
 
@@ -310,10 +312,10 @@ fn json_string<T: Debug + Serialize>(value: &T) -> String {
 
 #[cfg(test)]
 mod tests {
-use super::*;
+    use super::*;
     use stellar_xdr::curr::{
-        AccountEntryExt, AccountId, PublicKey, SequenceNumber, SignerKey, String32, StringM, Thresholds,
-        Uint256, VecM,
+        AccountEntryExt, AccountId, PublicKey, SequenceNumber, SignerKey, String32, StringM,
+        Thresholds, Uint256, VecM,
     };
 
     fn dummy_account_entry() -> AccountEntry {
@@ -376,12 +378,12 @@ use super::*;
         assert_eq!(diff.removed_signers[0], signer1);
     }
 
-use super::{diff_contract_code_entry, diff_contract_data, diff_trustline_entry};
+    use super::{diff_contract_code_entry, diff_contract_data, diff_trustline_entry};
     use crate::types::trace::DiffChangeType;
     use stellar_xdr::curr::{
-        AccountId, Asset, AssetCode12, AssetCode4, ContractCodeEntry, ContractCodeEntryExt,
-        ContractDataDurability, ContractDataEntry, ExtensionPoint, Hash, PublicKey, ScMapEntry,
-        ScSymbol, ScVal, StringM, TrustLineEntry, TrustLineEntryExt, TrustLineFlags, Uint256,
+        AssetCode12, AssetCode4, ContractCodeEntry, ContractCodeEntryExt, ContractDataDurability,
+        ContractDataEntry, ExtensionPoint, Hash, ScMapEntry, ScSymbol, ScVal, TrustLineEntry,
+        TrustLineEntryExt,
     };
 
     fn contract_code(hash: [u8; 32]) -> ContractCodeEntry {
@@ -548,13 +550,16 @@ use super::{diff_contract_code_entry, diff_contract_data, diff_trustline_entry};
             asset,
             balance,
             limit,
-            flags: TrustLineFlags::from_bits_truncate(flags),
+            flags,
             ext: TrustLineEntryExt::V0,
         }
     }
 
     fn usdc_asset() -> stellar_xdr::curr::TrustLineAsset {
-        stellar_xdr::curr::TrustLineAsset::CreditAlphanum4(stellar_xdr::curr::AlphaNum4 { asset_code: AssetCode4(*b"USDC"), issuer: AccountId(PublicKey::PublicKeyTypeEd25519(Uint256([0; 32]))) })
+        stellar_xdr::curr::TrustLineAsset::CreditAlphanum4(stellar_xdr::curr::AlphaNum4 {
+            asset_code: AssetCode4(*b"USDC"),
+            issuer: AccountId(PublicKey::PublicKeyTypeEd25519(Uint256([0; 32]))),
+        })
     }
 
     #[test]
@@ -598,7 +603,11 @@ use super::{diff_contract_code_entry, diff_contract_data, diff_trustline_entry};
 
     #[test]
     fn trustline_alphanum12_asset_is_rendered() {
-        let asset = stellar_xdr::curr::TrustLineAsset::CreditAlphanum12(stellar_xdr::curr::AlphaNum12 { asset_code: AssetCode12(*b"LONGASSET\0\0\0"), issuer: AccountId(PublicKey::PublicKeyTypeEd25519(Uint256([0; 32]))) });
+        let asset =
+            stellar_xdr::curr::TrustLineAsset::CreditAlphanum12(stellar_xdr::curr::AlphaNum12 {
+                asset_code: AssetCode12(*b"LONGASSET\0\0\0"),
+                issuer: AccountId(PublicKey::PublicKeyTypeEd25519(Uint256([0; 32]))),
+            });
         let old = trustline(asset.clone(), 0, 1000, 0);
         let new = trustline(asset, 5, 1000, 0);
 

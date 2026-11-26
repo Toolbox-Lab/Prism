@@ -223,17 +223,13 @@ fn build_row(entry: &LedgerEntryDiff) -> Row {
 
 /// Truncate `s` to at most `max` bytes, appending `…` when shortened.
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    // Count characters, not bytes: slicing by byte offset panics on
+    // multi-byte UTF-8 and over-counts the width of the ellipsis.
+    if s.chars().count() <= max {
         s.to_string()
     } else {
-        let content_limit = max.saturating_sub("…".len());
-        let end = s
-            .char_indices()
-            .map(|(index, _)| index)
-            .take_while(|index| *index <= content_limit)
-            .last()
-            .unwrap_or(0);
-        format!("{}…", &s[..end])
+        let kept: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{kept}…")
     }
 }
 
@@ -258,7 +254,10 @@ mod tests {
     #[test]
     fn truncate_long_string() {
         let result = truncate("abcdefghij", 5);
-        assert!(result.len() <= 6, "truncated string should be short");
+        assert!(
+            result.chars().count() <= 5,
+            "truncated string should fit within max characters"
+        );
         assert!(result.ends_with('…'), "should end with ellipsis");
     }
 

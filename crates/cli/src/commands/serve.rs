@@ -276,31 +276,16 @@ async fn stream_trace_replay(
     }
 
     if !result.diagnostic_events.is_empty() {
-        let diagnostic_messages: Vec<DiagnosticEventMessage> = result
-            .diagnostic_events
-            .iter()
-            .enumerate()
-            .map(|(idx, event)| {
-                let (topics, data) = match &event.event.body {
-                    stellar_xdr::curr::ContractEventBody::V0(body) => (
-                        body.topics
-                            .iter()
-                            .map(|topic| format!("{topic:?}"))
-                            .collect(),
-                        std::collections::HashMap::from([(
-                            "value".to_string(),
-                            format!("{:?}", body.data),
-                        )]),
-                    ),
-                };
-                DiagnosticEventMessage {
-                    event_type: format!("{:?}", event.event.type_),
-                    topics,
-                    data,
-                    timeline_position: idx,
-                }
-            })
-            .collect();
+        let diagnostic_messages: Vec<DiagnosticEventMessage> =
+            grat_core::replay::structure_diagnostic_events(&result.diagnostic_events)
+                .into_iter()
+                .map(|event| DiagnosticEventMessage {
+                    event_type: event.event_type,
+                    topics: event.topics,
+                    data: event.data,
+                    timeline_position: event.timeline_position,
+                })
+                .collect();
         let _ = sender.send(TraceStreamMessage::DiagnosticEvents {
             events: diagnostic_messages,
         });

@@ -12,7 +12,7 @@ pub mod human;
 pub mod json;
 pub mod renderers;
 pub mod theme;
-mod trace_tree;
+pub mod trace_tree;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
