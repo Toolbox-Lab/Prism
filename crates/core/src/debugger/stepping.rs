@@ -34,9 +34,9 @@ pub enum StepCommand {
 
     /// Leave the current invocation and resume in its caller.
     ///
-    /// Moves to the next recorded frame that is shallower than the current
-    /// frame. Root invocations have no caller, so stepping out of one leaves
-    /// the debugger where it is.
+    /// Moves to the current frame's recorded parent invocation. Root
+    /// invocations have no caller, so stepping out of one leaves the debugger
+    /// where it is.
     StepOut,
 
     /// Run to the next top-level invocation.
@@ -181,10 +181,7 @@ impl ExecutionStepper {
                 let depth = self.depth_at(current);
                 self.next_frame(current, |candidate| candidate <= depth)
             }
-            StepCommand::StepOut => {
-                let depth = self.depth_at(current);
-                self.next_frame(current, |candidate| candidate < depth)
-            }
+            StepCommand::StepOut => self.frames.get(current).and_then(|frame| frame.parent),
             StepCommand::Continue => self
                 .next_frame(current, |candidate| candidate == 0)
                 .or_else(|| self.frames.len().checked_sub(1))
@@ -641,8 +638,8 @@ mod tests {
         assert_eq!(stepper.current_index(), Some(2));
 
         stepper.step(StepCommand::StepOut);
-        assert_eq!(stepper.current_index(), Some(4));
-        assert_eq!(stepper.current_frame().unwrap().function_name, "d");
+        assert_eq!(stepper.current_index(), Some(1));
+        assert_eq!(stepper.current_frame().unwrap().function_name, "a");
     }
 
     #[test]
@@ -839,7 +836,7 @@ mod tests {
         assert_eq!(stack_names(&stepper), vec!["root1", "a", "b"]);
 
         stepper.step(StepCommand::StepOut);
-        assert_eq!(stack_names(&stepper), vec!["root1", "d"]);
+        assert_eq!(stack_names(&stepper), vec!["root1", "a"]);
 
         stepper.step(StepCommand::Continue);
         assert_eq!(stack_names(&stepper), vec!["root2"]);
