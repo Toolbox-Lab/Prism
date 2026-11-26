@@ -1,0 +1,1598 @@
+[category]
+name = "All categories"
+description = "Combined error taxonomy containing entries from every supported category."
+source_module = "grat-core/src/taxonomy/data"
+
+[[errors]]
+id = "host.auth.invalid_action"
+category = "auth"
+code = 0
+name = "InvalidAction"
+severity = "Error"
+since_protocol = 20
+summary = "The authorization context is malformed or does not match the current invocation."
+detailed_explanation = """
+Soroban contracts can require authorization for specific operations. When the auth entries
+provided with the transaction do not match the authorization requirements of the contract
+invocation, the host cannot validate the action and raises this error.
+"""
+related_errors = ["host.auth.not_authorized"]
+source_file = "soroban-env-host/src/auth.rs"
+
+[[errors.common_causes]]
+description = "Missing or incorrect auth entries in the transaction envelope"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "Auth entry signed with the wrong key or for the wrong contract/function"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Use simulateTransaction to automatically populate the required auth entries"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Verify that all required signers are included and signing the correct auth payload"
+difficulty = "medium"
+requires_upgrade = false
+
+
+[[errors]]
+id = "host.auth.invalid_signature"
+category = "auth"
+code = 1
+name = "InvalidSignature"
+severity = "Error"
+since_protocol = 20
+summary = "The auth signature could not be verified."
+detailed_explanation = """
+This error appears when the signature attached to an auth entry fails validation. For Ed25519
+accounts it usually means the signature does not match the authorization payload, the wrong
+signing key was used, or the auth entry expired. For smart-wallet or contract-account flows,
+it means the wallet's __check_auth logic rejected the payload or could not authenticate the
+request it was asked to approve.
+"""
+related_errors = ["host.auth.missing_auth", "host.auth.forbidden"]
+source_file = "soroban-env-host/src/builtin_contracts/account_contract.rs"
+
+[[errors.common_causes]]
+description = "The payload was signed by the wrong Ed25519 key"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "The auth entry expired before enforcement"
+likelihood = "medium"
+
+[[errors.common_causes]]
+description = "A smart-wallet __check_auth implementation rejected the payload"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Rebuild and sign the auth entry from a fresh simulation"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Confirm the account key or wallet logic is signing the exact auth payload that was simulated"
+difficulty = "medium"
+requires_upgrade = false
+
+
+[[errors]]
+id = "host.auth.missing_auth"
+category = "auth"
+code = 2
+name = "MissingAuth"
+severity = "Error"
+since_protocol = 20
+summary = "A required auth entry or signer was not supplied."
+detailed_explanation = """
+The contract or host expected an authorization record for a required signer, but the transaction
+did not include one. This often happens when the client skips simulation, rebuilds the operation
+without preserving sorobanData, or omits one of the signers needed by a multi-party flow.
+"""
+related_errors = ["host.auth.invalid_action"]
+source_file = "soroban-env-host/src/auth.rs"
+
+[[errors.common_causes]]
+description = "The transaction was rebuilt without the required sorobanData"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "A required signer did not sign the auth entry"
+likelihood = "high"
+
+[[errors.suggested_fixes]]
+description = "Re-run simulation and keep the generated auth entries attached to the rebuilt transaction"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Check that every required signer is present before submitting"
+difficulty = "medium"
+requires_upgrade = false
+
+
+[[errors]]
+id = "host.auth.forbidden"
+category = "auth"
+code = 3
+name = "Forbidden"
+severity = "Error"
+since_protocol = 20
+summary = "The caller is not allowed to perform the requested action or cross-contract call."
+detailed_explanation = """
+The authorization tree may be structurally valid, but the requested operation is outside the
+permissions granted to the signer, wallet, or delegated auth chain. This commonly shows up when
+a contract tries to escalate privileges, invoke a protected branch, or use a signer that is not
+permitted to approve the current action.
+"""
+related_errors = ["host.auth.not_authorized"]
+source_file = "soroban-env-host/src/builtin_contracts/account_contract.rs"
+
+[[errors.common_causes]]
+description = "The auth tree does not include the role required for the current call"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "A policy signer or delegated wallet rejected the requested branch"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Review the contract's access-control rules and ensure the caller is granted the required role"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Rebuild the auth tree so the approved signer covers the exact sub-invocation being attempted"
+difficulty = "medium"
+requires_upgrade = false
+
+
+[[errors]]
+id = "host.auth.expired_auth"
+category = "auth"
+code = 4
+name = "ExpiredAuth"
+severity = "Error"
+since_protocol = 20
+summary = "The auth entry expired before the transaction was enforced."
+detailed_explanation = """
+Auth entries are only valid up to their signature expiration ledger. If the transaction is
+submitted after that ledger, the host rejects the authorization even if the signature itself
+was otherwise correct.
+"""
+related_errors = ["host.auth.invalid_signature"]
+source_file = "soroban-env-host/src/auth.rs"
+
+[[errors.common_causes]]
+description = "The signature expiration ledger was set too low for the submission delay"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "The transaction sat in a queue or fee-payer flow long enough to expire"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Use a shorter build-to-submit path and refresh auth entries before resubmitting"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Increase the signature expiration window only as much as the workflow requires"
+difficulty = "medium"
+requires_upgrade = false
+
+
+[[errors]]
+id = "host.auth.not_authorized"
+category = "auth"
+code = 5
+name = "NotAuthorized"
+severity = "Error"
+since_protocol = 20
+summary = "The auth tree is valid, but it does not grant permission for this invocation."
+detailed_explanation = """
+The supplied signer or wallet may have authenticated successfully, but the resulting authorization
+tree still does not cover the exact invocation or sub-invocation being executed. This is common
+when a contract call is legitimate in principle but the specific branch needs a stronger signer,
+another delegated approval, or a different permission scope.
+"""
+related_errors = ["host.auth.forbidden"]
+source_file = "soroban-env-host/src/auth.rs"
+
+[[errors.common_causes]]
+description = "The caller authenticated successfully but lacked permission for the specific branch"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "A cross-contract call required a signer that was not present in the auth tree"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Broaden the approved auth tree so it includes the exact invocation path"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Verify any delegated or policy signer actually authorizes the current contract branch"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors]]
+id = "host.budget.limit_exceeded.cpu"
+category = "budget"
+code = 0
+name = "CPUExceeded"
+severity = "Error"
+since_protocol = 20
+summary = "The transaction exceeded its CPU instruction budget."
+detailed_explanation = """
+The Soroban runtime enforces strict CPU instruction limits per transaction. When the total number \
+of CPU instructions consumed by the contract execution exceeds the declared limit, the host \
+terminates execution immediately with this error.
+
+This commonly occurs in computationally intensive operations such as large loops, complex \
+cryptographic operations, or deeply nested cross-contract calls where each sub-invocation \
+consumes a portion of the parent's budget.
+"""
+related_errors = ["host.budget.insufficient_memory"]
+source_file = "soroban-env-host/src/budget.rs"
+documentation_url = "https://soroban.stellar.org/docs/fundamentals/fees-and-metering"
+
+[[errors.common_causes]]
+description = "Unbounded or large loops processing collections (vectors, maps) with many entries"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "Cross-contract calls consuming more budget than allocated by the outer invocation"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "Complex cryptographic verification operations (signature verification, hashing large data)"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Increase the CPU instruction limit in the transaction's resource declaration"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Optimize the contract logic to reduce computational complexity"
+difficulty = "medium"
+requires_upgrade = true
+
+[[errors.suggested_fixes]]
+description = "Break the operation into multiple smaller transactions"
+difficulty = "hard"
+requires_upgrade = true
+
+
+[[errors]]
+id = "host.budget.insufficient_instructions"
+category = "budget"
+code = 1
+name = "InsufficientInstructions"
+severity = "Error"
+since_protocol = 20
+summary = "The transaction did not have enough CPU instructions allocated."
+detailed_explanation = """
+The transaction's resource declaration did not reserve enough CPU instructions for the contract
+invocation to complete. This usually happens when submitted limits are stale, manually edited, or
+lower than the values returned by simulation.
+"""
+related_errors = ["host.budget.limit_exceeded.cpu"]
+source_file = "soroban-env-host/src/budget.rs"
+documentation_url = "https://soroban.stellar.org/docs/fundamentals/fees-and-metering"
+
+[[errors.common_causes]]
+description = "The transaction was submitted with CPU limits lower than the simulated requirement"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "Contract logic became more expensive after the transaction was prepared"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Re-run simulation and submit the transaction with the updated CPU instruction limit"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Reduce the amount of work performed by the contract invocation"
+difficulty = "medium"
+requires_upgrade = true
+
+[[errors]]
+id = "host.budget.insufficient_memory"
+category = "budget"
+code = 2
+name = "InsufficientMemory"
+severity = "Error"
+since_protocol = 20
+summary = "The transaction did not have enough memory allocated."
+detailed_explanation = """
+The transaction's resource declaration did not reserve enough memory for the host objects, contract
+data, or intermediate values created during execution.
+"""
+related_errors = ["host.budget.limit_exceeded.cpu"]
+source_file = "soroban-env-host/src/budget.rs"
+documentation_url = "https://soroban.stellar.org/docs/fundamentals/fees-and-metering"
+
+[[errors.common_causes]]
+description = "The invocation builds large vectors, maps, bytes, or strings in memory"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "A cross-contract call returned more data than the caller budgeted for"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Re-run simulation and submit the transaction with the updated memory limit"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Split large inputs or outputs into smaller contract calls"
+difficulty = "medium"
+requires_upgrade = true
+
+[[errors]]
+id = "host.budget.exceeded_limit"
+category = "budget"
+code = 8
+name = "ExceededLimit"
+severity = "Error"
+since_protocol = 20
+summary = "The transaction exceeded an allocated resource limit."
+detailed_explanation = """
+The host stopped execution because one of the metered resource limits was exceeded. The exact
+resource may depend on the diagnostic events and the resource profile for the transaction.
+"""
+related_errors = [
+    "host.budget.limit_exceeded.cpu",
+    "host.budget.insufficient_instructions",
+    "host.budget.insufficient_memory",
+]
+source_file = "soroban-env-host/src/budget.rs"
+documentation_url = "https://soroban.stellar.org/docs/fundamentals/fees-and-metering"
+
+[[errors.common_causes]]
+description = "The transaction used more CPU, memory, or ledger I/O than its declared resource limits allowed"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "The resource footprint was estimated before inputs or contract state changed"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Simulate the transaction again and submit it with the returned resource limits"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Inspect the resource profile to identify the expensive contract call"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors]]
+id = "host.budget.approaching_limit"
+category = "budget"
+code = 3
+name = "ApproachingLimit"
+severity = "Info"
+since_protocol = 20
+summary = "The transaction is approaching its resource budget limit."
+detailed_explanation = """
+This is a diagnostic signal, not a failure. The execution consumed a high fraction of the \
+allocated budget but did not exceed it. Use this to identify contracts that are close to the \
+limit and may fail under slightly heavier load.
+"""
+related_errors = ["host.budget.limit_exceeded.cpu"]
+source_file = "soroban-env-host/src/budget.rs"
+[[errors.common_causes]]
+description = "Contract logic that scales with input size, approaching the declared limit"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Profile the contract and reduce unnecessary computation before it becomes a hard failure"
+difficulty = "medium"
+requires_upgrade = true
+
+[[errors.suggested_fixes]]
+description = "Add resource metering logs to your CI pipeline to catch contracts trending toward the limit before deploy"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors]]
+id = "host.context.unknown_error"
+category = "context"
+code = 0
+name = "UnknownError"
+severity = "Error"
+since_protocol = 20
+summary = "An unexpected Soroban runtime error occurred."
+detailed_explanation = """
+The host returned a context error that does not map to a more specific execution-context failure.
+This can indicate malformed transaction data, an unsupported host state, or a platform issue.
+"""
+related_errors = ["host.context.internal_error"]
+source_file = "soroban-env-host/src/host.rs"
+
+[[errors.common_causes]]
+description = "The transaction reached a host state that Grat cannot classify more specifically"
+likelihood = "medium"
+
+[[errors.common_causes]]
+description = "Malformed or unsupported transaction data triggered a generic context failure"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Check diagnostic events and transaction metadata for the host operation that failed"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Reproduce the transaction on the same network and report it if the error persists"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors]]
+id = "host.context.invalid_action"
+category = "context"
+code = 6
+name = "InvalidAction"
+severity = "Error"
+since_protocol = 20
+summary = "A host function was called in an execution context where that action is not valid."
+detailed_explanation = """
+InvalidAction means the contract or host integration attempted an operation from the wrong \
+execution context, such as using a host capability before the host is ready or outside the \
+allowed invocation lifecycle. This usually points to contract or caller behavior, not a broken \
+network environment.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/host.rs"
+
+[[errors.common_causes]]
+description = "Contract code or a host integration called an environment action outside its valid lifecycle"
+likelihood = "high"
+
+[[errors.suggested_fixes]]
+description = "Review where the host function is called and move it into a valid contract invocation context"
+difficulty = "medium"
+requires_upgrade = false
+
+
+[[errors]]
+id = "host.context.internal_error"
+category = "context"
+code = 7
+name = "InternalError"
+severity = "Fatal"
+since_protocol = 20
+summary = "An unexpected internal error occurred in the Soroban host runtime."
+detailed_explanation = """
+Internal errors indicate a bug or unexpected state in the Soroban host itself, not in the \
+contract code. These are rare, and should be reported to the Stellar/Soroban team.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/host.rs"
+
+[[errors.common_causes]]
+description = "Bug in the Soroban host runtime"
+likelihood = "high"
+
+[[errors.suggested_fixes]]
+description = "Report the issue to the Stellar/Soroban GitHub repository with the full transaction details"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.contract.error_general"
+category = "contract"
+code = 0
+name = "ContractError"
+severity = "Error"
+since_protocol = 20
+summary = "Contract error: the contract's own logic rejected this call — run with --resolve to map the code to its name."
+detailed_explanation = """
+Unlike host errors, contract errors are defined by the contract author. Each contract can \
+define an error enum with numeric codes and descriptive names. When a contract panics or \
+returns an error value, the host wraps it as a ContractError with the numeric code.
+
+To understand a contract error, you need the contract's specification (contractspecv0 metadata) \
+which maps the numeric code to a human-readable name and optional documentation.
+"""
+related_errors = ["host.auth.not_authorized"]
+source_file = "soroban-env-host/src/host.rs"
+documentation_url = "https://developers.stellar.org/docs/smart-contracts/guides/errors"
+
+[[errors.common_causes]]
+description = "Business logic assertion failure in the contract (e.g., insufficient balance, invalid state)"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "Input validation failure — the contract rejected the provided arguments"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "Access control check failed — the caller is not authorized for this operation"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Use the contract error resolver to map the numeric code to the contract's error enum name"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Review the contract source code for the error enum definition to understand the specific failure"
+difficulty = "medium"
+requires_upgrade = false
+
+
+
+[[errors]]
+id = "host.contract.internal_error"
+category = "contract"
+code = 1
+name = "InternalError"
+severity = "Error"
+since_protocol = 20
+summary = "An internal protocol implementation error occurred (e.g. invalid ledger state)."
+detailed_explanation = """
+The contract encountered an internal error during execution, indicating a protocol \
+implementation issue or invalid ledger state.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/host.rs"
+documentation_url = "https://developers.stellar.org/docs/smart-contracts/guides/errors"
+
+[[errors.common_causes]]
+description = "Internal validation or state consistency checks failed in the contract"
+likelihood = "high"
+
+[[errors.suggested_fixes]]
+description = "Check the diagnostic logs to see if there are internal contract assertion failures"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Compare host and SDK versions between simulation and submission to rule out a protocol mismatch"
+difficulty = "medium"
+requires_upgrade = false
+
+
+
+[[errors]]
+id = "host.contract.operation_not_supported"
+category = "contract"
+code = 2
+name = "OperationNotSupportedError"
+severity = "Error"
+since_protocol = 20
+summary = "The operation is not supported (e.g. calling clawback on an asset without clawback enabled)."
+detailed_explanation = """
+The contract attempted an operation that is unsupported by the contract configuration or type \
+(e.g., performing a clawback on an asset when clawback is disabled).
+"""
+related_errors = []
+source_file = "soroban-env-host/src/host.rs"
+documentation_url = "https://developers.stellar.org/docs/smart-contracts/guides/errors"
+
+[[errors.common_causes]]
+description = "Invoking clawback on a non-clawbackable asset"
+likelihood = "high"
+
+[[errors.suggested_fixes]]
+description = "Check the asset flags and ensure the operation is allowed for the target asset"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Re-check the asset's issuer-set flags (e.g. AUTH_REQUIRED, CLAWBACK_ENABLED) before invoking the operation"
+difficulty = "easy"
+requires_upgrade = false
+
+
+
+[[errors]]
+id = "host.contract.already_initialized"
+category = "contract"
+code = 3
+name = "AlreadyInitializedError"
+severity = "Error"
+since_protocol = 20
+summary = "The contract instance has already been initialized and cannot be re-initialized."
+detailed_explanation = """
+The contract instance was initialized twice. Soroban contracts typically only allow initialization once.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/host.rs"
+documentation_url = "https://developers.stellar.org/docs/smart-contracts/guides/errors"
+
+[[errors.common_causes]]
+description = "Calling the initialize function on an already initialized contract instance"
+likelihood = "high"
+
+[[errors.suggested_fixes]]
+description = "Ensure that initialization is only called once per contract deployment"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Guard the initialize function with a storage check (e.g. instance storage has_key) that early-returns if already set"
+difficulty = "easy"
+requires_upgrade = false
+
+
+
+[[errors]]
+id = "host.contract.account_missing"
+category = "contract"
+code = 6
+name = "AccountMissingError"
+severity = "Error"
+since_protocol = 20
+summary = "An account involved in the transaction does not exist on the network."
+detailed_explanation = """
+The operation required a specific account to exist on the network, but the account could not be found.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/host.rs"
+documentation_url = "https://developers.stellar.org/docs/smart-contracts/guides/errors"
+
+[[errors.common_causes]]
+description = "Providing an invalid account address or an account that has not been created/funded"
+likelihood = "high"
+
+[[errors.suggested_fixes]]
+description = "Verify that the addresses provided exist and are active on the target network"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Fund and create the account on the target network before invoking the contract that references it"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.crypto.invalid_input"
+category = "crypto"
+code = 0
+name = "InvalidInput"
+severity = "Error"
+since_protocol = 20
+summary = "Invalid input was provided to a cryptographic operation."
+detailed_explanation = """
+Cryptographic host functions expect inputs of specific formats and lengths. For example, \
+ed25519 public keys must be exactly 32 bytes, signatures must be 64 bytes, and hash inputs \
+must not exceed size limits. Violating these constraints raises this error.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/host/crypto.rs"
+
+[[errors.common_causes]]
+description = "Public key or signature with incorrect byte length"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "Attempting to verify a signature with a mismatched key or message"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Verify that all cryptographic inputs have the correct length and format"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.events.limit_exceeded"
+category = "events"
+code = 0
+name = "LimitExceeded"
+severity = "Error"
+since_protocol = 20
+summary = "The transaction exceeded its event emission size limit."
+detailed_explanation = """
+Soroban transactions have a limit on the total size of events that can be emitted during \
+execution. When this limit is exceeded, the host terminates execution with this error. \
+This includes both contract-emitted events (via `env.events().publish()`) and internal \
+diagnostic events.
+"""
+related_errors = ["host.budget.limit_exceeded.cpu"]
+source_file = "soroban-env-host/src/events.rs"
+
+[[errors.common_causes]]
+description = "Emitting too many events or events with large data payloads in a single transaction"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "Logging or diagnostic events in a loop creating excessive output"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Reduce the number or size of events emitted per transaction"
+difficulty = "medium"
+requires_upgrade = true
+
+[[errors.suggested_fixes]]
+description = "Batch operations across multiple transactions to reduce per-transaction event volume"
+difficulty = "medium"
+requires_upgrade = true
+
+[[errors]]
+id = "host.object.unknown_error"
+category = "object"
+code = 0
+name = "UnknownError"
+severity = "Error"
+since_protocol = 20
+summary = "An unknown or unclassified host object error occurred."
+detailed_explanation = """
+The host encountered an error while interacting with or managing an object that does not map to \
+any other known object error code. This typically points to an internal state discrepancy, \
+memory allocation failure, or an unhandled edge case within the host environment's object subsystem.
+"""
+[[errors.common_causes]]
+description = "Internal host memory management or allocator errors"
+likelihood = "low"
+[[errors.common_causes]]
+description = "Using an outdated Soroban runtime version that does not correctly parse newer host objects"
+likelihood = "low"
+[[errors.suggested_fixes]]
+description = "Examine the diagnostic events emitted prior to the failure to find more context"
+difficulty = "easy"
+requires_upgrade = false
+[[errors.suggested_fixes]]
+description = "Update the Soroban SDK and test environment to the latest version"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.object.unknown_reference"
+category = "object"
+code = 1
+name = "UnknownReference"
+severity = "Error"
+since_protocol = 20
+summary = "The provided object handle does not reference a valid host object."
+detailed_explanation = """
+Contracts interact with host-managed memory via object handles (such as Vec, Map, Bytes, Address). \
+If a contract provides a handle identifier that does not exist in the host's object registry for the \
+current invocation, this error is raised.
+"""
+[[errors.common_causes]]
+description = "Passing an uninitialized or fabricated object handle to a host function"
+likelihood = "high"
+[[errors.common_causes]]
+description = "Attempting to use a handle that belonged to a different transaction context or cross-contract call that has finished"
+likelihood = "medium"
+[[errors.suggested_fixes]]
+description = "Verify that all objects are instantiated correctly using the SDK constructors before calling host functions"
+difficulty = "easy"
+requires_upgrade = false
+[[errors.suggested_fixes]]
+description = "Avoid manually creating or editing raw u32 object handles in contract code"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.object.unexpected_type"
+category = "object"
+code = 2
+name = "UnexpectedType"
+severity = "Error"
+since_protocol = 20
+summary = "The host object's type does not match the expected type for the operation."
+detailed_explanation = """
+A host function expected a host object of a specific type (e.g. Map), but the contract supplied \
+a handle to a different type of host object (e.g. Vector). The host validates object types at the \
+FFI boundary and aborts execution upon mismatch.
+"""
+[[errors.common_causes]]
+description = "Passing a Vector handle to a function expecting a Map handle, or vice versa"
+likelihood = "high"
+[[errors.common_causes]]
+description = "Type mismatch when casting or using unsafe conversion functions on raw object handles"
+likelihood = "medium"
+[[errors.suggested_fixes]]
+description = "Check the contract signature and host function arguments to ensure correct collection types are used"
+difficulty = "easy"
+requires_upgrade = false
+[[errors.suggested_fixes]]
+description = "Use the strongly-typed wrappers provided by the Soroban SDK instead of raw handles"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.object.object_count_exceeds_u32_max"
+category = "object"
+code = 3
+name = "ObjectCountExceedsU32Max"
+severity = "Error"
+since_protocol = 20
+summary = "The total number of host objects allocated in this transaction has exceeded the maximum capacity."
+detailed_explanation = """
+The host environment tracks all active objects using a list indexed by a u32 handle. If a contract \
+attempts to allocate more host objects than the maximum capacity of a u32 index, the host throws \
+this error to prevent memory exhaustion and overflow.
+"""
+[[errors.common_causes]]
+description = "Unbounded allocation of objects (e.g. nested vectors or maps) inside a large loop"
+likelihood = "high"
+[[errors.common_causes]]
+description = "Infinite recursion resulting in continuous allocation of local variables/objects"
+likelihood = "medium"
+[[errors.suggested_fixes]]
+description = "Refactor loops to avoid creating new collections in each iteration; reuse existing collections where possible"
+difficulty = "medium"
+requires_upgrade = false
+[[errors.suggested_fixes]]
+description = "Add pagination or chunking to process data in smaller batches across multiple transactions"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors]]
+id = "host.object.object_not_exist"
+category = "object"
+code = 4
+name = "ObjectNotExist"
+severity = "Error"
+since_protocol = 20
+summary = "The requested host object does not exist."
+detailed_explanation = """
+Similar to UnknownReference, but specifically raised when attempting to retrieve or dereference an \
+object that is expected to exist in the host state but is missing. This can occur if the host object \
+registry has been corrupted, or if the handle was invalidated during host-side optimization.
+"""
+[[errors.common_causes]]
+description = "Using an invalid or expired object handle that has been cleared from host memory"
+likelihood = "medium"
+[[errors.common_causes]]
+description = "Passing a handle that was never registered in the host's current object storage"
+likelihood = "medium"
+[[errors.suggested_fixes]]
+description = "Ensure the host object was correctly created and not discarded or out of scope"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.object.vec_index_out_of_bound"
+category = "object"
+code = 5
+name = "VecIndexOutOfBound"
+severity = "Error"
+since_protocol = 20
+summary = "An index out of bounds was used when accessing a host vector or byte array."
+detailed_explanation = """
+When a contract accesses a vector element, byte slice, or array entry with an index that is \
+greater than or equal to the collection's length, the host raises this error. This prevents \
+invalid memory access in the host's WebAssembly execution environment.
+"""
+[[errors.common_causes]]
+description = "Accessing a vector or bytes object with an index >= length"
+likelihood = "high"
+[[errors.common_causes]]
+description = "Off-by-one errors in loop bounds when iterating over collections"
+likelihood = "high"
+[[errors.suggested_fixes]]
+description = "Check the length of the collection before accessing elements by index"
+difficulty = "easy"
+requires_upgrade = false
+[[errors.suggested_fixes]]
+description = "Use safe accessors (like `get`) that return `Option` instead of direct index access"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.object.contract_hash_wrong_length"
+category = "object"
+code = 6
+name = "ContractHashWrongLength"
+severity = "Error"
+since_protocol = 20
+summary = "The provided contract hash or address has an incorrect length."
+detailed_explanation = """
+Soroban contract hashes, addresses, and cryptographic keys are represented by specific byte lengths \
+(typically exactly 32 bytes). If a contract passes a byte array object representing a hash or public key \
+with an incorrect length, the host rejects it immediately to ensure cryptographic validity.
+"""
+[[errors.common_causes]]
+description = "Passing a contract address or hash with a length other than 32 bytes"
+likelihood = "high"
+[[errors.common_causes]]
+description = "Truncation or padding errors when manipulating hex strings or byte vectors before passing them to the host"
+likelihood = "medium"
+[[errors.suggested_fixes]]
+description = "Ensure that hex decoding or byte array construction outputs exactly 32 bytes"
+difficulty = "easy"
+requires_upgrade = false
+[[errors.suggested_fixes]]
+description = "Validate the byte length of the address or hash before invoking the target host function"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.storage.access_denied"
+category = "storage"
+code = 0
+name = "AccessDenied"
+severity = "Error"
+since_protocol = 20
+summary = "The contract attempted to access a ledger entry not included in the transaction's footprint."
+detailed_explanation = """
+Every Soroban transaction must declare its read/write footprint — the set of ledger entries it \
+will access. If the contract tries to read or write an entry not in the declared footprint, \
+the host rejects the access. This is a fundamental part of Soroban's parallel execution model.
+"""
+related_errors = ["host.storage.entry_not_found"]
+source_file = "soroban-env-host/src/storage.rs"
+
+[[errors.common_causes]]
+description = "Missing ledger entries in the transaction's resource footprint declaration"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "Cross-contract call accessing entries not anticipated by the outer transaction"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Use simulateTransaction to automatically compute the correct footprint before submission"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Manually add the missing ledger key to the transaction's read/write footprint"
+difficulty = "medium"
+requires_upgrade = false
+
+
+[[errors]]
+id = "host.storage.entry_not_found"
+category = "storage"
+code = 1
+name = "EntryNotFound"
+severity = "Error"
+since_protocol = 20
+summary = "The contract attempted to read a ledger key that does not exist or has been archived."
+detailed_explanation = """
+The host could not load the requested ledger entry. The key may never have been written, may have \
+expired from live state, or may need restoration before the contract can access it.
+"""
+related_errors = ["host.storage.access_denied"]
+source_file = "soroban-env-host/src/storage.rs"
+
+[[errors.common_causes]]
+description = "The contract read a key before any transaction created it"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "The ledger entry expired or was archived before this transaction ran"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Create or initialize the missing ledger entry before reading it"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Restore archived contract data before submitting the transaction"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors]]
+id = "host.storage.exceeded_limit"
+category = "storage"
+code = 2
+name = "ExceededLimit"
+severity = "Error"
+since_protocol = 20
+summary = "The operation attempted to exceed resource or size limits for ledger data."
+detailed_explanation = """
+The storage operation would exceed a protocol limit for ledger data, such as entry size, footprint \
+size, or the amount of data read or written by the transaction.
+"""
+related_errors = ["host.budget.exceeded_limit"]
+source_file = "soroban-env-host/src/storage.rs"
+
+[[errors.common_causes]]
+description = "The contract attempted to write a ledger entry larger than the protocol allows"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "The transaction touched more ledger entries than its footprint or limits allowed"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Reduce the size of stored values or split the data across smaller entries"
+difficulty = "medium"
+requires_upgrade = true
+
+[[errors.suggested_fixes]]
+description = "Break the storage update into multiple smaller transactions"
+difficulty = "medium"
+requires_upgrade = true
+
+[[errors]]
+id = "host.storage.internal_error"
+category = "storage"
+code = 3
+name = "InternalError"
+severity = "Error"
+since_protocol = 20
+summary = "An internal storage failure occurred while accessing contract data."
+detailed_explanation = """
+The storage layer reported an unexpected internal failure. This code alone is not enough to identify \
+the root issue; diagnostic events and transaction context usually provide the next clue.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/storage.rs"
+
+[[errors.common_causes]]
+description = "The host encountered an unexpected storage state while loading or writing ledger data"
+likelihood = "medium"
+
+[[errors.common_causes]]
+description = "The transaction hit a storage edge case that needs diagnostic events to identify"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Check diagnostic events for the specific ledger key or operation that triggered the internal failure"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "If the error is reproducible, report it with the transaction envelope and diagnostic trace"
+difficulty = "hard"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Retry the operation against a fresh ledger snapshot to rule out transient state corruption"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.storage.near_expiry"
+category = "storage"
+code = 4
+name = "NearExpiry"
+severity = "Warning"
+since_protocol = 20
+summary = "The accessed ledger entry is approaching its expiration ledger and will soon become read-only unless extended."
+detailed_explanation = """
+Soroban ledger entries have a time-to-live measured in ledgers. This warning indicates that a \
+contract read or written an entry that is close to expiring. The operation succeeded, but the \
+entry must be extended with extendTTL before it archives or future transactions will fail with \
+EntryNotFound. This is not a blocking error — it is a signal to act before the entry is lost.
+"""
+related_errors = ["host.storage.entry_not_found"]
+source_file = "soroban-env-host/src/storage.rs"
+[[errors.common_causes]]
+description = "Contract data was created or last extended many ledgers ago and TTL refresh was missed"
+likelihood = "high"
+
+[[errors.suggested_fixes]]
+description = "Call extendTTL on the entry to push the expiration ledger further into the future"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Set up automated TTL extension for long-lived contract data"
+difficulty = "medium"
+requires_upgrade = true
+
+[[errors]]
+id = "host.value.unknown_error"
+category = "value"
+code = 0
+name = "UnknownError"
+severity = "Error"
+since_protocol = 20
+summary = "Invalid value: a host function received an argument of the wrong type or format."
+detailed_explanation = """
+The host could not classify the value failure more specifically. This usually means a value passed
+to a host function could not be converted, decoded, or validated against the expected shape.
+"""
+related_errors = ["host.value.unexpected_type", "host.value.invalid_input"]
+source_file = "soroban-env-host/src/host/conversion.rs"
+
+[[errors.common_causes]]
+description = "Type mismatch between contract call arguments and host function expectations"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "Malformed or corrupted data was read from contract storage"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Check the function signature in the contract spec and ensure arguments match the expected types"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.value.unexpected_type"
+category = "value"
+code = 1
+name = "UnexpectedType"
+severity = "Error"
+since_protocol = 20
+summary = "The provided value is not of the expected type for this operation."
+detailed_explanation = """
+A host function or contract ABI expected one Soroban value type but received another, such as a
+symbol where an address was expected or a map where a vector was expected.
+"""
+related_errors = ["host.value.unknown_error", "host.value.invalid_input"]
+source_file = "soroban-env-host/src/host/conversion.rs"
+
+[[errors.common_causes]]
+description = "A caller passed an argument type that does not match the contract function signature"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "Stored contract data was decoded using a newer or different expected type"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Compare the submitted ScVal arguments with the contract spec"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Migrate or rewrite stored data so it matches the current contract type"
+difficulty = "medium"
+requires_upgrade = true
+
+[[errors]]
+id = "host.value.unexpected_size"
+category = "value"
+code = 2
+name = "UnexpectedSize"
+severity = "Error"
+since_protocol = 20
+summary = "The provided value has an unexpected size or length."
+detailed_explanation = """
+The host received a value with a length, byte count, or collection size that does not match the
+operation's requirements.
+"""
+related_errors = ["host.value.invalid_input"]
+source_file = "soroban-env-host/src/host/conversion.rs"
+
+[[errors.common_causes]]
+description = "A byte array, signature, key, or hash has the wrong length"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "A collection argument contains too many or too few elements"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Validate byte lengths and collection sizes before building the transaction"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Update the caller to encode fixed-size values using the exact expected length"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors]]
+id = "host.value.missing_value"
+category = "value"
+code = 3
+name = "MissingValue"
+severity = "Error"
+since_protocol = 20
+summary = "A required value was missing from the input."
+detailed_explanation = """
+The host expected a value to be present but found no value, such as a missing map key, absent
+optional argument, or missing decoded field.
+"""
+related_errors = ["host.value.invalid_input"]
+source_file = "soroban-env-host/src/host/conversion.rs"
+
+[[errors.common_causes]]
+description = "A required contract argument or map entry was omitted"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "The caller encoded an optional value as missing when the contract required it"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Include the missing argument or field when constructing the contract call"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Add input validation before submitting the transaction"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.value.internal_error"
+category = "value"
+code = 4
+name = "InternalError"
+severity = "Fatal"
+since_protocol = 20
+summary = "An internal host error occurred while processing a value."
+detailed_explanation = """
+The host encountered an unexpected internal state while converting, validating, or handling a
+Soroban value.
+"""
+related_errors = ["host.context.internal_error"]
+source_file = "soroban-env-host/src/host/conversion.rs"
+
+[[errors.common_causes]]
+description = "The host hit an unexpected value conversion or validation state"
+likelihood = "medium"
+
+[[errors.common_causes]]
+description = "Malformed input exposed a host-side edge case"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Inspect diagnostic events for the value conversion that failed"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Report a reproducible transaction with the full input values"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors]]
+id = "host.value.added_value"
+category = "value"
+code = 5
+name = "AddedValue"
+severity = "Error"
+since_protocol = 20
+summary = "An unexpected or disallowed value was provided."
+detailed_explanation = """
+The host received an extra value in a place where no additional value was allowed, such as an
+unexpected field, argument, or authorization payload component.
+"""
+related_errors = ["host.value.invalid_input"]
+source_file = "soroban-env-host/src/host/conversion.rs"
+
+[[errors.common_causes]]
+description = "The caller supplied extra arguments or fields that the contract does not accept"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "A generated transaction builder included stale data from an older contract interface"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Remove unexpected arguments or fields from the contract call"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Regenerate client bindings from the current contract spec"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.value.invalid_input"
+category = "value"
+code = 6
+name = "InvalidInput"
+severity = "Error"
+since_protocol = 20
+summary = "Malformed ScVal conversion, out-of-range integer, or otherwise invalid input passed to a host function."
+detailed_explanation = """
+The input value had the right general shape but failed validation, conversion, or range checks
+required by the host function.
+"""
+related_errors = ["host.value.unexpected_type", "host.value.unexpected_size"]
+source_file = "soroban-env-host/src/host/conversion.rs"
+
+[[errors.common_causes]]
+description = "A ScVal was malformed or encoded with a value outside the allowed range"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "The caller passed contract input produced by an incompatible SDK or serializer"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Rebuild the transaction arguments with the current SDK and contract spec"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Validate numeric ranges, addresses, and encoded values before submission"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.value.authentication_error"
+category = "value"
+code = 7
+name = "AuthenticationError"
+severity = "Error"
+since_protocol = 20
+summary = "An authentication-related value was invalid or malformed."
+detailed_explanation = """
+The host rejected a value used during authorization, such as an auth payload, signer value, nonce,
+or credential component.
+"""
+related_errors = ["host.auth.invalid_signature", "host.auth.missing_auth"]
+source_file = "soroban-env-host/src/host/conversion.rs"
+
+[[errors.common_causes]]
+description = "Authorization payload values do not match the invocation being authorized"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "Signer, nonce, or credential data was malformed before signature verification"
+likelihood = "medium"
+
+[[errors.suggested_fixes]]
+description = "Regenerate the auth entries from the exact invocation being submitted"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors.suggested_fixes]]
+description = "Check signer, nonce, and credential encoding before collecting signatures"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors]]
+id = "host.wasm.invalid_module"
+category = "wasm"
+code = 0
+name = "InvalidModule"
+severity = "Error"
+since_protocol = 20
+summary = "The WASM module is invalid, corrupted, or uses unsupported features."
+detailed_explanation = """
+Before executing a contract, the Soroban host validates the WASM bytecode. If the module 
+fails validation (e.g., uses disallowed WASM instructions, imports unsupported host functions, 
+or has malformed sections), the host rejects it with this error.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/vm.rs"
+
+[[errors.common_causes]]
+description = "Contract compiled with an incompatible Soroban SDK version"
+likelihood = "high"
+
+[[errors.common_causes]]
+description = "WASM binary corrupted during deployment"
+likelihood = "low"
+
+[[errors.suggested_fixes]]
+description = "Recompile the contract with the latest compatible Soroban SDK version"
+difficulty = "easy"
+requires_upgrade = true
+
+
+[[errors]]
+id = "host.wasm.unreachable"
+category = "wasm"
+code = 1
+name = "Unreachable"
+severity = "Error"
+since_protocol = 20
+summary = "WASM trap: the contract hit an `unreachable` instruction, usually from a Rust panic or a failed assertion."
+detailed_explanation = """
+The WebAssembly VM executed an `unreachable` instruction and trapped. In Soroban contracts this is 
+almost always the result of a Rust `panic!`, a failed `assert!`/`unwrap()`/`expect()`, or an 
+explicitly unreachable branch the compiler emitted. Execution halts immediately and the whole 
+invocation is rolled back.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/vm.rs"
+[[errors.common_causes]]
+description = "A `panic!`, `unwrap()`, or `expect()` on a `None`/`Err` value inside the contract"
+likelihood = "high"
+[[errors.common_causes]]
+description = "An `assert!`/`assert_eq!` precondition that did not hold at runtime"
+likelihood = "medium"
+[[errors.suggested_fixes]]
+description = "Replace `unwrap()`/`expect()` with explicit error handling that returns a contract error"
+difficulty = "easy"
+requires_upgrade = false
+[[errors.suggested_fixes]]
+description = "Inspect the diagnostic events for the panic message to locate the failing assertion"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.wasm.memory_access_out_of_bounds"
+category = "wasm"
+code = 2
+name = "MemoryAccessOutOfBounds"
+severity = "Error"
+since_protocol = 20
+summary = "WASM trap: the contract read or wrote linear memory outside its valid bounds (out-of-bounds memory access)."
+detailed_explanation = """
+The contract attempted to load or store at a linear-memory address outside the bounds of its 
+allocated memory. The WebAssembly VM detects this and traps to prevent invalid memory access. 
+This usually indicates a bug in low-level pointer or slice handling rather than ordinary contract logic.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/vm.rs"
+[[errors.common_causes]]
+description = "Manual pointer arithmetic or `unsafe` slice handling that runs past the end of a buffer"
+likelihood = "high"
+[[errors.common_causes]]
+description = "A miscompiled contract or an incompatible/corrupted toolchain producing bad memory offsets"
+likelihood = "low"
+[[errors.suggested_fixes]]
+description = "Avoid `unsafe` memory access; use safe SDK collection types and bounds-checked accessors"
+difficulty = "medium"
+requires_upgrade = false
+[[errors.suggested_fixes]]
+description = "Rebuild the contract with a known-good Soroban SDK and toolchain version"
+difficulty = "easy"
+requires_upgrade = true
+
+[[errors]]
+id = "host.wasm.table_access_out_of_bounds"
+category = "wasm"
+code = 3
+name = "TableAccessOutOfBounds"
+severity = "Error"
+since_protocol = 20
+summary = "WASM trap: an indirect call referenced a function-table index that is out of bounds."
+detailed_explanation = """
+WebAssembly resolves indirect (dynamic) calls through a function table. The contract referenced a 
+table index that does not exist, so the VM trapped. This typically points to a corrupted module or 
+a toolchain bug rather than ordinary contract logic.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/vm.rs"
+[[errors.common_causes]]
+description = "A miscompiled or corrupted WASM module with an invalid function-table layout"
+likelihood = "medium"
+[[errors.common_causes]]
+description = "Use of an incompatible compiler or post-processing tool that rewrote the function table"
+likelihood = "low"
+[[errors.suggested_fixes]]
+description = "Recompile the contract from clean sources with a supported Soroban SDK version"
+difficulty = "easy"
+requires_upgrade = true
+
+[[errors]]
+id = "host.wasm.indirect_call_type_mismatch"
+category = "wasm"
+code = 4
+name = "IndirectCallTypeMismatch"
+severity = "Error"
+since_protocol = 20
+summary = "WASM trap: an indirect call reached a function whose signature did not match the call site."
+detailed_explanation = """
+An indirect call resolved to a function whose type signature differs from the one expected at the 
+call site. WebAssembly enforces signature equality for indirect calls and traps on mismatch. This 
+almost always indicates a corrupted module or a toolchain defect.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/vm.rs"
+[[errors.common_causes]]
+description = "A corrupted or miscompiled WASM module with mismatched function-type metadata"
+likelihood = "medium"
+[[errors.common_causes]]
+description = "Linking objects built with incompatible compiler or SDK versions"
+likelihood = "low"
+[[errors.suggested_fixes]]
+description = "Rebuild the contract from clean sources with a single, supported toolchain"
+difficulty = "easy"
+requires_upgrade = true
+
+[[errors]]
+id = "host.wasm.integer_division_by_zero"
+category = "wasm"
+code = 5
+name = "IntegerDivisionByZero"
+severity = "Error"
+since_protocol = 20
+summary = "WASM trap: the contract performed an integer division or remainder with a divisor of zero."
+detailed_explanation = """
+The contract executed an integer division (`/`) or remainder (`%`) where the divisor evaluated to 
+zero. WebAssembly traps on integer division by zero rather than returning a value, halting the 
+invocation.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/vm.rs"
+[[errors.common_causes]]
+description = "Dividing by a quantity, balance, or supply value that can be zero"
+likelihood = "high"
+[[errors.common_causes]]
+description = "Computing a ratio or average without first checking for an empty denominator"
+likelihood = "medium"
+[[errors.suggested_fixes]]
+description = "Guard against a zero divisor and return a contract error instead of dividing"
+difficulty = "easy"
+requires_upgrade = false
+[[errors.suggested_fixes]]
+description = "Use checked arithmetic (`checked_div`) and handle the `None` case explicitly"
+difficulty = "easy"
+requires_upgrade = false
+
+[[errors]]
+id = "host.wasm.integer_overflow"
+category = "wasm"
+code = 6
+name = "IntegerOverflow"
+severity = "Error"
+since_protocol = 20
+summary = "WASM trap: an integer arithmetic operation overflowed the range of its type."
+detailed_explanation = """
+An arithmetic operation produced a result outside the range of its integer type and trapped. In 
+debug builds Rust inserts overflow checks that surface here; common sources are token-amount math 
+and accumulators that exceed their type's maximum.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/vm.rs"
+[[errors.common_causes]]
+description = "Adding or multiplying token amounts that exceed the integer type's maximum"
+likelihood = "high"
+[[errors.common_causes]]
+description = "Subtracting a larger value from a smaller one in an unsigned integer"
+likelihood = "high"
+[[errors.suggested_fixes]]
+description = "Use checked or saturating arithmetic (`checked_add`, `checked_mul`) and handle overflow"
+difficulty = "easy"
+requires_upgrade = false
+[[errors.suggested_fixes]]
+description = "Use a wider integer type (e.g. `i128`/`u128`) for accumulators and amount math"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors]]
+id = "host.wasm.invalid_conversion_to_int"
+category = "wasm"
+code = 7
+name = "InvalidConversionToInt"
+severity = "Error"
+since_protocol = 20
+summary = "WASM trap: a float-to-integer conversion was NaN or fell outside the target integer range."
+detailed_explanation = """
+The contract converted a floating-point value to an integer where the source was NaN, infinite, or 
+outside the representable range of the target integer type. WebAssembly traps on such truncating 
+conversions. Floating-point math is uncommon in Soroban contracts, so this usually stems from 
+imported library code.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/vm.rs"
+[[errors.common_causes]]
+description = "Converting a NaN or out-of-range floating-point value to an integer"
+likelihood = "medium"
+[[errors.common_causes]]
+description = "Pulling in a dependency that performs floating-point math internally"
+likelihood = "low"
+[[errors.suggested_fixes]]
+description = "Avoid floating-point arithmetic in contracts; use integer or fixed-point math instead"
+difficulty = "medium"
+requires_upgrade = false
+
+[[errors]]
+id = "host.wasm.stack_overflow"
+category = "wasm"
+code = 8
+name = "StackOverflow"
+severity = "Error"
+since_protocol = 20
+summary = "WASM trap: call recursion exceeded the VM stack-depth limit (stack overflow)."
+detailed_explanation = """
+The contract's call depth grew beyond the WebAssembly VM's stack limit and trapped. This is caused 
+by unbounded or very deep recursion, or by large stack-allocated values pushing nested calls past 
+the limit.
+"""
+related_errors = []
+source_file = "soroban-env-host/src/vm.rs"
+[[errors.common_causes]]
+description = "Unbounded or missing-base-case recursion in contract logic"
+likelihood = "high"
+[[errors.common_causes]]
+description = "Very deep nested calls combined with large stack-allocated values"
+likelihood = "medium"
+[[errors.suggested_fixes]]
+description = "Add a base case or depth limit to recursive functions, or rewrite them iteratively"
+difficulty = "medium"
+requires_upgrade = false

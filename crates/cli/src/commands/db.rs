@@ -1,11 +1,11 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::{Args, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::time::Duration;
 
-const TAXONOMY_URL: &str = "https://raw.githubusercontent.com/Killerjunior/Grat/main/taxonomy/enhanced_error_taxonomy.toml";
+const TAXONOMY_URL: &str = "https://raw.githubusercontent.com/Killerjunior/Grat/codex/528-db-taxonomy-management/taxonomy/database.toml";
 
 #[derive(Args)]
 pub struct DbArgs {
@@ -29,14 +29,14 @@ struct DatabaseStats {
     categories: usize,
 }
 
-pub async fn run(args: DbArgs, output_format: &str) -> Result<()> {
+pub async fn run(args: DbArgs, output_format: &str, offline: bool) -> Result<()> {
     let json = matches!(
         crate::output::OutputFormat::parse(output_format),
         crate::output::OutputFormat::Json
     );
 
     match args.command {
-        DbCommands::Update => update_taxonomy_database(json).await?,
+        DbCommands::Update => update_taxonomy_database(json, offline).await?,
         DbCommands::Stats => {
             let db = grat_core::taxonomy::loader::TaxonomyDatabase::load_latest()?;
             let stats = DatabaseStats {
@@ -77,7 +77,11 @@ pub async fn run(args: DbArgs, output_format: &str) -> Result<()> {
     Ok(())
 }
 
-async fn update_taxonomy_database(json: bool) -> Result<()> {
+async fn update_taxonomy_database(json: bool, offline: bool) -> Result<()> {
+    if offline {
+        bail!("Cannot update the taxonomy database while offline; remove --offline to download it");
+    }
+
     let progress = if json {
         ProgressBar::hidden()
     } else {
@@ -192,4 +196,26 @@ fn create_staging_file(
     }
 
     bail!("Failed to allocate a unique taxonomy staging file")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn downloadable_taxonomy_artifact_matches_the_schema() {
+        let content = include_str!("../../../../taxonomy/database.toml");
+        let schema = grat_core::taxonomy::loader::TaxonomyParser::parse(content)
+            .expect("downloadable taxonomy should match TaxonomySchema");
+        assert_eq!(schema.errors.len(), 50);
+        assert_eq!(
+            schema
+                .errors
+                .iter()
+                .map(|entry| &entry.category)
+                .collect::<HashSet<_>>()
+                .len(),
+            10
+        );
+    }
 }

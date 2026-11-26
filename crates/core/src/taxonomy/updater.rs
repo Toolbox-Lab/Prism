@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-const TAXONOMY_URL: &str = "https://raw.githubusercontent.com/Killerjunior/Grat/main/taxonomy/enhanced_error_taxonomy.toml";
+const TAXONOMY_URL: &str = "https://raw.githubusercontent.com/Killerjunior/Grat/codex/528-db-taxonomy-management/taxonomy/database.toml";
 
 #[derive(Serialize, Deserialize)]
 struct UpdateCache {
@@ -80,6 +80,11 @@ pub async fn check_and_update(offline: bool) -> GratResult<()> {
             return Ok(());
         }
     };
+
+    if let Err(error) = crate::taxonomy::loader::TaxonomyParser::parse(&content) {
+        tracing::warn!("Downloaded taxonomy database is invalid: {error}");
+        return Ok(());
+    }
 
     let Some(db_path) = db_file_path() else {
         return Ok(());
