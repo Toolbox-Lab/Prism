@@ -42,7 +42,7 @@ pub struct BudgetState {
     pub cpu_instructions: u64,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct BreakpointController {
     breakpoints: Vec<Breakpoint>,
     next_id: u32,
