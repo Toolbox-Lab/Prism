@@ -34,9 +34,9 @@ pub fn generate_profile(
 
     let mut profile = ResourceProfile {
         total_cpu: result.total_cpu,
-        cpu_limit: 0,
+        cpu_limit: result.cpu_limit,
         total_memory: result.total_memory,
-        memory_limit: 0,
+        memory_limit: result.memory_limit,
         total_read_bytes,
         total_write_bytes,
         read_limit: 0,
@@ -73,4 +73,68 @@ pub fn generate_profile(
     }
 
     Ok(profile)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::trace::TraceId;
+
+    fn sandbox_result(
+        total_cpu: u64,
+        cpu_limit: u64,
+        total_memory: u64,
+        memory_limit: u64,
+    ) -> SandboxResult {
+        SandboxResult {
+            trace_id: TraceId::new(),
+            success: true,
+            events: Vec::new(),
+            final_state: std::collections::HashMap::new(),
+            total_cpu,
+            total_memory,
+            cpu_limit,
+            memory_limit,
+            diagnostic_events: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn profile_records_effective_sandbox_limits() {
+        let result = sandbox_result(1_000, 10_000_000, 2_000, 1_048_576);
+        let profile = generate_profile(
+            &result,
+            &StateDiff {
+                entries: Vec::new(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(profile.cpu_limit, 10_000_000);
+        assert_eq!(profile.memory_limit, 1_048_576);
+        assert!(profile.warnings.is_empty());
+    }
+
+    #[test]
+    fn profile_warns_when_usage_is_near_the_applied_limits() {
+        let result = sandbox_result(95, 100, 960, 1_000);
+        let profile = generate_profile(
+            &result,
+            &StateDiff {
+                entries: Vec::new(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(profile.cpu_limit, 100);
+        assert_eq!(profile.memory_limit, 1_000);
+        assert!(profile
+            .warnings
+            .iter()
+            .any(|w| w.starts_with("CPU usage is at 95%")));
+        assert!(profile
+            .warnings
+            .iter()
+            .any(|w| w.starts_with("Memory usage is at 96%")));
+    }
 }

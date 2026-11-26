@@ -276,12 +276,16 @@ async fn stream_trace_replay(
     }
 
     if !result.diagnostic_events.is_empty() {
-        let diagnostic_messages: Vec<DiagnosticEventMessage> = result
-            .diagnostic_events
-            .iter()
-            .enumerate()
-            .map(|(idx, event)| diagnostic_event_message(event, idx))
-            .collect();
+        let diagnostic_messages: Vec<DiagnosticEventMessage> =
+            grat_core::replay::structure_diagnostic_events(&result.diagnostic_events)
+                .into_iter()
+                .map(|event| DiagnosticEventMessage {
+                    event_type: event.event_type,
+                    topics: event.topics,
+                    data: event.data,
+                    timeline_position: event.timeline_position,
+                })
+                .collect();
         let _ = sender.send(TraceStreamMessage::DiagnosticEvents {
             events: diagnostic_messages,
         });
@@ -292,126 +296,4 @@ async fn stream_trace_replay(
     });
 
     Ok(())
-}
-
-/// Render an XDR diagnostic event into the shape the web trace viewer expects.
-fn diagnostic_event_message(
-    event: &stellar_xdr::curr::DiagnosticEvent,
-    timeline_position: usize,
-) -> DiagnosticEventMessage {
-    use grat_core::decode::scval_to_json;
-    use stellar_xdr::curr::{ContractEventBody, ContractEventType, ScVal};
-
-    fn render(val: &ScVal) -> String {
-        match scval_to_json(val, None) {
-            serde_json::Value::String(s) => s,
-            other => other.to_string(),
-        }
-    }
-
-    let event_type = match event.event.type_ {
-        ContractEventType::System => "system",
-        ContractEventType::Contract => "contract",
-        ContractEventType::Diagnostic => "diagnostic",
-    }
-    .to_string();
-
-    let ContractEventBody::V0(body) = &event.event.body;
-    let topics = body.topics.iter().map(render).collect();
-
-    let mut data = std::collections::HashMap::new();
-    match &body.data {
-        ScVal::Map(Some(map)) => {
-            for entry in map.iter() {
-                data.insert(render(&entry.key), render(&entry.val));
-            }
-            // Distinct keys can render the same (`U32(7)` and `String("7")`);
-            // keep every entry by showing the whole map as one value instead.
-            if data.len() != map.len() {
-                data.clear();
-                data.insert("value".to_string(), render(&body.data));
-            }
-        }
-        ScVal::Void => {}
-        other => {
-            data.insert("value".to_string(), render(other));
-        }
-    }
-
-    DiagnosticEventMessage {
-        event_type,
-        topics,
-        data,
-        timeline_position,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::diagnostic_event_message;
-    use stellar_xdr::curr::{
-        ContractEvent, ContractEventBody, ContractEventType, ContractEventV0, DiagnosticEvent,
-        ExtensionPoint, ScMap, ScMapEntry, ScString, ScSymbol, ScVal,
-    };
-
-    fn event(topics: Vec<ScVal>, data: ScVal) -> DiagnosticEvent {
-        DiagnosticEvent {
-            in_successful_contract_call: true,
-            event: ContractEvent {
-                ext: ExtensionPoint::V0,
-                contract_id: None,
-                type_: ContractEventType::Contract,
-                body: ContractEventBody::V0(ContractEventV0 {
-                    topics: topics.try_into().unwrap(),
-                    data,
-                }),
-            },
-        }
-    }
-
-    fn map(entries: Vec<(ScVal, ScVal)>) -> ScVal {
-        let entries: Vec<ScMapEntry> = entries
-            .into_iter()
-            .map(|(key, val)| ScMapEntry { key, val })
-            .collect();
-        ScVal::Map(Some(ScMap(entries.try_into().unwrap())))
-    }
-
-    #[test]
-    fn renders_type_topics_and_map_data() {
-        let msg = diagnostic_event_message(
-            &event(
-                vec![ScVal::Symbol(ScSymbol("transfer".try_into().unwrap()))],
-                map(vec![(
-                    ScVal::Symbol(ScSymbol("amount".try_into().unwrap())),
-                    ScVal::U32(5),
-                )]),
-            ),
-            3,
-        );
-        assert_eq!(msg.event_type, "contract");
-        assert_eq!(msg.topics, vec!["transfer".to_string()]);
-        assert_eq!(msg.data.get("amount").map(String::as_str), Some("5"));
-        assert_eq!(msg.timeline_position, 3);
-    }
-
-    #[test]
-    fn colliding_map_keys_keep_every_entry() {
-        let msg = diagnostic_event_message(
-            &event(
-                vec![],
-                map(vec![
-                    (ScVal::U32(7), ScVal::U32(1)),
-                    (
-                        ScVal::String(ScString("7".try_into().unwrap())),
-                        ScVal::U32(2),
-                    ),
-                ]),
-            ),
-            0,
-        );
-        assert_eq!(msg.data.len(), 1);
-        let value = &msg.data["value"];
-        assert!(value.contains('1') && value.contains('2'), "{value}");
-    }
 }

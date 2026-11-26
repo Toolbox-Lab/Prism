@@ -326,10 +326,8 @@ pub fn print_trace_tree(trace: &ExecutionTrace) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grat_core::types::trace::{
-        ContractInvocation, ExecutionTrace, HostFunctionCall, ResourceProfile, StateDiff, TraceId,
-    };
-    use termcolor::{Buffer, ColorChoice};
+    use grat_core::types::trace::{ContractInvocation, TraceId};
+    use termcolor::Buffer;
 
     #[test]
     fn test_format_cpu_usage() {

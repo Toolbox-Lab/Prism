@@ -313,12 +313,9 @@ fn json_string<T: Debug + Serialize>(value: &T) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::trace::DiffChangeType;
     use stellar_xdr::curr::{
-        AccountEntryExt, AccountId, AssetCode12, AssetCode4, ContractCodeEntry,
-        ContractCodeEntryExt, ContractDataDurability, ContractDataEntry, ExtensionPoint, Hash,
-        PublicKey, ScMapEntry, ScSymbol, ScVal, SequenceNumber, SignerKey, String32, StringM,
-        Thresholds, TrustLineEntry, TrustLineEntryExt, Uint256, VecM,
+        AccountEntryExt, AccountId, PublicKey, SequenceNumber, SignerKey, String32, StringM,
+        Thresholds, Uint256, VecM,
     };
 
     fn dummy_account_entry() -> AccountEntry {
@@ -380,6 +377,14 @@ mod tests {
         assert_eq!(diff.removed_signers.len(), 1);
         assert_eq!(diff.removed_signers[0], signer1);
     }
+
+    use super::{diff_contract_code_entry, diff_contract_data, diff_trustline_entry};
+    use crate::types::trace::DiffChangeType;
+    use stellar_xdr::curr::{
+        AssetCode12, AssetCode4, ContractCodeEntry, ContractCodeEntryExt, ContractDataDurability,
+        ContractDataEntry, ExtensionPoint, Hash, ScMapEntry, ScSymbol, ScVal, TrustLineEntry,
+        TrustLineEntryExt,
+    };
 
     fn contract_code(hash: [u8; 32]) -> ContractCodeEntry {
         ContractCodeEntry {
