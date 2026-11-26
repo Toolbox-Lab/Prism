@@ -16,13 +16,14 @@ pub async fn run(args: BatchArgs, network: &NetworkConfig) -> anyhow::Result<()>
     spinner.set_message(format!("Decoding {} transactions...", args.tx_hashes.len()));
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    let mut decodes =
-        futures_util::stream::iter(args.tx_hashes.iter().enumerate().map(|(index, hash)| async move {
+    let mut decodes = futures_util::stream::iter(args.tx_hashes.iter().enumerate().map(
+        |(index, hash)| async move {
             let result =
                 grat_core::decode::decode_transaction_with_op_filter(hash, network, None).await;
             (index, hash.clone(), result)
-        }))
-        .buffer_unordered(args.tx_hashes.len().max(1));
+        },
+    ))
+    .buffer_unordered(args.tx_hashes.len().max(1));
 
     let mut completed = 0;
     while let Some((index, hash, result)) = decodes.next().await {

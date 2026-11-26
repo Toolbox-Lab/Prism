@@ -110,7 +110,11 @@ fn deposit(e: Env, amount: i128) -> Result<(), Error> {
 
 # Schema validation metadata
 [metadata]
-version = "2.0"
+version = "2.1"
 fields_required = ["title", "description", "code", "since_protocol"]
 fields_optional = ["related_errors", "documentation", "protocol", "examples", "category"]
 last_updated = "2026-07-29"
+schema_file = "crates/core/src/taxonomy/schema.rs"
+data_dir = "crates/core/src/taxonomy/data/"
+categories = ["auth", "budget", "context", "contract", "crypto", "events", "object", "storage", "value", "wasm"]
+entry_fields = ["id", "category", "code", "name", "severity", "since_protocol", "summary", "detailed_explanation", "common_causes", "suggested_fixes", "documentation_url"]

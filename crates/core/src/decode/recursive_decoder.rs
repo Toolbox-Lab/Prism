@@ -331,7 +331,6 @@ mod tests {
                 .unwrap(),
         }));
         let spec = ContractSpec {
-            metadata: crate::spec::metadata::ContractMetadata::default(),
             errors: vec![],
             functions: vec![],
             structs: vec![
@@ -376,6 +375,7 @@ mod tests {
             unions: vec![],
             name: None,
             version: None,
+            metadata: crate::spec::metadata::ContractMetadata::default(),
         };
         let value = map(vec![(
             "inner",

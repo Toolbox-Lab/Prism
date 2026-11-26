@@ -49,7 +49,7 @@ pub fn format_trace(trace: &ExecutionTrace, output_format: &str) -> anyhow::Resu
         OutputFormat::Json => serde_json::to_string_pretty(trace)?,
         OutputFormat::Short => format_trace_summary(trace),
         OutputFormat::Human => {
-            use termcolor::{Buffer, ColorChoice};
+            use termcolor::Buffer;
             let mut buffer = Buffer::no_color();
             trace_tree::render_trace_tree(&mut buffer, trace)
                 .map_err(|error| anyhow::anyhow!("failed to render trace tree: {error}"))?;

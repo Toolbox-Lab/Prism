@@ -451,7 +451,8 @@ mod tests {
                 invocation("C_C", "c", 20, 200, Vec::new()),
             ],
         );
-        a.host_calls.push(host_call("require_auth", &["G_AUTHORIZED"]));
+        a.host_calls
+            .push(host_call("require_auth", &["G_AUTHORIZED"]));
 
         let root1 = invocation(
             "C_ROOT1",
@@ -520,11 +521,8 @@ mod tests {
         let depths: Vec<usize> = stepper.frames().iter().map(|frame| frame.depth).collect();
         assert_eq!(depths, [0, 1, 2, 2, 1, 0, 1, 1]);
 
-        let parents: Vec<Option<usize>> = stepper
-            .frames()
-            .iter()
-            .map(|frame| frame.parent)
-            .collect();
+        let parents: Vec<Option<usize>> =
+            stepper.frames().iter().map(|frame| frame.parent).collect();
         assert_eq!(
             parents,
             [
@@ -684,7 +682,10 @@ mod tests {
         let mut stepper = stepper();
 
         let state = stepper.current_state().unwrap();
-        assert_eq!(state.visible_storage, vec![("counter".to_string(), "2".to_string())]);
+        assert_eq!(
+            state.visible_storage,
+            vec![("counter".to_string(), "2".to_string())]
+        );
         assert!(state.auth_context.is_empty());
 
         stepper.step(StepCommand::StepInto);

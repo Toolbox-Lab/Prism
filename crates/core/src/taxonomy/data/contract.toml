@@ -24,6 +24,7 @@ which maps the numeric code to a human-readable name and optional documentation.
 """
 related_errors = ["host.auth.not_authorized"]
 source_file = "soroban-env-host/src/host.rs"
+documentation_url = "https://developers.stellar.org/docs/smart-contracts/guides/errors"
 
 [[errors.common_causes]]
 description = "Business logic assertion failure in the contract (e.g., insufficient balance, invalid state)"
@@ -38,7 +39,7 @@ description = "Access control check failed — the caller is not authorized for 
 likelihood = "medium"
 
 [[errors.suggested_fixes]]
-description = "Use grat's contract error resolver to map the numeric code to the contract's error enum name"
+description = "Use the contract error resolver to map the numeric code to the contract's error enum name"
 difficulty = "easy"
 requires_upgrade = false
 
@@ -63,6 +64,7 @@ implementation issue or invalid ledger state.
 """
 related_errors = []
 source_file = "soroban-env-host/src/host.rs"
+documentation_url = "https://developers.stellar.org/docs/smart-contracts/guides/errors"
 
 [[errors.common_causes]]
 description = "Internal validation or state consistency checks failed in the contract"
@@ -94,6 +96,7 @@ The contract attempted an operation that is unsupported by the contract configur
 """
 related_errors = []
 source_file = "soroban-env-host/src/host.rs"
+documentation_url = "https://developers.stellar.org/docs/smart-contracts/guides/errors"
 
 [[errors.common_causes]]
 description = "Invoking clawback on a non-clawbackable asset"
@@ -124,6 +127,7 @@ The contract instance was initialized twice. Soroban contracts typically only al
 """
 related_errors = []
 source_file = "soroban-env-host/src/host.rs"
+documentation_url = "https://developers.stellar.org/docs/smart-contracts/guides/errors"
 
 [[errors.common_causes]]
 description = "Calling the initialize function on an already initialized contract instance"
@@ -154,6 +158,8 @@ The operation required a specific account to exist on the network, but the accou
 """
 related_errors = []
 source_file = "soroban-env-host/src/host.rs"
+documentation_url = "https://developers.stellar.org/docs/smart-contracts/guides/errors"
+
 [[errors.common_causes]]
 description = "Providing an invalid account address or an account that has not been created/funded"
 likelihood = "high"
@@ -167,4 +173,3 @@ requires_upgrade = false
 description = "Fund and create the account on the target network before invoking the contract that references it"
 difficulty = "easy"
 requires_upgrade = false
-
