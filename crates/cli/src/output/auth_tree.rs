@@ -1,3 +1,4 @@
+use grat_core::decode::auth::{AuthChain, AuthCredential};
 use grat_core::types::trace::{ContractInvocation, ExecutionTrace};
 use std::fmt::Write;
 
@@ -32,6 +33,12 @@ pub fn render_auth_tree(trace: &ExecutionTrace) -> anyhow::Result<String> {
         trace.network, trace.ledger_sequence
     )?;
     writeln!(output)?;
+
+    if !trace.auth_chains.is_empty() {
+        writeln!(output, "Authorization credentials:")?;
+        render_auth_chains(&mut output, &trace.auth_chains)?;
+        writeln!(output)?;
+    }
 
     for (i, invocation) in trace.invocations.iter().enumerate() {
         let is_last = i == trace.invocations.len().saturating_sub(1);
@@ -152,12 +159,56 @@ pub fn render_auth_only(trace: &ExecutionTrace) -> anyhow::Result<String> {
     writeln!(output, "Transaction: {}", trace.tx_hash)?;
     writeln!(output)?;
 
+    if !trace.auth_chains.is_empty() {
+        render_auth_chains(&mut output, &trace.auth_chains)?;
+        writeln!(output)?;
+    } else {
+        writeln!(output, "(no authorization entries)")?;
+        writeln!(output)?;
+    }
+
     for (i, invocation) in trace.invocations.iter().enumerate() {
         let is_last = i == trace.invocations.len().saturating_sub(1);
         render_auth_invocation(&mut output, invocation, "", is_last)?;
     }
 
     Ok(output)
+}
+
+fn render_auth_chains(output: &mut String, chains: &[AuthChain]) -> anyhow::Result<()> {
+    for (chain_index, chain) in chains.iter().enumerate() {
+        writeln!(
+            output,
+            "{}{}",
+            if chain_index == 0 {
+                "├─ "
+            } else {
+                "├─ "
+            },
+            match &chain.credential {
+                AuthCredential::SourceAccount => "Credential: Source Account".to_string(),
+                AuthCredential::Address(credential) => format!(
+                    "Credential: {} | Signer: {} | nonce: {} | expiration ledger: {} | signed: {}",
+                    credential.auth_type,
+                    credential.address,
+                    credential.nonce,
+                    credential.signature_expiration_ledger,
+                    credential.signed
+                ),
+            }
+        )?;
+
+        for invocation in &chain.invocations {
+            writeln!(
+                output,
+                "{}  └─ depth {}: {}",
+                "│   ".repeat(invocation.depth),
+                invocation.depth,
+                invocation.target
+            )?;
+        }
+    }
+    Ok(())
 }
 
 fn render_auth_invocation(
@@ -237,6 +288,7 @@ mod tests {
     #[test]
     fn test_render_simple_auth_tree() {
         let invocation = ContractInvocation {
+            trace_id: grat_core::types::trace::TraceId::new(),
             contract_id: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC".to_string(),
             function_name: "transfer".to_string(),
             arguments: vec![
@@ -260,6 +312,7 @@ mod tests {
             state_diff: Default::default(),
             resource_profile: Default::default(),
             diagnostic_events: vec![],
+            auth_chains: vec![],
         };
 
         let result = render_auth_tree(&trace).unwrap();
@@ -271,6 +324,7 @@ mod tests {
     #[test]
     fn test_render_nested_auth_tree() {
         let sub_invocation = ContractInvocation {
+            trace_id: grat_core::types::trace::TraceId::new(),
             contract_id: "SUB123...".to_string(),
             function_name: "approve".to_string(),
             arguments: vec!["spender: G...".to_string(), "amount: 50".to_string()],
@@ -283,6 +337,7 @@ mod tests {
         };
 
         let main_invocation = ContractInvocation {
+            trace_id: grat_core::types::trace::TraceId::new(),
             contract_id: "MAIN456...".to_string(),
             function_name: "execute".to_string(),
             arguments: vec!["target: SUB123...".to_string()],
@@ -302,6 +357,7 @@ mod tests {
             state_diff: Default::default(),
             resource_profile: Default::default(),
             diagnostic_events: vec![],
+            auth_chains: vec![],
         };
 
         let result = render_auth_tree(&trace).unwrap();

@@ -1,18 +1,34 @@
-use crate::cache::provider::CacheProvider;
+use crate::cache::provider::{
+    cache_key, get_if_enabled, ledger_cache_key, put_if_enabled, CacheProvider, SPEC_CACHE_PREFIX,
+    WASM_CACHE_PREFIX,
+};
 use crate::error::GratResult;
 use sha2::{Digest, Sha256};
+use stellar_xdr::curr::ScSpecEntry;
 
-/// Specialized cache for compiled WebAssembly modules.
-/// Uses a cryptographic hash (SHA-256) of the original Wasm bytecode as the key
-/// to uniquely identify and retrieve the compiled module.
+/// Specialized cache for raw contract WebAssembly bytecode.
+///
+/// Entries are keyed by contract ID or by the SHA-256 hash of the bytecode, so
+/// repeated inspections of the same contract avoid re-downloading the blob.
 pub struct WasmCache<P: CacheProvider> {
     provider: P,
+    no_cache: bool,
 }
 
 impl<P: CacheProvider> WasmCache<P> {
-    /// Creates a new WasmCache wrapping the given cache provider.
+    /// Creates a cache that reads from and writes to `provider`.
     pub fn new(provider: P) -> Self {
-        Self { provider }
+        Self::with_bypass(provider, false)
+    }
+
+    /// Creates a cache that bypasses reads and writes when `no_cache` is set.
+    pub fn with_bypass(provider: P, no_cache: bool) -> Self {
+        Self { provider, no_cache }
+    }
+
+    /// Returns `true` when the CLI `--no-cache` flag is in effect.
+    pub fn is_bypassed(&self) -> bool {
+        self.no_cache
     }
 
     /// Computes the SHA-256 hash of the given bytecode to be used as a cache key.
@@ -22,22 +38,173 @@ impl<P: CacheProvider> WasmCache<P> {
         hex::encode(hasher.finalize())
     }
 
-    /// Retrieves a cached compiled Wasm module for the given original bytecode.
-    /// Uses the hash of the bytecode as the lookup key.
+    fn entry_key(key: &str) -> String {
+        cache_key(WASM_CACHE_PREFIX, key)
+    }
+
+    /// Retrieves raw contract bytecode by contract ID or WASM hash.
+    pub async fn get_wasm(&self, key: &str) -> GratResult<Option<Vec<u8>>> {
+        get_if_enabled(&self.provider, self.no_cache, &Self::entry_key(key)).await
+    }
+
+    /// Stores raw contract bytecode under a contract ID or WASM hash.
+    pub async fn store_wasm(&self, key: &str, bytecode: &[u8]) -> GratResult<()> {
+        put_if_enabled(
+            &self.provider,
+            self.no_cache,
+            &Self::entry_key(key),
+            &bytecode.to_vec(),
+        )
+        .await
+    }
+
+    /// Retrieves a module previously stored under the bytecode's hash.
     pub async fn get(&self, bytecode: &[u8]) -> GratResult<Option<Vec<u8>>> {
-        let key = Self::hash_bytecode(bytecode);
-        self.provider.get(&key).await
+        self.get_wasm(&Self::hash_bytecode(bytecode)).await
     }
 
-    /// Stores a compiled Wasm module into the cache, using the hash of the
-    /// original bytecode as the key.
+    /// Stores a module under the hash of the original bytecode.
     pub async fn put(&self, bytecode: &[u8], compiled_module: &[u8]) -> GratResult<()> {
-        let key = Self::hash_bytecode(bytecode);
-        self.provider.put(&key, &compiled_module.to_vec()).await
+        self.store_wasm(&Self::hash_bytecode(bytecode), compiled_module)
+            .await
     }
 
-    /// Clears the underlying cache.
+    /// Clears the underlying cache provider.
     pub async fn clear(&self) -> GratResult<()> {
+        if self.no_cache {
+            return Ok(());
+        }
+        self.provider.clear().await
+    }
+}
+
+/// Cache for decoded `contractspecv0` sections.
+///
+/// Stores the decoded `Vec<ScSpecEntry>` rather than raw WASM so repeated
+/// inspections skip both the download and the XDR/custom-section decoding.
+pub struct ContractSpecCache<P: CacheProvider> {
+    provider: P,
+    no_cache: bool,
+}
+
+impl<P: CacheProvider> ContractSpecCache<P> {
+    pub fn new(provider: P) -> Self {
+        Self::with_bypass(provider, false)
+    }
+
+    pub fn with_bypass(provider: P, no_cache: bool) -> Self {
+        Self { provider, no_cache }
+    }
+
+    pub fn is_bypassed(&self) -> bool {
+        self.no_cache
+    }
+
+    fn entry_key(key: &str) -> String {
+        cache_key(SPEC_CACHE_PREFIX, key)
+    }
+
+    /// Retrieves decoded spec entries by contract ID or WASM hash.
+    pub async fn get_spec(&self, key: &str) -> GratResult<Option<Vec<ScSpecEntry>>> {
+        get_if_enabled(&self.provider, self.no_cache, &Self::entry_key(key)).await
+    }
+
+    /// Stores decoded spec entries under a contract ID or WASM hash.
+    pub async fn store_spec(&self, key: &str, entries: &[ScSpecEntry]) -> GratResult<()> {
+        put_if_enabled(
+            &self.provider,
+            self.no_cache,
+            &Self::entry_key(key),
+            &entries.to_vec(),
+        )
+        .await
+    }
+
+    pub async fn get(&self, key: &str) -> GratResult<Option<Vec<ScSpecEntry>>> {
+        self.get_spec(key).await
+    }
+
+    pub async fn put(&self, key: &str, entries: &[ScSpecEntry]) -> GratResult<()> {
+        self.store_spec(key, entries).await
+    }
+
+    pub async fn clear(&self) -> GratResult<()> {
+        if self.no_cache {
+            return Ok(());
+        }
+        self.provider.clear().await
+    }
+}
+
+/// Cache for ledger entry snapshots taken during replay.
+///
+/// Entries are indexed by ledger sequence and ledger key, so a snapshot for a
+/// historical ledger is never confused with the same key at another sequence.
+pub struct LedgerEntryCache<P: CacheProvider> {
+    provider: P,
+    no_cache: bool,
+}
+
+impl<P: CacheProvider> LedgerEntryCache<P> {
+    pub fn new(provider: P) -> Self {
+        Self::with_bypass(provider, false)
+    }
+
+    pub fn with_bypass(provider: P, no_cache: bool) -> Self {
+        Self { provider, no_cache }
+    }
+
+    pub fn is_bypassed(&self) -> bool {
+        self.no_cache
+    }
+
+    /// Retrieves a snapshot by ledger sequence and ledger key.
+    pub async fn get_entry(&self, ledger_sequence: u32, key: &str) -> GratResult<Option<Vec<u8>>> {
+        get_if_enabled(
+            &self.provider,
+            self.no_cache,
+            &ledger_cache_key(ledger_sequence, key),
+        )
+        .await
+    }
+
+    /// Stores a snapshot by ledger sequence and ledger key.
+    pub async fn store_entry(
+        &self,
+        ledger_sequence: u32,
+        key: &str,
+        entry: &[u8],
+    ) -> GratResult<()> {
+        put_if_enabled(
+            &self.provider,
+            self.no_cache,
+            &ledger_cache_key(ledger_sequence, key),
+            &entry.to_vec(),
+        )
+        .await
+    }
+
+    pub async fn get(&self, ledger_sequence: u32, key: &str) -> GratResult<Option<Vec<u8>>> {
+        self.get_entry(ledger_sequence, key).await
+    }
+
+    pub async fn put(&self, ledger_sequence: u32, key: &str, entry: &[u8]) -> GratResult<()> {
+        self.store_entry(ledger_sequence, key, entry).await
+    }
+
+    pub async fn remove_entry(&self, ledger_sequence: u32, key: &str) -> GratResult<()> {
+        if self.no_cache {
+            return Ok(());
+        }
+        self.provider
+            .remove(&ledger_cache_key(ledger_sequence, key))
+            .await
+    }
+
+    pub async fn clear(&self) -> GratResult<()> {
+        if self.no_cache {
+            return Ok(());
+        }
         self.provider.clear().await
     }
 }

@@ -107,10 +107,7 @@ impl TuiState {
     }
 }
 
-fn invocation_at(
-    invocations: &[ContractInvocation],
-    target: usize,
-) -> Option<&ContractInvocation> {
+fn invocation_at(invocations: &[ContractInvocation], target: usize) -> Option<&ContractInvocation> {
     fn visit<'a>(
         invocations: &'a [ContractInvocation],
         target: &mut usize,
@@ -176,6 +173,7 @@ pub fn fixture() -> TuiState {
         ],
         state_diff: StateDiff::default(),
         diagnostic_events: vec![],
+        auth_chains: vec![],
         resource_profile: ResourceProfile {
             total_cpu: 250,
             cpu_limit: 1000,

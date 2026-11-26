@@ -49,8 +49,7 @@ pub enum TraceStreamMessage {
         change_type: String,
     },
     TraceCompleted {
-        total_nodes: usize,
-        duration_ms: u64,
+        trace_id: String,
     },
     TraceError {
         error: String,
@@ -201,10 +200,6 @@ async fn stream_trace_replay(
     sender: tokio::sync::broadcast::Sender<TraceStreamMessage>,
     resume_from: Option<usize>,
 ) -> anyhow::Result<()> {
-    use std::time::Instant;
-
-    let start = Instant::now();
-
     let _ = sender.send(TraceStreamMessage::TraceStarted {
         tx_hash: tx_hash.to_string(),
         ledger_sequence: 0,
@@ -227,7 +222,9 @@ async fn stream_trace_replay(
 
     let trace_id = grat_core::types::trace::TraceId::new();
     let result =
-        match grat_core::replay::sandbox::execute_with_tracing(&ledger_state, tx_hash, trace_id).await {
+        match grat_core::replay::sandbox::execute_with_tracing(&ledger_state, tx_hash, trace_id)
+            .await
+        {
             Ok(r) => r,
             Err(e) => {
                 let _ = sender.send(TraceStreamMessage::TraceError {
@@ -237,15 +234,13 @@ async fn stream_trace_replay(
             }
         };
 
-    let mut node_count = 0;
     for (idx, event) in result.events.iter().enumerate() {
         // Fast-forward: when the client resumes after a disconnect it tells us the
         // last node index it already received. Skip re-broadcasting those nodes so
         // the resumed stream contains only unseen trace data (no duplication, no
-        // wasted bandwidth). `node_count` still advances so totals stay accurate.
+        // wasted bandwidth).
         if let Some(cursor) = resume_from {
             if idx <= cursor {
-                node_count += 1;
                 continue;
             }
         }
@@ -256,8 +251,6 @@ async fn stream_trace_replay(
             node: node_json,
             path: vec![idx],
         });
-
-        node_count += 1;
 
         if idx % 10 == 0 {
             let _ = sender.send(TraceStreamMessage::ResourceUpdate {
@@ -283,26 +276,23 @@ async fn stream_trace_replay(
     }
 
     if !result.diagnostic_events.is_empty() {
-        let diagnostic_messages: Vec<DiagnosticEventMessage> = result
-            .diagnostic_events
-            .iter()
-            .enumerate()
-            .map(|(idx, event)| DiagnosticEventMessage {
-                event_type: event.event_type.clone(),
-                topics: event.topics.clone(),
-                data: event.data.clone(),
-                timeline_position: idx,
-            })
-            .collect();
+        let diagnostic_messages: Vec<DiagnosticEventMessage> =
+            grat_core::replay::structure_diagnostic_events(&result.diagnostic_events)
+                .into_iter()
+                .map(|event| DiagnosticEventMessage {
+                    event_type: event.event_type,
+                    topics: event.topics,
+                    data: event.data,
+                    timeline_position: event.timeline_position,
+                })
+                .collect();
         let _ = sender.send(TraceStreamMessage::DiagnosticEvents {
             events: diagnostic_messages,
         });
     }
 
-    let duration_ms = start.elapsed().as_millis() as u64;
     let _ = sender.send(TraceStreamMessage::TraceCompleted {
-        total_nodes: node_count,
-        duration_ms,
+        trace_id: result.trace_id.0.clone(),
     });
 
     Ok(())

@@ -57,10 +57,11 @@ impl DiskCache {
         V: Serialize + Sync,
     {
         let key = key.to_owned();
-        let encoded = bincode::serialize(value).map_err(|e| GratError::CacheSerializationError {
-            key: key.clone(),
-            reason: e.to_string(),
-        })?;
+        let encoded =
+            bincode::serialize(value).map_err(|e| GratError::CacheSerializationError {
+                key: key.clone(),
+                reason: e.to_string(),
+            })?;
 
         let db = Arc::clone(&self.db);
 
@@ -74,12 +75,15 @@ impl DiskCache {
                 .map_err(|e| GratError::CacheError(format!("Sled insert failed: {e}")))?;
 
             if let Some(sequence) = ledger_sequence {
-                let ledger_index = db.open_tree(b"ledger_index")
-                    .map_err(|e| GratError::CacheError(format!("Failed to open ledger index: {e}")))?;
+                let ledger_index = db.open_tree(b"ledger_index").map_err(|e| {
+                    GratError::CacheError(format!("Failed to open ledger index: {e}"))
+                })?;
                 let entry_key = Self::ledger_key(&key, sequence);
                 ledger_index
                     .insert(entry_key.clone(), key.as_bytes())
-                    .map_err(|e| GratError::CacheError(format!("Failed to index ledger entry: {e}")))?;
+                    .map_err(|e| {
+                        GratError::CacheError(format!("Failed to index ledger entry: {e}"))
+                    })?;
                 let _ = entry_key;
             }
             Ok::<(), GratError>(())
@@ -111,10 +115,11 @@ impl DiskCache {
             return Ok(None);
         };
 
-        let value: V = bincode::deserialize(&bytes).map_err(|e| GratError::CacheDeserializationError {
-            key,
-            reason: e.to_string(),
-        })?;
+        let value: V =
+            bincode::deserialize(&bytes).map_err(|e| GratError::CacheDeserializationError {
+                key,
+                reason: e.to_string(),
+            })?;
 
         Ok(Some(value))
     }
@@ -132,11 +137,14 @@ impl DiskCache {
             db.remove(lookup_key)
                 .map_err(|e| GratError::CacheError(format!("Sled remove failed: {e}")))?;
             if let Some(sequence) = ledger_sequence {
-                let index = db.open_tree(b"ledger_index")
-                    .map_err(|e| GratError::CacheError(format!("Failed to open ledger index: {e}")))?;
+                let index = db.open_tree(b"ledger_index").map_err(|e| {
+                    GratError::CacheError(format!("Failed to open ledger index: {e}"))
+                })?;
                 index
                     .remove(Self::ledger_key(&key, sequence))
-                    .map_err(|e| GratError::CacheError(format!("Failed to remove ledger index entry: {e}")))?;
+                    .map_err(|e| {
+                        GratError::CacheError(format!("Failed to remove ledger index entry: {e}"))
+                    })?;
             }
             Ok::<(), GratError>(())
         })
@@ -150,7 +158,8 @@ impl DiskCache {
         let db = Arc::clone(&self.db);
 
         tokio::task::spawn_blocking(move || {
-            let ledger_index = db.open_tree(b"ledger_index")
+            let ledger_index = db
+                .open_tree(b"ledger_index")
                 .map_err(|e| GratError::CacheError(format!("Failed to open ledger index: {e}")))?;
 
             let mut keys_to_remove = Vec::new();
@@ -167,9 +176,9 @@ impl DiskCache {
             for index_key in keys_to_remove {
                 db.remove(index_key.clone())
                     .map_err(|e| GratError::CacheError(format!("Sled remove failed: {e}")))?;
-                ledger_index
-                    .remove(index_key)
-                    .map_err(|e| GratError::CacheError(format!("Failed to remove ledger index entry: {e}")))?;
+                ledger_index.remove(index_key).map_err(|e| {
+                    GratError::CacheError(format!("Failed to remove ledger index entry: {e}"))
+                })?;
             }
 
             Ok::<(), GratError>(())
@@ -310,7 +319,10 @@ mod tests {
 
         {
             let cache = DiskCache::new(dir.path()).unwrap();
-            cache.put("durable", &"value".to_string(), None).await.unwrap();
+            cache
+                .put("durable", &"value".to_string(), None)
+                .await
+                .unwrap();
             cache.flush().await.unwrap();
         }
 
@@ -359,12 +371,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = DiskCache::new(dir.path()).unwrap();
 
-        cache
-            .put("entry", &42u32, Some(101u32))
-            .await
-            .unwrap();
+        cache.put("entry", &42u32, Some(101u32)).await.unwrap();
 
-        assert_eq!(cache.get::<u32>("entry", Some(101)).await.unwrap(), Some(42));
+        assert_eq!(
+            cache.get::<u32>("entry", Some(101)).await.unwrap(),
+            Some(42)
+        );
         assert_eq!(cache.get::<u32>("entry", Some(100)).await.unwrap(), None);
     }
 

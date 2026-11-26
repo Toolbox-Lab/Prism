@@ -133,7 +133,7 @@ impl MultiOpDecoder {
         let summary = resource_summary(&resources);
         let fee = crate::decode::fee_analyzer::analyze_fee_breakdown(tx_data);
 
-        operations
+        let mut reports = operations
             .iter()
             .enumerate()
             .map(|(index, operation)| {
@@ -164,7 +164,13 @@ impl MultiOpDecoder {
                     summary.clone(),
                 ))
             })
-            .collect()
+            .collect::<GratResult<Vec<_>>>()?;
+        // Explain failures that have no diagnostic events, such as a bad
+        // sequence number or an archived entry, from their result codes.
+        for report in &mut reports {
+            crate::decode::result_guidance::add_guidance(report);
+        }
+        Ok(reports)
     }
 }
 
@@ -224,7 +230,7 @@ fn decode_required_xdr<T: XdrCodec>(tx_data: &Value, field: &'static str) -> Gra
         .map_err(|error| GratError::Internal(format!("Failed to decode {field}: {error}")))
 }
 
-fn envelope_operations(envelope: &TransactionEnvelope) -> &[Operation] {
+pub(crate) fn envelope_operations(envelope: &TransactionEnvelope) -> &[Operation] {
     match envelope {
         TransactionEnvelope::TxV0(envelope) => envelope.tx.operations.as_ref(),
         TransactionEnvelope::Tx(envelope) => envelope.tx.operations.as_ref(),
@@ -351,7 +357,7 @@ fn result_category(operation: &Operation, code: &str) -> &'static str {
     }
 }
 
-fn inner_result_code(result: &OperationResultTr) -> Option<String> {
+pub(crate) fn inner_result_code(result: &OperationResultTr) -> Option<String> {
     let serialized = serde_json::to_value(result).ok()?;
     let payload = match serialized {
         Value::Object(map) => map.into_iter().next()?.1,

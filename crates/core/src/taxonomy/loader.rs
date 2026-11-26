@@ -17,6 +17,60 @@ pub struct TaxonomyDatabase {
     all_entries: Vec<TaxonomyEntry>,
 }
 
+// Relevance weights used by `TaxonomyDatabase::search`. Higher scores rank
+// first; the ordering below is what determines the result ordering.
+const SCORE_EXACT_NAME: u32 = 1_000;
+const SCORE_NAME_PREFIX: u32 = 900;
+const SCORE_EXACT_CODE: u32 = 850;
+const SCORE_CODE_PREFIX: u32 = 800;
+const SCORE_NAME_SUBSTRING: u32 = 700;
+const SCORE_EXACT_CATEGORY: u32 = 600;
+const SCORE_CATEGORY_SUBSTRING: u32 = 550;
+const SCORE_SUMMARY: u32 = 400;
+const SCORE_EXPLANATION: u32 = 200;
+
+fn score_term(entry: &TaxonomyEntry, term: &str) -> Option<u32> {
+    let name = entry.name.to_lowercase();
+    let category = entry.category.to_string().to_lowercase();
+    let summary = entry.summary.to_lowercase();
+    let explanation = entry.detailed_explanation.to_lowercase();
+    let code = entry.code.to_string();
+
+    if name == term {
+        return Some(SCORE_EXACT_NAME);
+    }
+    if name.starts_with(term) {
+        return Some(SCORE_NAME_PREFIX);
+    }
+
+    if !term.is_empty() && term.chars().all(|c| c.is_ascii_digit()) {
+        if code == term {
+            return Some(SCORE_EXACT_CODE);
+        }
+        if code.starts_with(term) {
+            return Some(SCORE_CODE_PREFIX);
+        }
+    }
+
+    if name.contains(term) {
+        return Some(SCORE_NAME_SUBSTRING);
+    }
+    if category == term {
+        return Some(SCORE_EXACT_CATEGORY);
+    }
+    if category.contains(term) {
+        return Some(SCORE_CATEGORY_SUBSTRING);
+    }
+    if summary.contains(term) {
+        return Some(SCORE_SUMMARY);
+    }
+    if explanation.contains(term) {
+        return Some(SCORE_EXPLANATION);
+    }
+
+    None
+}
+
 impl TaxonomyDatabase {
     pub fn load_latest() -> GratResult<Self> {
         if let Some(db_path) = crate::taxonomy::updater::db_file_path() {
@@ -78,7 +132,9 @@ impl TaxonomyDatabase {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to parse taxonomy file '{name}': {e}");
+                    return Err(GratError::TaxonomyError(format!(
+                        "Failed to parse embedded taxonomy file '{name}': {e}"
+                    )));
                 }
             }
         }
@@ -130,17 +186,46 @@ impl TaxonomyDatabase {
             .collect()
     }
 
+    /// Searches the taxonomy for entries matching every whitespace-separated
+    /// term in `query`.
+    ///
+    /// Matching is case-insensitive and looks at the entry name, summary and
+    /// detailed explanation, the category name, and the numerical error code
+    /// (exact and prefix matches). Results are ranked by relevance: exact name
+    /// matches come first, followed by name prefixes, code matches, name
+    /// substrings, category matches, summaries, and finally explanations.
     pub fn search(&self, query: &str) -> Vec<&TaxonomyEntry> {
-        let query = query.to_lowercase();
-        self.all_entries
+        let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+
+        if terms.is_empty() {
+            return Vec::new();
+        }
+
+        let mut matches: Vec<(u32, &TaxonomyEntry)> = self
+            .all_entries
             .iter()
-            .filter(|entry| {
-                entry.name.to_lowercase().contains(&query)
-                    || entry.category.to_string().to_lowercase().contains(&query)
-                    || entry.summary.to_lowercase().contains(&query)
-                    || entry.detailed_explanation.to_lowercase().contains(&query)
+            .filter_map(|entry| {
+                let mut score = 0_u32;
+                for term in &terms {
+                    score += score_term(entry, term)?;
+                }
+                Some((score, entry))
             })
-            .collect()
+            .collect();
+
+        matches.sort_by(|(score_a, entry_a), (score_b, entry_b)| {
+            score_b
+                .cmp(score_a)
+                .then_with(|| {
+                    entry_a
+                        .name
+                        .to_lowercase()
+                        .cmp(&entry_b.name.to_lowercase())
+                })
+                .then_with(|| entry_a.code.cmp(&entry_b.code))
+        });
+
+        matches.into_iter().map(|(_, entry)| entry).collect()
     }
 
     pub fn all_entries(&self) -> &[TaxonomyEntry] {
@@ -159,6 +244,193 @@ impl TaxonomyDatabase {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn entry(
+        category: ErrorCategory,
+        code: u32,
+        name: &str,
+        summary: &str,
+        detailed_explanation: &str,
+    ) -> TaxonomyEntry {
+        TaxonomyEntry {
+            id: format!("test.{}.{}", category, code),
+            category,
+            code,
+            name: name.to_string(),
+            severity: "Error".to_string(),
+            since_protocol: None,
+            deprecated_protocol: None,
+            summary: summary.to_string(),
+            detailed_explanation: detailed_explanation.to_string(),
+            common_causes: Vec::new(),
+            suggested_fixes: Vec::new(),
+            related_errors: Vec::new(),
+            source_file: None,
+            source_line: None,
+            documentation_url: None,
+        }
+    }
+
+    fn db_with(entries: Vec<TaxonomyEntry>) -> TaxonomyDatabase {
+        let mut db = TaxonomyDatabase {
+            entries: HashMap::new(),
+            all_entries: Vec::new(),
+        };
+
+        for entry in entries {
+            db.entries
+                .insert((entry.category.clone(), entry.code), entry.clone());
+            db.all_entries.push(entry);
+        }
+
+        db
+    }
+
+    #[test]
+    fn search_is_case_insensitive_across_name_summary_and_explanation() {
+        let db = db_with(vec![
+            entry(
+                ErrorCategory::Budget,
+                1,
+                "CpuLimitExceeded",
+                "Too much work",
+                "",
+            ),
+            entry(
+                ErrorCategory::Budget,
+                2,
+                "MemLimitExceeded",
+                "CPU and memory",
+                "",
+            ),
+            entry(
+                ErrorCategory::Budget,
+                3,
+                "Other",
+                "Nothing here",
+                "THE CPU WAS EXHAUSTED",
+            ),
+        ]);
+
+        let names: Vec<&str> = db.search("cpu").iter().map(|e| e.name.as_str()).collect();
+
+        assert_eq!(names, vec!["CpuLimitExceeded", "MemLimitExceeded", "Other"]);
+    }
+
+    #[test]
+    fn search_matches_codes_exactly_and_by_prefix() {
+        let db = db_with(vec![
+            entry(ErrorCategory::Auth, 1, "Unauthorized", "", ""),
+            entry(ErrorCategory::Auth, 12, "Expired", "", ""),
+            entry(ErrorCategory::Auth, 2, "Forbidden", "", ""),
+        ]);
+
+        let names: Vec<&str> = db.search("12").iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["Expired"]);
+
+        let names: Vec<&str> = db.search("1").iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["Unauthorized", "Expired"]);
+    }
+
+    #[test]
+    fn search_surfaces_entries_by_category() {
+        let db = db_with(vec![
+            entry(ErrorCategory::Budget, 1, "CpuLimitExceeded", "", ""),
+            entry(ErrorCategory::Budget, 2, "MemLimitExceeded", "", ""),
+            entry(ErrorCategory::Storage, 1, "MissingValue", "", ""),
+        ]);
+
+        let results = db.search("budget");
+
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|e| e.category == ErrorCategory::Budget));
+    }
+
+    #[test]
+    fn search_ranks_exact_name_matches_before_summary_matches() {
+        let db = db_with(vec![
+            entry(
+                ErrorCategory::Context,
+                2,
+                "Other",
+                "budget related problem",
+                "",
+            ),
+            entry(ErrorCategory::Context, 1, "Budget", "", ""),
+        ]);
+
+        let names: Vec<&str> = db
+            .search("budget")
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["Budget", "Other"]);
+    }
+
+    #[test]
+    fn search_requires_all_keywords_to_match() {
+        let db = db_with(vec![
+            entry(
+                ErrorCategory::Budget,
+                1,
+                "CpuLimitExceeded",
+                "CPU limit exceeded",
+                "",
+            ),
+            entry(
+                ErrorCategory::Budget,
+                2,
+                "CpuUnavailable",
+                "The CPU is busy",
+                "",
+            ),
+            entry(
+                ErrorCategory::Budget,
+                3,
+                "MemLimitExceeded",
+                "Memory limit exceeded",
+                "",
+            ),
+        ]);
+
+        let names: Vec<&str> = db
+            .search("cpu limit")
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["CpuLimitExceeded"]);
+    }
+
+    #[test]
+    fn search_treats_special_characters_literally() {
+        let db = db_with(vec![
+            entry(ErrorCategory::Contract, 1, "C++Trap", "", ""),
+            entry(ErrorCategory::Auth, 2, "Denied", "auth::denied (100%)", ""),
+            entry(ErrorCategory::Value, 3, "Quoted", "quote \"error\"", ""),
+        ]);
+
+        assert_eq!(db.search("c++").len(), 1);
+        assert_eq!(db.search("C++TRAP")[0].name, "C++Trap");
+        assert_eq!(db.search("auth::denied (100%)").len(), 1);
+        assert_eq!(db.search("\"error\"").len(), 1);
+        assert!(db.search("[").is_empty());
+    }
+
+    #[test]
+    fn search_returns_nothing_for_a_blank_query() {
+        let db = db_with(vec![entry(
+            ErrorCategory::Budget,
+            1,
+            "CpuLimitExceeded",
+            "",
+            "",
+        )]);
+
+        assert!(db.search("").is_empty());
+        assert!(db.search("   \t  ").is_empty());
+    }
 
     #[test]
     fn test_load_taxonomy_success() {
