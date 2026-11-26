@@ -181,7 +181,7 @@ fn render_arg_summary(frame: &mut Frame, area: Rect, inv: &ContractInvocation) {
 }
 
 /// Build a coloured [`Row`] for a single [`LedgerEntryDiff`].
-fn build_row(entry: &LedgerEntryDiff) -> Row {
+fn build_row(entry: &LedgerEntryDiff) -> Row<'_> {
     let (label, row_style) = match entry.change_type {
         DiffChangeType::Created => (
             Span::styled("+ Added", Style::default().fg(Color::Green)),
@@ -221,12 +221,14 @@ fn build_row(entry: &LedgerEntryDiff) -> Row {
     ])
 }
 
-/// Truncate `s` to at most `max` bytes, appending `…` when shortened.
+/// Truncate `s` to at most `max` characters, appending `…` when shortened.
 fn truncate(s: &str, max: usize) -> String {
     // Count characters, not bytes: slicing by byte offset panics on
     // multi-byte UTF-8 and over-counts the width of the ellipsis.
     if s.chars().count() <= max {
         s.to_string()
+    } else if max == 0 {
+        String::new()
     } else {
         let kept: String = s.chars().take(max.saturating_sub(1)).collect();
         format!("{kept}…")
