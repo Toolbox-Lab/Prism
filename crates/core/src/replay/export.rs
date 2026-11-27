@@ -394,6 +394,7 @@ pub(crate) mod tests {
                 min_persistent_entry_ttl: 4_096,
                 max_entry_ttl: 3_110_400,
                 cpu_instructions_limit: 10_000_000,
+                limits: crate::types::trace::ResourceLimits::default(),
             },
         }
     }

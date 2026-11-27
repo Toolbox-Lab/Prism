@@ -755,6 +755,7 @@ mod tests {
                 min_persistent_entry_ttl: 4096,
                 max_entry_ttl: 6_312_000,
                 cpu_instructions_limit: 1_000_000,
+                limits: crate::types::trace::ResourceLimits::default(),
             },
         }
     }
