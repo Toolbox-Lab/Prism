@@ -4,8 +4,8 @@ use dashmap::DashMap;
 use std::cmp::Ordering;
 
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 
@@ -71,7 +71,10 @@ impl CacheStore {
         value: &[u8],
         ledger_sequence: Option<u32>,
     ) -> GratResult<()> {
-        let _write_guard = self.write_lock.lock().map_err(|_| GratError::CacheError("Cache write lock poisoned".to_string()))?;
+        let _write_guard = self
+            .write_lock
+            .lock()
+            .map_err(|_| GratError::CacheError("Cache write lock poisoned".to_string()))?;
         let new_size = value.len() as u64;
         if new_size > self.max_size {
             return Err(GratError::CacheError(format!(
@@ -94,7 +97,8 @@ impl CacheStore {
 
         std::fs::write(&path, value)
             .map_err(|e| GratError::CacheError(format!("Failed to write cache entry: {e}")))?;
-        self.memory.insert(path.to_string_lossy().into_owned(), value.to_vec());
+        self.memory
+            .insert(path.to_string_lossy().into_owned(), value.to_vec());
         Ok(())
     }
 
@@ -299,7 +303,11 @@ impl CacheStore {
 fn touch_file(path: &Path) {
     if let Ok(file) = std::fs::OpenOptions::new().write(true).open(path) {
         let now = SystemTime::now();
-        let _ = file.set_times(std::fs::FileTimes::new().set_accessed(now).set_modified(now));
+        let _ = file.set_times(
+            std::fs::FileTimes::new()
+                .set_accessed(now)
+                .set_modified(now),
+        );
     }
 }
 
@@ -378,9 +386,15 @@ mod tests {
     fn aggregate_directory_size_stays_within_quota_after_eviction() {
         let dir = tempfile::tempdir().unwrap();
         let store = CacheStore::with_max_size_bytes(dir.path().to_path_buf(), 10).unwrap();
-        store.put(CacheCategory::WasmBlob, "a", b"1234", None).unwrap();
-        store.put(CacheCategory::ContractSpec, "b", b"5678", None).unwrap();
-        store.put(CacheCategory::TransactionResult, "c", b"90ab", None).unwrap();
+        store
+            .put(CacheCategory::WasmBlob, "a", b"1234", None)
+            .unwrap();
+        store
+            .put(CacheCategory::ContractSpec, "b", b"5678", None)
+            .unwrap();
+        store
+            .put(CacheCategory::TransactionResult, "c", b"90ab", None)
+            .unwrap();
         assert!(store.total_cache_size().unwrap() <= 10);
         assert!(store.contains(CacheCategory::TransactionResult, "c", None));
     }
@@ -389,9 +403,17 @@ mod tests {
     fn memory_tier_is_populated_from_disk_and_remove_invalidates_it() {
         let dir = tempfile::tempdir().unwrap();
         let store = CacheStore::with_max_size_bytes(dir.path().to_path_buf(), 32).unwrap();
-        store.put(CacheCategory::WasmBlob, "hot", b"payload", None).unwrap();
-        assert_eq!(store.get(CacheCategory::WasmBlob, "hot", None).unwrap(), Some(b"payload".to_vec()));
+        store
+            .put(CacheCategory::WasmBlob, "hot", b"payload", None)
+            .unwrap();
+        assert_eq!(
+            store.get(CacheCategory::WasmBlob, "hot", None).unwrap(),
+            Some(b"payload".to_vec())
+        );
         store.remove(CacheCategory::WasmBlob, "hot", None).unwrap();
-        assert_eq!(store.get(CacheCategory::WasmBlob, "hot", None).unwrap(), None);
+        assert_eq!(
+            store.get(CacheCategory::WasmBlob, "hot", None).unwrap(),
+            None
+        );
     }
 }

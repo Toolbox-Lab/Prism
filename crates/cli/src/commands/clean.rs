@@ -181,20 +181,16 @@ pub fn recreate_cache_structure(
     })?;
 
     if wasm_only {
-        fs::create_dir_all(base_dir.join("wasm")).map_err(|e| {
-            anyhow::anyhow!("Failed to recreate wasm cache directory: {}", e)
-        })?;
+        fs::create_dir_all(base_dir.join("wasm"))
+            .map_err(|e| anyhow::anyhow!("Failed to recreate wasm cache directory: {}", e))?;
     } else if ledger_only {
-        fs::create_dir_all(base_dir.join("ledger")).map_err(|e| {
-            anyhow::anyhow!("Failed to recreate ledger cache directory: {}", e)
-        })?;
+        fs::create_dir_all(base_dir.join("ledger"))
+            .map_err(|e| anyhow::anyhow!("Failed to recreate ledger cache directory: {}", e))?;
     } else {
-        fs::create_dir_all(base_dir.join("wasm")).map_err(|e| {
-            anyhow::anyhow!("Failed to recreate wasm cache directory: {}", e)
-        })?;
-        fs::create_dir_all(base_dir.join("ledger")).map_err(|e| {
-            anyhow::anyhow!("Failed to recreate ledger cache directory: {}", e)
-        })?;
+        fs::create_dir_all(base_dir.join("wasm"))
+            .map_err(|e| anyhow::anyhow!("Failed to recreate wasm cache directory: {}", e))?;
+        fs::create_dir_all(base_dir.join("ledger"))
+            .map_err(|e| anyhow::anyhow!("Failed to recreate ledger cache directory: {}", e))?;
     }
 
     Ok(())
@@ -444,7 +440,10 @@ mod tests {
 
         // ledger should remain untouched
         assert!(cache_dir.join("ledger").join("test.entry").exists());
-        assert_eq!(directory_size_bytes(&cache_dir.join("ledger")).unwrap(), 8192);
+        assert_eq!(
+            directory_size_bytes(&cache_dir.join("ledger")).unwrap(),
+            8192
+        );
     }
 
     #[test]

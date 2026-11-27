@@ -118,10 +118,14 @@ fn endpoint_label(endpoint: &str) -> String {
 
 pub fn record_rpc_http_error(endpoint: &str, method: &str, status: u16) {
     let _ = endpoint;
+    let status = status.to_string();
     metrics()
         .http_errors
-        .with_label_values(&[method, &status.to_string()])
+        .with_label_values(&[method, &status])
         .inc();
+    // HTTP failures are RPC errors too: count them in soroban_rpc_errors_total
+    // under their status code, as main did before the profile merge.
+    record_rpc_error(&status);
 }
 
 pub fn gather_metrics() -> String {
