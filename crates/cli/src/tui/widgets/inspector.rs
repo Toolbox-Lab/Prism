@@ -1,16 +1,17 @@
 //! Inspector widget for the TUI debugger.
 //!
-//! Renders a Ratatui `Table` showing storage state diffs for the currently
-//! selected invocation frame, with colour-coded additions (green), deletions
-//! (red), and modifications (yellow).  Long diff lists can be scrolled via a
-//! configurable scroll offset stored in [`crate::tui::state::TuiState`].
+//! Renders the selected invocation's arguments, return value and error state
+//! followed by a Ratatui `Table` of storage state diffs, with colour-coded
+//! additions (green), deletions (red), and modifications (yellow).  Long diff
+//! lists can be scrolled via a configurable scroll offset stored in
+//! [`crate::tui::state::TuiState`].
 
 use grat_core::types::trace::{ContractInvocation, DiffChangeType, LedgerEntryDiff, StateDiff};
 use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
     Frame,
 };
 
@@ -26,15 +27,28 @@ use ratatui::{
 /// * `area`       – Terminal rectangle allocated to this widget.
 /// * `state_diff` – Storage state changes computed for the current trace.
 /// * `selected`   – The currently focused invocation frame (used for the
-///                  header title and argument summary).
+///                  header title and call details).
 /// * `scroll`     – Number of diff rows already scrolled past (modified by
 ///                  the caller via up/down key events).
+#[allow(dead_code)]
 pub fn render_inspector(
     frame: &mut Frame,
     area: Rect,
     state_diff: &StateDiff,
     selected: Option<&ContractInvocation>,
     scroll: usize,
+) {
+    render_inspector_with_focus(frame, area, state_diff, selected, scroll, false);
+}
+
+/// Render the inspector and highlight its border while it owns keyboard focus.
+pub fn render_inspector_with_focus(
+    frame: &mut Frame,
+    area: Rect,
+    state_diff: &StateDiff,
+    selected: Option<&ContractInvocation>,
+    scroll: usize,
+    focused: bool,
 ) {
     // Build the outer block ------------------------------------------------
     let title = selected
@@ -50,20 +64,32 @@ pub fn render_inspector(
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(Style::default().fg(if focused {
+            Color::Cyan
+        } else {
+            Color::DarkGray
+        }));
 
     // Inner drawing area (excludes the border) ------------------------------
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // If there is a selected frame, render an argument summary first --------
-    let table_offset_y = if let Some(inv) = selected {
-        render_arg_summary(frame, inner, inv);
-        // Reserve 3 rows for the argument summary paragraph + gap
-        3
-    } else {
-        0
-    };
+    // Show the selected call's arguments, return value and error state before
+    // the recorded state changes so every invocation can be inspected.
+    let mut table_offset_y = 0;
+    if let Some(inv) = selected {
+        let detail_height = 5_u16.min(inner.height);
+        frame.render_widget(
+            Paragraph::new(details(inv))
+                .wrap(Wrap { trim: true })
+                .style(Style::default()),
+            Rect {
+                height: detail_height,
+                ..inner
+            },
+        );
+        table_offset_y = detail_height.saturating_add(1);
+    }
 
     // Filter to only meaningful changes (skip Unchanged) -------------------
     let visible_entries: Vec<&LedgerEntryDiff> = state_diff
@@ -76,8 +102,8 @@ pub fn render_inspector(
         let msg = Paragraph::new("No storage changes for this frame.")
             .style(Style::default().fg(Color::DarkGray));
         let msg_area = Rect {
-            y: inner.y + table_offset_y as u16,
-            height: inner.height.saturating_sub(table_offset_y as u16),
+            y: inner.y.saturating_add(table_offset_y),
+            height: inner.height.saturating_sub(table_offset_y),
             ..inner
         };
         frame.render_widget(msg, msg_area);
@@ -121,8 +147,8 @@ pub fn render_inspector(
     .bottom_margin(1);
 
     let table_area = Rect {
-        y: inner.y + table_offset_y as u16,
-        height: inner.height.saturating_sub(table_offset_y as u16),
+        y: inner.y.saturating_add(table_offset_y),
+        height: inner.height.saturating_sub(table_offset_y),
         ..inner
     };
 
@@ -155,18 +181,43 @@ pub fn render() {}
 // Private helpers
 // ---------------------------------------------------------------------------
 
-/// Render a one-line argument summary at the top of `area`.
-fn render_arg_summary(frame: &mut Frame, area: Rect, inv: &ContractInvocation) {
-    if area.height == 0 {
-        return;
-    }
-
-    let args_display = if inv.arguments.is_empty() {
-        "(no args)".to_string()
+/// Build the detailed call view shown at the top of the inspector.
+fn details(inv: &ContractInvocation) -> Vec<Line<'static>> {
+    let label = Style::default().fg(Color::Gray);
+    let error_style = if inv.is_error {
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Green)
+    };
+    let args = if inv.arguments.is_empty() {
+        "(none)".to_owned()
     } else {
         inv.arguments.join(", ")
     };
+    let return_value = inv
+        .return_value
+        .clone()
+        .unwrap_or_else(|| "unavailable".to_owned());
 
+    vec![
+        detail_line("Contract: ", &inv.contract_id, label, Style::default()),
+        detail_line("Function: ", &inv.function_name, label, Style::default()),
+        detail_line("Arguments: ", &args, label, Style::default()),
+        detail_line("Return: ", &return_value, label, Style::default()),
+        detail_line("Error: ", &inv.is_error.to_string(), label, error_style),
+    ]
+}
+
+fn detail_line(
+    label: &'static str,
+    value: &str,
+    label_style: Style,
+    value_style: Style,
+) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(label, label_style),
+        Span::styled(truncate(value, 80), value_style),
+    ])
     let line = Line::from(vec![
         Span::styled("Args: ", Style::default().fg(Color::Gray)),
         Span::styled(
@@ -223,6 +274,9 @@ fn build_row(entry: &LedgerEntryDiff) -> Row<'_> {
 
 /// Truncate `s` to at most `max` characters, appending `…` when shortened.
 fn truncate(s: &str, max: usize) -> String {
+    const ELLIPSIS: &str = "…";
+    if s.len() <= max {
+        return s.to_string();
     // Count characters, not bytes: slicing by byte offset panics on
     // multi-byte UTF-8 and over-counts the width of the ellipsis.
     if s.chars().count() <= max {
@@ -233,6 +287,10 @@ fn truncate(s: &str, max: usize) -> String {
         let kept: String = s.chars().take(max.saturating_sub(1)).collect();
         format!("{kept}…")
     }
+    let keep = max.saturating_sub(ELLIPSIS.len());
+    let mut shortened: String = s.chars().take(keep).collect();
+    shortened.push_str(ELLIPSIS);
+    shortened
 }
 
 // ---------------------------------------------------------------------------
@@ -242,7 +300,8 @@ fn truncate(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grat_core::types::trace::{DiffChangeType, LedgerEntryDiff, StateDiff};
+    use grat_core::types::trace::{DiffChangeType, LedgerEntryDiff, StateDiff, TraceId};
+    use ratatui::{backend::TestBackend, Terminal};
 
     fn make_diff(entries: Vec<LedgerEntryDiff>) -> StateDiff {
         StateDiff { entries }
@@ -317,6 +376,89 @@ mod tests {
         let max_scroll = visible.len().saturating_sub(1);
         let clamped = 999_usize.min(max_scroll);
         assert_eq!(clamped, 0);
+    }
+
+    #[test]
+    fn inspector_renders_selected_call_details() {
+        let invocation = ContractInvocation {
+            trace_id: TraceId::new(),
+            contract_id: "CEXAMPLE".to_owned(),
+            function_name: "transfer".to_owned(),
+            arguments: vec!["amount=7".to_owned()],
+            return_value: Some("ok".to_owned()),
+            host_calls: Vec::new(),
+            sub_invocations: Vec::new(),
+            total_cpu_instructions: 0,
+            total_memory_bytes: 0,
+            is_error: true,
+        };
+        let mut terminal = Terminal::new(TestBackend::new(80, 12)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_inspector(
+                    frame,
+                    frame.area(),
+                    &StateDiff::default(),
+                    Some(&invocation),
+                    0,
+                );
+            })
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect();
+
+        for expected in [
+            "Contract: CEXAMPLE",
+            "Function: transfer",
+            "Arguments: amount=7",
+            "Return: ok",
+            "Error: true",
+        ] {
+            assert!(text.contains(expected), "missing {expected}: {text}");
+        }
+    }
+
+    #[test]
+    fn inspector_border_follows_panel_focus() {
+        let mut terminal = Terminal::new(TestBackend::new(40, 8)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_inspector_with_focus(
+                    frame,
+                    frame.area(),
+                    &StateDiff::default(),
+                    None,
+                    0,
+                    true,
+                );
+            })
+            .unwrap();
+        assert_eq!(
+            terminal.backend().buffer().cell((0, 0)).unwrap().fg,
+            Color::Cyan
+        );
+
+        terminal
+            .draw(|frame| {
+                render_inspector_with_focus(
+                    frame,
+                    frame.area(),
+                    &StateDiff::default(),
+                    None,
+                    0,
+                    false,
+                );
+            })
+            .unwrap();
+        assert_eq!(
+            terminal.backend().buffer().cell((0, 0)).unwrap().fg,
+            Color::DarkGray
+        );
     }
 
     #[test]

@@ -1,5 +1,5 @@
 use std::{
-    io::{self, IsTerminal},
+    io::{self, IsTerminal, Write},
     time::Duration,
 };
 
@@ -13,8 +13,7 @@ use grat_core::types::config::NetworkConfig;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::Paragraph,
     Frame, Terminal,
 };
 
@@ -24,21 +23,55 @@ use super::{
 };
 
 /// Restore the terminal on normal exit, I/O errors, and panic unwinding.
-struct TerminalGuard;
+#[derive(Default)]
+struct TerminalGuard {
+    raw_mode: bool,
+    alternate_screen: bool,
+    cursor_hidden: bool,
+}
 
 impl TerminalGuard {
     fn enter() -> io::Result<Self> {
+        let mut guard = Self::default();
         enable_raw_mode()?;
-        let guard = Self;
-        execute!(io::stdout(), EnterAlternateScreen, Hide)?;
+        guard.raw_mode = true;
+
+        let mut stdout = io::stdout();
+        if let Err(error) = execute!(stdout, EnterAlternateScreen) {
+            guard.restore();
+            return Err(error);
+        }
+        guard.alternate_screen = true;
+
+        if let Err(error) = execute!(stdout, Hide) {
+            guard.restore();
+            return Err(error);
+        }
+        guard.cursor_hidden = true;
         Ok(guard)
+    }
+
+    fn restore(&mut self) {
+        let mut stdout = io::stdout();
+        if self.cursor_hidden {
+            let _ = execute!(stdout, Show);
+        }
+        if self.alternate_screen {
+            let _ = execute!(stdout, LeaveAlternateScreen);
+        }
+        let _ = stdout.flush();
+        if self.raw_mode {
+            let _ = disable_raw_mode();
+        }
+        self.raw_mode = false;
+        self.alternate_screen = false;
+        self.cursor_hidden = false;
     }
 }
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen, Show);
+        self.restore();
     }
 }
 
@@ -80,25 +113,16 @@ fn handle_key(state: &mut TuiState, key: KeyEvent) -> bool {
     }
     match key.code {
         KeyCode::Char('q') | KeyCode::Esc => return true,
-        KeyCode::Tab => state.switch_panel(key.modifiers.contains(KeyModifiers::SHIFT)),
+        KeyCode::Tab if key.modifiers.contains(KeyModifiers::SHIFT) => state.switch_panel(true),
         KeyCode::BackTab => state.switch_panel(true),
-        KeyCode::Char('j') | KeyCode::Down | KeyCode::Char('s') => state.next(),
+        KeyCode::Tab => state.switch_panel(false),
+        KeyCode::Char('j') | KeyCode::Down => state.next(),
         KeyCode::Char('k') | KeyCode::Up => state.previous(),
-        KeyCode::Char('o') => state.step_over(),
+        KeyCode::Char('s') => state.step_into(),
+        KeyCode::Char('o' | 'n') => state.step_over(),
         _ => {}
     }
     false
-}
-
-fn panel(title: &str, selected: bool) -> Block<'_> {
-    Block::default()
-        .borders(Borders::ALL)
-        .title(title)
-        .border_style(Style::default().fg(if selected {
-            Color::Cyan
-        } else {
-            Color::DarkGray
-        }))
 }
 
 fn render(frame: &mut Frame<'_>, state: &TuiState) {
@@ -129,6 +153,7 @@ fn render(frame: &mut Frame<'_>, state: &TuiState) {
         state.scroll_offset,
         state.selected_panel == Panel::Timeline,
     );
+    inspector::render_inspector_with_focus(
     let detail_sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(6), Constraint::Min(0)])
@@ -157,10 +182,11 @@ fn render(frame: &mut Frame<'_>, state: &TuiState) {
     );
     inspector::render_inspector(
         frame,
-        detail_sections[1],
+        panels[1],
         &state.state_diff,
         state.selected_invocation.as_ref(),
         state.scroll_offset,
+        state.selected_panel == Panel::Inspector,
     );
     controls::render(frame, sections[2], state);
 }
@@ -183,6 +209,18 @@ mod tests {
         }
         press(&mut state, KeyCode::BackTab);
         assert_eq!(state.selected_panel, Panel::Controls);
+    }
+
+    #[test]
+    fn shift_tab_cycles_panels_in_reverse() {
+        let mut state = super::super::state::fixture();
+        assert!(!handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT)
+        ));
+        assert_eq!(state.selected_panel, Panel::Controls);
+        assert!(!press(&mut state, KeyCode::BackTab));
+        assert_eq!(state.selected_panel, Panel::Inspector);
     }
 
     #[test]
