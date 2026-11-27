@@ -154,33 +154,6 @@ fn render(frame: &mut Frame<'_>, state: &TuiState) {
         state.selected_panel == Panel::Timeline,
     );
     inspector::render_inspector_with_focus(
-    let detail_sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(6), Constraint::Min(0)])
-        .split(panels[1]);
-    let details = state.entries.get(state.scroll_offset).map_or_else(
-        || "No recorded invocations. [q] quits.".to_owned(),
-        |entry| {
-            format!(
-                "Contract: {}\nFunction: {}\nArguments: {}\nReturn: {}\nError: {}",
-                entry.contract,
-                entry.function,
-                entry.arguments.join(", "),
-                entry.return_value.as_deref().unwrap_or("unavailable"),
-                entry.is_error
-            )
-        },
-    );
-    frame.render_widget(
-        Paragraph::new(details)
-            .wrap(Wrap { trim: true })
-            .block(panel(
-                "Invocation",
-                state.selected_panel == Panel::Inspector,
-            )),
-        detail_sections[0],
-    );
-    inspector::render_inspector(
         frame,
         panels[1],
         &state.state_diff,

@@ -218,17 +218,6 @@ fn detail_line(
         Span::styled(label, label_style),
         Span::styled(truncate(value, 80), value_style),
     ])
-    let line = Line::from(vec![
-        Span::styled("Args: ", Style::default().fg(Color::Gray)),
-        Span::styled(
-            truncate(&args_display, 80),
-            Style::default().fg(Color::White),
-        ),
-    ]);
-
-    let para = Paragraph::new(line);
-    let summary_area = Rect { height: 1, ..area };
-    frame.render_widget(para, summary_area);
 }
 
 /// Build a coloured [`Row`] for a single [`LedgerEntryDiff`].
@@ -274,9 +263,6 @@ fn build_row(entry: &LedgerEntryDiff) -> Row<'_> {
 
 /// Truncate `s` to at most `max` characters, appending `…` when shortened.
 fn truncate(s: &str, max: usize) -> String {
-    const ELLIPSIS: &str = "…";
-    if s.len() <= max {
-        return s.to_string();
     // Count characters, not bytes: slicing by byte offset panics on
     // multi-byte UTF-8 and over-counts the width of the ellipsis.
     if s.chars().count() <= max {
@@ -287,10 +273,6 @@ fn truncate(s: &str, max: usize) -> String {
         let kept: String = s.chars().take(max.saturating_sub(1)).collect();
         format!("{kept}…")
     }
-    let keep = max.saturating_sub(ELLIPSIS.len());
-    let mut shortened: String = s.chars().take(keep).collect();
-    shortened.push_str(ELLIPSIS);
-    shortened
 }
 
 // ---------------------------------------------------------------------------

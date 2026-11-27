@@ -1,9 +1,9 @@
 use clap::Args;
 use grat_core::types::config::NetworkConfig;
 
-#[derive(Args)]
+#[derive(Args, Debug, Clone)]
 pub struct DiffArgs {
-    #[arg(value_name = "TX_HASH")]
+    #[arg(value_name = "TX_HASH", help = "Transaction hash to replay and inspect storage diff")]
     pub tx_hash: String,
 }
 

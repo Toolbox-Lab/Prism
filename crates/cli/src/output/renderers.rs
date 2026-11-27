@@ -437,26 +437,34 @@ impl<'a> StateDiffTable<'a> {
             .entries
             .iter()
             .map(|entry| {
-                let change = match entry.change_type {
-                    grat_core::types::trace::DiffChangeType::Created => {
-                        palette.success_text("Created")
-                    }
-                    grat_core::types::trace::DiffChangeType::Deleted => {
-                        palette.error_text("Deleted")
-                    }
-                    grat_core::types::trace::DiffChangeType::Updated => {
-                        palette.warning_text("Updated")
-                    }
-                    grat_core::types::trace::DiffChangeType::Unchanged => {
-                        palette.muted_text("Unchanged")
-                    }
+                let (change, old_value, new_value) = match entry.change_type {
+                    grat_core::types::trace::DiffChangeType::Created => (
+                        palette.success_text("Created"),
+                        palette.muted_text("-"),
+                        palette.success_text(entry.after.as_deref().unwrap_or("-")),
+                    ),
+                    grat_core::types::trace::DiffChangeType::Deleted => (
+                        palette.error_text("Deleted"),
+                        palette.error_text(entry.before.as_deref().unwrap_or("-")),
+                        palette.muted_text("-"),
+                    ),
+                    grat_core::types::trace::DiffChangeType::Updated => (
+                        palette.warning_text("Updated"),
+                        palette.warning_text(entry.before.as_deref().unwrap_or("-")),
+                        palette.warning_text(entry.after.as_deref().unwrap_or("-")),
+                    ),
+                    grat_core::types::trace::DiffChangeType::Unchanged => (
+                        palette.muted_text("Unchanged"),
+                        palette.muted_text(entry.before.as_deref().unwrap_or("-")),
+                        palette.muted_text(entry.after.as_deref().unwrap_or("-")),
+                    ),
                 };
 
                 DiffRow {
                     key: entry.key.clone(),
                     change,
-                    old_value: entry.before.clone().unwrap_or_else(|| "-".to_string()),
-                    new_value: entry.after.clone().unwrap_or_else(|| "-".to_string()),
+                    old_value,
+                    new_value,
                 }
             })
             .collect();
@@ -731,5 +739,56 @@ mod tests {
         assert!(output.contains("Total Charged Fee:"));
         assert!(output.contains("150 stroops"));
         assert!(output.contains("Refundable Resource Fee:"));
+    }
+
+    #[test]
+    fn render_state_diff_table_with_entries() {
+        use grat_core::types::trace::{DiffChangeType, LedgerEntryDiff, StateDiff};
+
+        let diff = StateDiff {
+            entries: vec![
+                LedgerEntryDiff {
+                    key: "ContractData:key1".to_string(),
+                    before: None,
+                    after: Some("Value1".to_string()),
+                    change_type: DiffChangeType::Created,
+                },
+                LedgerEntryDiff {
+                    key: "ContractData:key2".to_string(),
+                    before: Some("OldValue2".to_string()),
+                    after: Some("NewValue2".to_string()),
+                    change_type: DiffChangeType::Updated,
+                },
+                LedgerEntryDiff {
+                    key: "ContractData:key3".to_string(),
+                    before: Some("OldValue3".to_string()),
+                    after: None,
+                    change_type: DiffChangeType::Deleted,
+                },
+            ],
+        };
+
+        let rendered = render_state_diff_table(&diff);
+        assert!(rendered.contains("ContractData:key1"));
+        assert!(rendered.contains("ContractData:key2"));
+        assert!(rendered.contains("ContractData:key3"));
+        assert!(rendered.contains("Created"));
+        assert!(rendered.contains("Updated"));
+        assert!(rendered.contains("Deleted"));
+        assert!(rendered.contains("Value1"));
+        assert!(rendered.contains("NewValue2"));
+        assert!(rendered.contains("OldValue3"));
+    }
+
+    #[test]
+    fn render_state_diff_table_empty() {
+        use grat_core::types::trace::StateDiff;
+
+        let diff = StateDiff {
+            entries: Vec::new(),
+        };
+
+        let rendered = render_state_diff_table(&diff);
+        assert!(rendered.is_empty());
     }
 }

@@ -6,7 +6,7 @@ name = "grat"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Grat CLI — Soroban Transaction Debugger"
+description = "Grat CLI - Soroban Transaction Debugger"
 build = "build.rs"
 
 [[bin]]
@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 grat-core = { workspace = true }
+stellar-xdr = { workspace = true }
 fs2     = "0.4"
 walkdir = "2"
 reqwest = { workspace = true }
@@ -62,7 +63,6 @@ semver = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5.0"
 url = "2"
-stellar-xdr = { workspace = true }
 
 # Markdown
 pulldown-cmark = { workspace = true }
