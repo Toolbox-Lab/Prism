@@ -231,13 +231,9 @@ impl ReturnValueDecoder {
             },
             ScSpecTypeDef::Tuple(tuple_spec) => match val {
                 ScVal::Vec(Some(v)) => {
-                    match TupleDecoder.decode_vec(
-                        v,
-                        &tuple_spec.value_types,
-                        |item, type_def| {
-                            Self::decode_value(item, Some(type_def), contract_spec)
-                        },
-                    ) {
+                    match TupleDecoder.decode_vec(v, &tuple_spec.value_types, |item, type_def| {
+                        Self::decode_value(item, Some(type_def), contract_spec)
+                    }) {
                         Ok(items) => Value::Array(items),
                         Err(error) => json!({ "error": error.to_string() }),
                     }

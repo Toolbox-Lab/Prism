@@ -2,18 +2,32 @@
 title: "grat profile"
 sidebarTitle: "profile"
 description: "Identify resource consumption hotspots in contract execution."
+icon: "chart-column"
 ---
 
-The `profile` command helps you optimize your contract by showing exactly where the budget is spent.
+The `profile` command replays a transaction and reports how much of each network budget it consumed.
 
 ## Usage
 
 ```bash
-grat profile <TX_HASH> [FLAGS]
+grat profile <TX_HASH> [--output json|compact] [--save <PATH>]
 ```
 
-## Insights
+## What It Reports
 
-- **Top 5 Expensive Calls**: Ranked list of host functions by CPU/memory impact.
-- **Budget Warnings**: Flags if a contract is within 10% of the network limits.
-- **Storage Profile**: Breakdown of storage fees and ledger entry footprints.
+- **Budget Bars**: CPU instructions, memory, storage read bytes, and storage write bytes, each shown against the per-transaction limit published by the ledger's `ConfigSettingEntry` contract (not hardcoded constants). Storage byte figures are estimated from the XDR size of the ledger entries the transaction touched.
+- **Top Host Calls**: The five host functions with the highest *exclusive* CPU cost. Time spent in nested host calls is attributed to the callee, so the numbers add up instead of double counting.
+- **Warnings**: Raised when CPU, memory, or storage usage reaches 90% of the corresponding network limit.
+- **Heatmap**: Relative cost per contract function, coloured by share of the total budget.
+
+## Limits Unavailable
+
+If the RPC node cannot serve the `ContractComputeV0` / `ContractLedgerCostV0` config settings, limits render as `n/a` and percentages are omitted rather than fabricated.
+
+## Output
+
+`--output json` emits the full `ResourceProfile` (limits, totals, hotspots, warnings), and `--output compact` emits a single summary line for scripting. `--save <PATH>` writes the JSON profile to a file while still printing the human-readable table.
+
+```bash
+grat profile 3f2a... --save profile.json
+```

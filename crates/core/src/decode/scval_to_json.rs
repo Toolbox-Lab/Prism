@@ -348,6 +348,12 @@ mod tests {
         ScSpecTypeDef, ScString, ScSymbol, ScVec, StringM, TimePoint,
     };
 
+    /// Spec-less rendering: the one-argument form the tests were written
+    /// against, before `scval_to_json` grew a `type_ref` parameter.
+    fn scval_to_json(val: &ScVal) -> serde_json::Value {
+        super::scval_to_json(val, None)
+    }
+
     fn sym(s: &str) -> ScVal {
         ScVal::Symbol(ScSymbol(StringM::try_from(s.as_bytes().to_vec()).unwrap()))
     }
@@ -402,7 +408,10 @@ mod tests {
         // one, the same bytes render as the declared struct with typed fields.
         let val = sym_map(vec![("label", sym("hits")), ("count", ScVal::U64(3))]);
 
-        assert_eq!(scval_to_json(&val), json!({ "label": "hits", "count": 3 }));
+        assert_eq!(
+            scval_to_json(&val, None),
+            json!({ "label": "hits", "count": 3 })
+        );
         assert_eq!(
             scval_to_json_with_contract_spec(&val, &counter_spec()),
             json!({ "count": 3, "label": "hits" })
@@ -425,7 +434,7 @@ mod tests {
         let spec = counter_spec();
         assert_eq!(
             scval_to_json_with_contract_spec(&val, &spec),
-            scval_to_json(&val)
+            scval_to_json(&val, None)
         );
     }
 
@@ -487,27 +496,34 @@ mod tests {
 
     #[test]
     fn primitives_map_directly() {
-        assert_eq!(scval_to_json(&ScVal::Bool(true)), json!(true));
-        assert_eq!(scval_to_json(&ScVal::Void), Value::Null);
-        assert_eq!(scval_to_json(&ScVal::U32(42)), json!(42));
-        assert_eq!(scval_to_json(&ScVal::I32(-7)), json!(-7));
-        assert_eq!(scval_to_json(&ScVal::U64(u64::MAX)), json!(u64::MAX));
-        assert_eq!(scval_to_json(&ScVal::I64(i64::MIN)), json!(i64::MIN));
+        assert_eq!(scval_to_json(&ScVal::Bool(true), None), json!(true));
+        assert_eq!(scval_to_json(&ScVal::Void, None), Value::Null);
+        assert_eq!(scval_to_json(&ScVal::U32(42), None), json!(42));
+        assert_eq!(scval_to_json(&ScVal::I32(-7), None), json!(-7));
+        assert_eq!(scval_to_json(&ScVal::U64(u64::MAX), None), json!(u64::MAX));
+        assert_eq!(scval_to_json(&ScVal::I64(i64::MIN), None), json!(i64::MIN));
     }
 
     #[test]
     fn timepoint_and_duration_unwrap_to_numbers() {
-        assert_eq!(scval_to_json(&ScVal::Timepoint(TimePoint(100))), json!(100));
-        assert_eq!(scval_to_json(&ScVal::Duration(Duration(50))), json!(50));
+        assert_eq!(
+            scval_to_json(&ScVal::Timepoint(TimePoint(100)), None),
+            json!(100)
+        );
+        assert_eq!(
+            scval_to_json(&ScVal::Duration(Duration(50)), None),
+            json!(50)
+        );
     }
 
     #[test]
     fn symbol_and_string_become_utf8() {
-        assert_eq!(scval_to_json(&sym("hello")), json!("hello"));
+        assert_eq!(scval_to_json(&sym("hello"), None), json!("hello"));
         assert_eq!(
-            scval_to_json(&ScVal::String(ScString(
-                StringM::try_from(b"world".to_vec()).unwrap()
-            ))),
+            scval_to_json(
+                &ScVal::String(ScString(StringM::try_from(b"world".to_vec()).unwrap())),
+                None
+            ),
             json!("world")
         );
     }
@@ -515,7 +531,7 @@ mod tests {
     #[test]
     fn bytes_become_hex_string() {
         let bytes = ScVal::Bytes(ScBytes(vec![0xDE, 0xAD, 0xBE, 0xEF].try_into().unwrap()));
-        assert_eq!(scval_to_json(&bytes), json!("0xdeadbeef"));
+        assert_eq!(scval_to_json(&bytes, None), json!("0xdeadbeef"));
     }
 
     #[test]
@@ -525,16 +541,16 @@ mod tests {
                 .try_into()
                 .unwrap(),
         )));
-        assert_eq!(scval_to_json(&v), json!([1, 2, "three"]));
+        assert_eq!(scval_to_json(&v, None), json!([1, 2, "three"]));
     }
 
     #[test]
     fn empty_vec_and_absent_vec_are_distinguishable() {
         assert_eq!(
-            scval_to_json(&ScVal::Vec(Some(ScVec(vec![].try_into().unwrap())))),
+            scval_to_json(&ScVal::Vec(Some(ScVec(vec![].try_into().unwrap()))), None),
             json!([])
         );
-        assert_eq!(scval_to_json(&ScVal::Vec(None)), Value::Null);
+        assert_eq!(scval_to_json(&ScVal::Vec(None), None), Value::Null);
     }
 
     #[test]
@@ -554,7 +570,7 @@ mod tests {
             .unwrap(),
         )));
 
-        let result = scval_to_json(&m);
+        let result = scval_to_json(&m, None);
         assert_eq!(result["name"], json!("grat"));
         assert_eq!(result["7"], json!(true));
     }
@@ -583,7 +599,7 @@ mod tests {
             .unwrap(),
         )));
 
-        let result = scval_to_json(&m);
+        let result = scval_to_json(&m, None);
         let entries = result.as_array().expect("collision falls back to array");
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0]["key"], json!(7));
@@ -609,7 +625,7 @@ mod tests {
             .unwrap(),
         )));
 
-        let result = scval_to_json(&m);
+        let result = scval_to_json(&m, None);
         assert!(result.is_object());
         assert_eq!(result["1"], json!(true));
         assert_eq!(result["2"], json!(false));
@@ -618,18 +634,18 @@ mod tests {
     #[test]
     fn address_renders_as_strkey() {
         let contract = ScVal::Address(ScAddress::Contract(Hash([7u8; 32])));
-        let rendered = scval_to_json(&contract);
+        let rendered = scval_to_json(&contract, None);
         assert!(rendered.as_str().unwrap().starts_with('C'));
     }
 
     #[test]
     fn ledger_key_variants_render() {
         assert_eq!(
-            scval_to_json(&ScVal::LedgerKeyContractInstance),
+            scval_to_json(&ScVal::LedgerKeyContractInstance, None),
             json!("LedgerKeyContractInstance")
         );
         assert_eq!(
-            scval_to_json(&ScVal::LedgerKeyNonce(ScNonceKey { nonce: 5 })),
+            scval_to_json(&ScVal::LedgerKeyNonce(ScNonceKey { nonce: 5 }), None),
             json!({ "nonce": 5 })
         );
     }
@@ -638,13 +654,13 @@ mod tests {
     fn error_variant_renders_type_and_code() {
         let err = ScVal::Error(ScError::Contract(4));
         assert_eq!(
-            scval_to_json(&err),
+            scval_to_json(&err, None),
             json!({ "type": "Contract", "code": 4 })
         );
 
         let host_err = ScVal::Error(ScError::Storage(ScErrorCode::MissingValue));
         assert_eq!(
-            scval_to_json(&host_err),
+            scval_to_json(&host_err, None),
             json!({ "type": "Storage", "code": "MissingValue" })
         );
     }
@@ -656,7 +672,7 @@ mod tests {
             lo: u64::MAX,
         });
         assert_eq!(
-            scval_to_json(&max),
+            scval_to_json(&max, None),
             json!("340282366920938463463374607431768211455")
         );
     }
@@ -668,7 +684,7 @@ mod tests {
             lo: 0,
         });
         assert_eq!(
-            scval_to_json(&min),
+            scval_to_json(&min, None),
             json!("-170141183460469231731687303715884105728")
         );
     }
@@ -682,7 +698,7 @@ mod tests {
             lo_lo: u64::MAX,
         });
         assert_eq!(
-            scval_to_json(&max),
+            scval_to_json(&max, None),
             json!("115792089237316195423570985008687907853269984665640564039457584007913129639935")
         );
     }
@@ -696,7 +712,7 @@ mod tests {
             lo_lo: 1,
         });
         assert_eq!(
-            scval_to_json(&v),
+            scval_to_json(&v, None),
             json!("6277101735386680763835789423207666416102355444464034512897")
         );
 
@@ -707,7 +723,7 @@ mod tests {
             lo_lo: 111,
         });
         assert_eq!(
-            scval_to_json(&v2),
+            scval_to_json(&v2, None),
             json!("4200785819638985332707708983909320029634671")
         );
     }
@@ -721,7 +737,7 @@ mod tests {
             lo_lo: 0,
         });
         assert_eq!(
-            scval_to_json(&min),
+            scval_to_json(&min, None),
             json!("-57896044618658097711785492504343953926634992332820282019728792003956564819968")
         );
     }
@@ -734,7 +750,7 @@ mod tests {
             lo_hi: 0,
             lo_lo: 0,
         });
-        assert_eq!(scval_to_json(&zero), json!("0"));
+        assert_eq!(scval_to_json(&zero, None), json!("0"));
     }
 
     #[test]
@@ -744,7 +760,7 @@ mod tests {
             current = ScVal::Vec(Some(ScVec(vec![current].try_into().unwrap())));
         }
 
-        let result = scval_to_json(&current);
+        let result = scval_to_json(&current, None);
 
         // Walk down the array chain until we hit the truncation marker; this
         // must terminate well before we'd run out of stack.
@@ -777,7 +793,7 @@ mod tests {
             )),
         });
 
-        let result = scval_to_json(&instance);
+        let result = scval_to_json(&instance, None);
         assert_eq!(result["executable"]["type"], json!("Wasm"));
         assert!(result["executable"]["wasmHash"]
             .as_str()
@@ -806,7 +822,7 @@ mod tests {
             )),
         });
 
-        let result = scval_to_json(&instance);
+        let result = scval_to_json(&instance, None);
         let storage = result["storage"]
             .as_array()
             .expect("colliding storage keys fall back to array");

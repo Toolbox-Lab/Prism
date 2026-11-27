@@ -77,6 +77,22 @@ fn test_search_error_json_output_is_an_empty_array_when_nothing_matches() {
 }
 
 #[test]
+fn test_search_error_finds_entries_by_common_cause() {
+    // Regression test for the documented example: "balance" only appears in the
+    // `common_causes` remediation text of the embedded taxonomy.
+    let mut cmd = grat();
+    cmd.args(["search-error", "balance", "--offline"]);
+
+    let assert = cmd.assert().success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+
+    assert!(
+        stdout.contains("ContractError") && stdout.contains("IntegerDivisionByZero"),
+        "expected entries whose common causes mention 'balance':\n{stdout}"
+    );
+}
+
+#[test]
 fn test_search_error_human_output_still_renders_a_table() {
     let mut cmd = grat();
     cmd.args(["search-error", "budget", "--offline"]);

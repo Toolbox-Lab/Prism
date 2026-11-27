@@ -15,8 +15,8 @@ severity = "Error"
 since_protocol = 20
 summary = "The WASM module is invalid, corrupted, or uses unsupported features."
 detailed_explanation = """
-Before executing a contract, the Soroban host validates the WASM bytecode. If the module \
-fails validation (e.g., uses disallowed WASM instructions, imports unsupported host functions, \
+Before executing a contract, the Soroban host validates the WASM bytecode. If the module 
+fails validation (e.g., uses disallowed WASM instructions, imports unsupported host functions, 
 or has malformed sections), the host rejects it with this error.
 """
 related_errors = []
@@ -45,9 +45,9 @@ severity = "Error"
 since_protocol = 20
 summary = "WASM trap: the contract hit an `unreachable` instruction, usually from a Rust panic or a failed assertion."
 detailed_explanation = """
-The WebAssembly VM executed an `unreachable` instruction and trapped. In Soroban contracts this is \
-almost always the result of a Rust `panic!`, a failed `assert!`/`unwrap()`/`expect()`, or an \
-explicitly unreachable branch the compiler emitted. Execution halts immediately and the whole \
+The WebAssembly VM executed an `unreachable` instruction and trapped. In Soroban contracts this is 
+almost always the result of a Rust `panic!`, a failed `assert!`/`unwrap()`/`expect()`, or an 
+explicitly unreachable branch the compiler emitted. Execution halts immediately and the whole 
 invocation is rolled back.
 """
 related_errors = []
@@ -76,8 +76,8 @@ severity = "Error"
 since_protocol = 20
 summary = "WASM trap: the contract read or wrote linear memory outside its valid bounds (out-of-bounds memory access)."
 detailed_explanation = """
-The contract attempted to load or store at a linear-memory address outside the bounds of its \
-allocated memory. The WebAssembly VM detects this and traps to prevent invalid memory access. \
+The contract attempted to load or store at a linear-memory address outside the bounds of its 
+allocated memory. The WebAssembly VM detects this and traps to prevent invalid memory access. 
 This usually indicates a bug in low-level pointer or slice handling rather than ordinary contract logic.
 """
 related_errors = []
@@ -106,8 +106,8 @@ severity = "Error"
 since_protocol = 20
 summary = "WASM trap: an indirect call referenced a function-table index that is out of bounds."
 detailed_explanation = """
-WebAssembly resolves indirect (dynamic) calls through a function table. The contract referenced a \
-table index that does not exist, so the VM trapped. This typically points to a corrupted module or \
+WebAssembly resolves indirect (dynamic) calls through a function table. The contract referenced a 
+table index that does not exist, so the VM trapped. This typically points to a corrupted module or 
 a toolchain bug rather than ordinary contract logic.
 """
 related_errors = []
@@ -132,8 +132,8 @@ severity = "Error"
 since_protocol = 20
 summary = "WASM trap: an indirect call reached a function whose signature did not match the call site."
 detailed_explanation = """
-An indirect call resolved to a function whose type signature differs from the one expected at the \
-call site. WebAssembly enforces signature equality for indirect calls and traps on mismatch. This \
+An indirect call resolved to a function whose type signature differs from the one expected at the 
+call site. WebAssembly enforces signature equality for indirect calls and traps on mismatch. This 
 almost always indicates a corrupted module or a toolchain defect.
 """
 related_errors = []
@@ -158,8 +158,8 @@ severity = "Error"
 since_protocol = 20
 summary = "WASM trap: the contract performed an integer division or remainder with a divisor of zero."
 detailed_explanation = """
-The contract executed an integer division (`/`) or remainder (`%`) where the divisor evaluated to \
-zero. WebAssembly traps on integer division by zero rather than returning a value, halting the \
+The contract executed an integer division (`/`) or remainder (`%`) where the divisor evaluated to 
+zero. WebAssembly traps on integer division by zero rather than returning a value, halting the 
 invocation.
 """
 related_errors = []
@@ -188,8 +188,8 @@ severity = "Error"
 since_protocol = 20
 summary = "WASM trap: an integer arithmetic operation overflowed the range of its type."
 detailed_explanation = """
-An arithmetic operation produced a result outside the range of its integer type and trapped. In \
-debug builds Rust inserts overflow checks that surface here; common sources are token-amount math \
+An arithmetic operation produced a result outside the range of its integer type and trapped. In 
+debug builds Rust inserts overflow checks that surface here; common sources are token-amount math 
 and accumulators that exceed their type's maximum.
 """
 related_errors = []
@@ -218,9 +218,9 @@ severity = "Error"
 since_protocol = 20
 summary = "WASM trap: a float-to-integer conversion was NaN or fell outside the target integer range."
 detailed_explanation = """
-The contract converted a floating-point value to an integer where the source was NaN, infinite, or \
-outside the representable range of the target integer type. WebAssembly traps on such truncating \
-conversions. Floating-point math is uncommon in Soroban contracts, so this usually stems from \
+The contract converted a floating-point value to an integer where the source was NaN, infinite, or 
+outside the representable range of the target integer type. WebAssembly traps on such truncating 
+conversions. Floating-point math is uncommon in Soroban contracts, so this usually stems from 
 imported library code.
 """
 related_errors = []
@@ -245,8 +245,8 @@ severity = "Error"
 since_protocol = 20
 summary = "WASM trap: call recursion exceeded the VM stack-depth limit (stack overflow)."
 detailed_explanation = """
-The contract's call depth grew beyond the WebAssembly VM's stack limit and trapped. This is caused \
-by unbounded or very deep recursion, or by large stack-allocated values pushing nested calls past \
+The contract's call depth grew beyond the WebAssembly VM's stack limit and trapped. This is caused 
+by unbounded or very deep recursion, or by large stack-allocated values pushing nested calls past 
 the limit.
 """
 related_errors = []

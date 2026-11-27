@@ -218,10 +218,21 @@ fn detail_line(
         Span::styled(label, label_style),
         Span::styled(truncate(value, 80), value_style),
     ])
+    let line = Line::from(vec![
+        Span::styled("Args: ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            truncate(&args_display, 80),
+            Style::default().fg(Color::White),
+        ),
+    ]);
+
+    let para = Paragraph::new(line);
+    let summary_area = Rect { height: 1, ..area };
+    frame.render_widget(para, summary_area);
 }
 
 /// Build a coloured [`Row`] for a single [`LedgerEntryDiff`].
-fn build_row(entry: &LedgerEntryDiff) -> Row {
+fn build_row(entry: &LedgerEntryDiff) -> Row<'_> {
     let (label, row_style) = match entry.change_type {
         DiffChangeType::Created => (
             Span::styled("+ Added", Style::default().fg(Color::Green)),
@@ -261,11 +272,20 @@ fn build_row(entry: &LedgerEntryDiff) -> Row {
     ])
 }
 
-/// Truncate `s` to at most `max` bytes, appending `…` when shortened.
+/// Truncate `s` to at most `max` characters, appending `…` when shortened.
 fn truncate(s: &str, max: usize) -> String {
     const ELLIPSIS: &str = "…";
     if s.len() <= max {
         return s.to_string();
+    // Count characters, not bytes: slicing by byte offset panics on
+    // multi-byte UTF-8 and over-counts the width of the ellipsis.
+    if s.chars().count() <= max {
+        s.to_string()
+    } else if max == 0 {
+        String::new()
+    } else {
+        let kept: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{kept}…")
     }
     let keep = max.saturating_sub(ELLIPSIS.len());
     let mut shortened: String = s.chars().take(keep).collect();
@@ -295,8 +315,13 @@ mod tests {
     #[test]
     fn truncate_long_string() {
         let result = truncate("abcdefghij", 5);
-        assert!(result.len() <= 6, "truncated string should be short");
+        assert!(
+            result.chars().count() <= 5,
+            "truncated string should fit within max characters"
+        );
         assert!(result.ends_with('…'), "should end with ellipsis");
+        // Multi-byte input must not be split inside a character.
+        assert_eq!(truncate("ééééééé", 3), "éé…");
     }
 
     #[test]

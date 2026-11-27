@@ -84,9 +84,9 @@ impl SCSpecResolver {
             }
 
             // Check persistent cache
-            if let Some(cached_bytes) = self
-                .cache
-                .get(CacheCategory::ContractSpec, contract_id, None)?
+            if let Some(cached_bytes) =
+                self.cache
+                    .get(CacheCategory::ContractSpec, contract_id, None)?
             {
                 if let Ok(spec) = bincode::deserialize::<ContractSpec>(&cached_bytes) {
                     // Update memory cache
