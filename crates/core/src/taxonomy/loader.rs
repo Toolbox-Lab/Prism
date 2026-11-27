@@ -28,6 +28,8 @@ const SCORE_EXACT_CATEGORY: u32 = 600;
 const SCORE_CATEGORY_SUBSTRING: u32 = 550;
 const SCORE_SUMMARY: u32 = 400;
 const SCORE_EXPLANATION: u32 = 200;
+const SCORE_COMMON_CAUSE: u32 = 150;
+const SCORE_SUGGESTED_FIX: u32 = 100;
 
 fn score_term(entry: &TaxonomyEntry, term: &str) -> Option<u32> {
     let name = entry.name.to_lowercase();
@@ -66,6 +68,20 @@ fn score_term(entry: &TaxonomyEntry, term: &str) -> Option<u32> {
     }
     if explanation.contains(term) {
         return Some(SCORE_EXPLANATION);
+    }
+    if entry
+        .common_causes
+        .iter()
+        .any(|cause| cause.description.to_lowercase().contains(term))
+    {
+        return Some(SCORE_COMMON_CAUSE);
+    }
+    if entry
+        .suggested_fixes
+        .iter()
+        .any(|fix| fix.description.to_lowercase().contains(term))
+    {
+        return Some(SCORE_SUGGESTED_FIX);
     }
 
     None
@@ -132,7 +148,9 @@ impl TaxonomyDatabase {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to parse taxonomy file '{name}': {e}");
+                    return Err(GratError::TaxonomyError(format!(
+                        "Failed to parse embedded taxonomy file '{name}': {e}"
+                    )));
                 }
             }
         }
@@ -188,10 +206,12 @@ impl TaxonomyDatabase {
     /// term in `query`.
     ///
     /// Matching is case-insensitive and looks at the entry name, summary and
-    /// detailed explanation, the category name, and the numerical error code
-    /// (exact and prefix matches). Results are ranked by relevance: exact name
-    /// matches come first, followed by name prefixes, code matches, name
-    /// substrings, category matches, summaries, and finally explanations.
+    /// detailed explanation, the category name, the numerical error code
+    /// (exact and prefix matches), and the human-readable remediation guidance
+    /// (`common_causes` and `suggested_fixes` descriptions). Results are ranked
+    /// by relevance: exact name matches come first, followed by name prefixes,
+    /// code matches, name substrings, category matches, summaries, explanations,
+    /// common causes, and finally suggested fixes.
     pub fn search(&self, query: &str) -> Vec<&TaxonomyEntry> {
         let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
 
@@ -242,6 +262,7 @@ impl TaxonomyDatabase {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::taxonomy::schema::{TaxonomyCause, TaxonomyFix};
 
     fn entry(
         category: ErrorCategory,
@@ -364,6 +385,97 @@ mod tests {
             .collect();
 
         assert_eq!(names, vec!["Budget", "Other"]);
+    }
+
+    #[test]
+    fn search_matches_common_cause_descriptions() {
+        let mut contract_error = entry(ErrorCategory::Contract, 0, "ContractError", "", "");
+        contract_error.common_causes.push(TaxonomyCause {
+            description: "Business logic assertion failure (e.g. insufficient balance)".to_string(),
+            likelihood: "high".to_string(),
+        });
+
+        let db = db_with(vec![contract_error]);
+
+        let results = db.search("BALANCE");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "ContractError");
+    }
+
+    #[test]
+    fn search_matches_suggested_fix_descriptions() {
+        let mut division_error = entry(ErrorCategory::Wasm, 5, "IntegerDivisionByZero", "", "");
+        division_error.suggested_fixes.push(TaxonomyFix {
+            description: "Guard against a zero divisor before dividing the balance".to_string(),
+            difficulty: "easy".to_string(),
+            requires_upgrade: false,
+            example: None,
+            id: None,
+            remedy_code: None,
+        });
+
+        let db = db_with(vec![division_error]);
+
+        let results = db.search("divisor");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "IntegerDivisionByZero");
+    }
+
+    #[test]
+    fn search_ranks_summary_matches_before_cause_and_fix_matches() {
+        let summary_match = entry(
+            ErrorCategory::Storage,
+            1,
+            "SummaryHit",
+            "balance related problem",
+            "",
+        );
+
+        let mut cause_match = entry(ErrorCategory::Storage, 2, "CauseHit", "", "");
+        cause_match.common_causes.push(TaxonomyCause {
+            description: "the balance was corrupted".to_string(),
+            likelihood: "medium".to_string(),
+        });
+
+        let mut fix_match = entry(ErrorCategory::Storage, 3, "FixHit", "", "");
+        fix_match.suggested_fixes.push(TaxonomyFix {
+            description: "re-read the balance before writing".to_string(),
+            difficulty: "medium".to_string(),
+            requires_upgrade: false,
+            example: None,
+            id: None,
+            remedy_code: None,
+        });
+
+        let db = db_with(vec![fix_match, cause_match, summary_match]);
+
+        let names: Vec<&str> = db
+            .search("balance")
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["SummaryHit", "CauseHit", "FixHit"]);
+    }
+
+    #[test]
+    fn embedded_taxonomy_search_finds_entries_by_common_cause() {
+        let db = TaxonomyDatabase::load_embedded().expect("embedded taxonomy should load");
+
+        let names: Vec<&str> = db
+            .search("balance")
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+
+        assert!(
+            names.contains(&"ContractError"),
+            "expected ContractError (insufficient balance cause) in {names:?}"
+        );
+        assert!(
+            names.contains(&"IntegerDivisionByZero"),
+            "expected IntegerDivisionByZero (zero balance divisor cause) in {names:?}"
+        );
     }
 
     #[test]

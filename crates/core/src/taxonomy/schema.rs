@@ -76,6 +76,22 @@ pub enum ErrorCategory {
     Events,
 }
 
+impl ErrorCategory {
+    /// All categories, in canonical order. Used to verify full coverage.
+    pub const ALL: [ErrorCategory; 10] = [
+        ErrorCategory::Budget,
+        ErrorCategory::Storage,
+        ErrorCategory::Auth,
+        ErrorCategory::Context,
+        ErrorCategory::Value,
+        ErrorCategory::Object,
+        ErrorCategory::Crypto,
+        ErrorCategory::Contract,
+        ErrorCategory::Wasm,
+        ErrorCategory::Events,
+    ];
+}
+
 impl std::fmt::Display for ErrorCategory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -106,4 +122,19 @@ pub struct CategoryMeta {
     pub name: String,
     pub description: String,
     pub source_module: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_categories_listed_once() {
+        assert_eq!(ErrorCategory::ALL.len(), 10);
+        for (i, a) in ErrorCategory::ALL.iter().enumerate() {
+            for b in &ErrorCategory::ALL[i + 1..] {
+                assert_ne!(a, b);
+            }
+        }
+    }
 }

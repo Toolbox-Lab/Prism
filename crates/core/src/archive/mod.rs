@@ -4,8 +4,54 @@ use flate2::read::GzDecoder;
 use std::io::Read;
 use std::path::Path;
 use stellar_xdr::curr::{
-    BucketEntry, LedgerHeader, LedgerHeaderHistoryEntry, LedgerKey, Limits, ReadXdr, WriteXdr,
+    BucketEntry, LedgerEntry, LedgerEntryData, LedgerHeader, LedgerHeaderHistoryEntry, LedgerKey,
+    LedgerKeyAccount, LedgerKeyClaimableBalance, LedgerKeyConfigSetting, LedgerKeyContractCode,
+    LedgerKeyContractData, LedgerKeyData, LedgerKeyLiquidityPool, LedgerKeyOffer,
+    LedgerKeyTrustLine, LedgerKeyTtl, Limited, Limits, ReadXdr, WriteXdr,
 };
+
+/// Derive the [`LedgerKey`] that identifies a [`LedgerEntry`].
+fn ledger_key_from_entry(entry: &LedgerEntry) -> LedgerKey {
+    match &entry.data {
+        LedgerEntryData::Account(a) => LedgerKey::Account(LedgerKeyAccount {
+            account_id: a.account_id.clone(),
+        }),
+        LedgerEntryData::Trustline(t) => LedgerKey::Trustline(LedgerKeyTrustLine {
+            account_id: t.account_id.clone(),
+            asset: t.asset.clone(),
+        }),
+        LedgerEntryData::Offer(o) => LedgerKey::Offer(LedgerKeyOffer {
+            seller_id: o.seller_id.clone(),
+            offer_id: o.offer_id,
+        }),
+        LedgerEntryData::Data(d) => LedgerKey::Data(LedgerKeyData {
+            account_id: d.account_id.clone(),
+            data_name: d.data_name.clone(),
+        }),
+        LedgerEntryData::ClaimableBalance(c) => {
+            LedgerKey::ClaimableBalance(LedgerKeyClaimableBalance {
+                balance_id: c.balance_id.clone(),
+            })
+        }
+        LedgerEntryData::LiquidityPool(l) => LedgerKey::LiquidityPool(LedgerKeyLiquidityPool {
+            liquidity_pool_id: l.liquidity_pool_id.clone(),
+        }),
+        LedgerEntryData::ContractData(c) => LedgerKey::ContractData(LedgerKeyContractData {
+            contract: c.contract.clone(),
+            key: c.key.clone(),
+            durability: c.durability,
+        }),
+        LedgerEntryData::ContractCode(c) => LedgerKey::ContractCode(LedgerKeyContractCode {
+            hash: c.hash.clone(),
+        }),
+        LedgerEntryData::ConfigSetting(c) => LedgerKey::ConfigSetting(LedgerKeyConfigSetting {
+            config_setting_id: c.discriminant(),
+        }),
+        LedgerEntryData::Ttl(t) => LedgerKey::Ttl(LedgerKeyTtl {
+            key_hash: t.key_hash.clone(),
+        }),
+    }
+}
 
 #[derive(Debug)]
 pub struct ArchiveClient {
@@ -53,7 +99,10 @@ fn format_archive_path_for(
     let hex = format!("{checkpoint_seq:08x}");
     let sub_dir = format!("{}/{}/{}", &hex[0..2], &hex[2..4], &hex[4..6]);
     let cat = category.as_str();
-    format!("{cat}/{sub_dir}/{cat}-{hex}.xdr.{}", compression.extension())
+    format!(
+        "{cat}/{sub_dir}/{cat}-{hex}.xdr.{}",
+        compression.extension()
+    )
 }
 
 fn join_url(base: &str, path: &str) -> String {
@@ -232,11 +281,7 @@ impl ArchiveClient {
         .into())
     }
 
-    pub async fn fetch_ledger_entry(
-        &self,
-        ledger_sequence: u32,
-        key: &str,
-    ) -> GratResult<Vec<u8>> {
+    pub async fn fetch_ledger_entry(&self, ledger_sequence: u32, key: &str) -> GratResult<Vec<u8>> {
         use base64::Engine;
 
         let file = format!("ledger-entry-{ledger_sequence}-{key}");
@@ -246,26 +291,26 @@ impl ArchiveClient {
                 file: file.clone(),
                 reason: format!("ledger key must be base64 encoded XDR: {e}"),
             })?;
-        let mut key_input = key_bytes.as_slice();
-        let wanted_key = LedgerKey::read_xdr(&mut key_input, Limits::none()).map_err(|e| {
-            ArchiveErrorKind::MalformedXdr {
+        let mut key_input = Limited::new(key_bytes.as_slice(), Limits::none());
+        let wanted_key =
+            LedgerKey::read_xdr(&mut key_input).map_err(|e| ArchiveErrorKind::MalformedXdr {
                 file: file.clone(),
                 reason: format!("failed to decode ledger key: {e}"),
-            }
-        })?;
-        if !key_input.is_empty() {
+            })?;
+        if !key_input.inner.is_empty() {
             return Err(ArchiveErrorKind::MalformedXdr {
                 file,
                 reason: "ledger key contains trailing bytes".to_string(),
             }
             .into());
         }
-        let wanted_key_xdr = wanted_key.to_xdr(Limits::none()).map_err(|e| {
-            ArchiveErrorKind::MalformedXdr {
-                file: format!("ledger-entry-{ledger_sequence}-{key}"),
-                reason: format!("failed to encode ledger key: {e}"),
-            }
-        })?;
+        let wanted_key_xdr =
+            wanted_key
+                .to_xdr(Limits::none())
+                .map_err(|e| ArchiveErrorKind::MalformedXdr {
+                    file: format!("ledger-entry-{ledger_sequence}-{key}"),
+                    reason: format!("failed to encode ledger key: {e}"),
+                })?;
 
         let checkpoint_seq = get_checkpoint_seq(ledger_sequence);
         let mut last_error = None;
@@ -343,17 +388,18 @@ impl ArchiveClient {
                             break;
                         }
                     };
-                let mut stream = bytes.as_slice();
-                while !stream.is_empty() {
-                    let entry = BucketEntry::read_xdr(&mut stream, Limits::none()).map_err(|e| {
+                let mut stream = Limited::new(bytes.as_slice(), Limits::none());
+                while !stream.inner.is_empty() {
+                    let entry = BucketEntry::read_xdr(&mut stream).map_err(|e| {
                         ArchiveErrorKind::MalformedXdr {
                             file: bucket_path.clone(),
                             reason: format!("failed to decode bucket entry: {e}"),
                         }
                     })?;
+                    stream = limited.inner;
                     match entry {
                         BucketEntry::Liveentry(entry) | BucketEntry::Initentry(entry) => {
-                            let entry_key = LedgerKey::from(&entry);
+                            let entry_key = ledger_key_for_entry(&entry);
                             if entry_key.to_xdr(Limits::none()).ok().as_deref()
                                 == Some(&wanted_key_xdr)
                             {
@@ -383,12 +429,14 @@ impl ArchiveClient {
             return Err(ArchiveErrorKind::FetchFailed {
                 file,
                 reason: "ledger key not found in checkpoint bucket list".to_string(),
-            }.into());
+            }
+            .into());
         }
         Err(ArchiveErrorKind::FetchFailed {
             file,
             reason: last_error.unwrap_or_else(|| "no archive URLs configured".to_string()),
-        }.into())
+        }
+        .into())
     }
 
     pub async fn get_ledger_header(&self, ledger_sequence: u32) -> GratResult<LedgerHeader> {
@@ -408,6 +456,54 @@ impl ArchiveClient {
             reason: format!("ledger sequence {ledger_sequence} not found in checkpoint stream"),
         }
         .into())
+    }
+}
+
+/// Derives the ledger key identifying a bucket entry so it can be matched
+/// against the key requested by the caller. `stellar-xdr` exposes no
+/// `From<&LedgerEntry> for LedgerKey` conversion, so each entry variant is
+/// mapped explicitly.
+fn ledger_key_for_entry(entry: &LedgerEntry) -> LedgerKey {
+    match &entry.data {
+        LedgerEntryData::Account(account) => LedgerKey::Account(LedgerKeyAccount {
+            account_id: account.account_id.clone(),
+        }),
+        LedgerEntryData::Trustline(trustline) => LedgerKey::Trustline(LedgerKeyTrustLine {
+            account_id: trustline.account_id.clone(),
+            asset: trustline.asset.clone(),
+        }),
+        LedgerEntryData::Offer(offer) => LedgerKey::Offer(LedgerKeyOffer {
+            seller_id: offer.seller_id.clone(),
+            offer_id: offer.offer_id,
+        }),
+        LedgerEntryData::Data(data) => LedgerKey::Data(LedgerKeyData {
+            account_id: data.account_id.clone(),
+            data_name: data.data_name.clone(),
+        }),
+        LedgerEntryData::ClaimableBalance(balance) => {
+            LedgerKey::ClaimableBalance(LedgerKeyClaimableBalance {
+                balance_id: balance.balance_id.clone(),
+            })
+        }
+        LedgerEntryData::LiquidityPool(pool) => LedgerKey::LiquidityPool(LedgerKeyLiquidityPool {
+            liquidity_pool_id: pool.liquidity_pool_id.clone(),
+        }),
+        LedgerEntryData::ContractData(data) => LedgerKey::ContractData(LedgerKeyContractData {
+            contract: data.contract.clone(),
+            key: data.key.clone(),
+            durability: data.durability,
+        }),
+        LedgerEntryData::ContractCode(code) => LedgerKey::ContractCode(LedgerKeyContractCode {
+            hash: code.hash.clone(),
+        }),
+        LedgerEntryData::ConfigSetting(setting) => {
+            LedgerKey::ConfigSetting(LedgerKeyConfigSetting {
+                config_setting_id: setting.discriminant(),
+            })
+        }
+        LedgerEntryData::Ttl(ttl) => LedgerKey::Ttl(LedgerKeyTtl {
+            key_hash: ttl.key_hash.clone(),
+        }),
     }
 }
 
@@ -511,6 +607,49 @@ pub fn parse_ledger_header_stream(
 
 fn get_checkpoint_seq(ledger_sequence: u32) -> u32 {
     (ledger_sequence / 64) * 64 + 63
+}
+
+/// Derives the [`LedgerKey`] that identifies a [`LedgerEntry`].
+fn ledger_key_for_entry(entry: &LedgerEntry) -> LedgerKey {
+    match &entry.data {
+        LedgerEntryData::Account(e) => LedgerKey::Account(LedgerKeyAccount {
+            account_id: e.account_id.clone(),
+        }),
+        LedgerEntryData::Trustline(e) => LedgerKey::Trustline(LedgerKeyTrustLine {
+            account_id: e.account_id.clone(),
+            asset: e.asset.clone(),
+        }),
+        LedgerEntryData::Offer(e) => LedgerKey::Offer(LedgerKeyOffer {
+            seller_id: e.seller_id.clone(),
+            offer_id: e.offer_id,
+        }),
+        LedgerEntryData::Data(e) => LedgerKey::Data(LedgerKeyData {
+            account_id: e.account_id.clone(),
+            data_name: e.data_name.clone(),
+        }),
+        LedgerEntryData::ClaimableBalance(e) => {
+            LedgerKey::ClaimableBalance(LedgerKeyClaimableBalance {
+                balance_id: e.balance_id.clone(),
+            })
+        }
+        LedgerEntryData::LiquidityPool(e) => LedgerKey::LiquidityPool(LedgerKeyLiquidityPool {
+            liquidity_pool_id: e.liquidity_pool_id.clone(),
+        }),
+        LedgerEntryData::ContractData(e) => LedgerKey::ContractData(LedgerKeyContractData {
+            contract: e.contract.clone(),
+            key: e.key.clone(),
+            durability: e.durability,
+        }),
+        LedgerEntryData::ContractCode(e) => LedgerKey::ContractCode(LedgerKeyContractCode {
+            hash: e.hash.clone(),
+        }),
+        LedgerEntryData::ConfigSetting(e) => LedgerKey::ConfigSetting(LedgerKeyConfigSetting {
+            config_setting_id: e.discriminant(),
+        }),
+        LedgerEntryData::Ttl(e) => LedgerKey::Ttl(LedgerKeyTtl {
+            key_hash: e.key_hash.clone(),
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -704,7 +843,11 @@ mod tests {
             "ledger/00/00/00/ledger-0000003f.xdr.xz"
         );
         assert_eq!(
-            format_archive_path_for(ArchiveCategory::Transactions, 65535, CompressionFormat::Gzip),
+            format_archive_path_for(
+                ArchiveCategory::Transactions,
+                65535,
+                CompressionFormat::Gzip
+            ),
             "transactions/00/00/ff/transactions-0000ffff.xdr.gz"
         );
         assert_eq!(
@@ -748,7 +891,9 @@ mod tests {
     fn test_decompress_gzip_payload() {
         let data = b"gzip payload";
         let compressed = gzip_compress(data);
-        let decompressed = CompressionFormat::Gzip.decompress(&compressed, "test.xdr.gz").unwrap();
+        let decompressed = CompressionFormat::Gzip
+            .decompress(&compressed, "test.xdr.gz")
+            .unwrap();
         assert_eq!(decompressed, data);
     }
 
@@ -756,7 +901,9 @@ mod tests {
     fn test_decompress_xz_payload() {
         let data = b"xz payload";
         let compressed = xz_compress(data);
-        let decompressed = CompressionFormat::Xz.decompress(&compressed, "test.xdr.xz").unwrap();
+        let decompressed = CompressionFormat::Xz
+            .decompress(&compressed, "test.xdr.xz")
+            .unwrap();
         assert_eq!(decompressed, data);
     }
 
@@ -765,10 +912,7 @@ mod tests {
         let err = CompressionFormat::Xz
             .decompress(b"definitely not xz", "test.xdr.xz")
             .unwrap_err();
-        assert!(matches!(
-            err,
-            ArchiveErrorKind::DecompressionFailed { .. }
-        ));
+        assert!(matches!(err, ArchiveErrorKind::DecompressionFailed { .. }));
     }
 
     #[tokio::test]

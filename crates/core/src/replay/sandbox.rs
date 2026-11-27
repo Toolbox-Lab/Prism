@@ -54,6 +54,12 @@ pub struct SandboxResult {
 
     pub total_memory: u64,
 
+    /// CPU instruction limit the sandbox budget was built with.
+    pub cpu_limit: u64,
+
+    /// Memory limit, in bytes, the sandbox budget was built with.
+    pub memory_limit: u64,
+
     pub diagnostic_events: Vec<DiagnosticEvent>,
 }
 
@@ -63,15 +69,33 @@ pub struct SandboxResult {
 /// consensus), the network's exact per-transaction memory ceiling isn't
 /// fetched here — this only needs to sit comfortably above real usage so
 /// tracing is never cut short by an artificial memory limit.
-const MEM_BYTES_CEILING: u64 = 500 * 1024 * 1024;
+pub const MEM_BYTES_CEILING: u64 = 500 * 1024 * 1024;
 
+pub async fn execute_with_tracing(
+    state: &LedgerState,
+    tx_hash: &str,
+    trace_id: TraceId,
+) -> GratResult<SandboxResult> {
+    execute_with_tracing_limited(state, tx_hash, trace_id, MEM_BYTES_CEILING).await
+}
+
+/// Same as [`execute_with_tracing`], but with an explicit memory ceiling in
+/// bytes. Used by the what-if simulator to replay under patched limits.
 #[allow(clippy::too_many_lines)]
-pub async fn execute_with_tracing(state: &LedgerState, tx_hash: &str, trace_id: TraceId) -> GratResult<SandboxResult> {
+pub async fn execute_with_tracing_limited(
+    state: &LedgerState,
+    tx_hash: &str,
+    trace_id: TraceId,
+    memory_limit: u64,
+) -> GratResult<SandboxResult> {
     let inv = &state.invocation;
 
+    let cpu_limit = inv.cpu_instructions_limit.max(1);
+    let memory_limit = memory_limit.max(1);
+
     let budget = Budget::try_from_configs(
-        inv.cpu_instructions_limit.max(1),
-        MEM_BYTES_CEILING,
+        cpu_limit,
+        memory_limit,
         inv.cpu_cost_params.clone(),
         inv.mem_cost_params.clone(),
     )
@@ -195,11 +219,13 @@ pub async fn execute_with_tracing(state: &LedgerState, tx_hash: &str, trace_id: 
         final_state,
         total_cpu,
         total_memory,
+        cpu_limit,
+        memory_limit,
         diagnostic_events,
     })
 }
 
-fn encode_ttl_entry(key_b64: &str, live_until_ledger_seq: u32) -> GratResult<Vec<u8>> {
+pub(crate) fn encode_ttl_entry(key_b64: &str, live_until_ledger_seq: u32) -> GratResult<Vec<u8>> {
     let key_bytes = STANDARD
         .decode(key_b64)
         .map_err(|e| GratError::XdrDecodingFailed {

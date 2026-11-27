@@ -221,18 +221,17 @@ fn build_row(entry: &LedgerEntryDiff) -> Row<'_> {
     ])
 }
 
-/// Truncate `s` to at most `max` bytes without splitting a UTF-8 character.
-/// Append an ellipsis when shortened if the byte budget can hold it.
+/// Truncate `s` to at most `max` characters, appending `…` when shortened.
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    // Count characters, not bytes: slicing by byte offset panics on
+    // multi-byte UTF-8 and over-counts the width of the ellipsis.
+    if s.chars().count() <= max {
         s.to_string()
+    } else if max == 0 {
+        String::new()
     } else {
-        let suffix = if max >= "…".len() { "…" } else { "" };
-        let mut end = max - suffix.len();
-        while !s.is_char_boundary(end) {
-            end -= 1;
-        }
-        format!("{}{suffix}", &s[..end])
+        let kept: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{kept}…")
     }
 }
 
@@ -257,26 +256,34 @@ mod tests {
     #[test]
     fn truncate_long_string() {
         let result = truncate("abcdefghij", 5);
-        assert!(result.len() <= 6, "truncated string should be short");
+        assert!(
+            result.chars().count() <= 5,
+            "truncated string should fit within max characters"
+        );
         assert!(result.ends_with('…'), "should end with ellipsis");
+        // Multi-byte input must not be split inside a character.
+        assert_eq!(truncate("ééééééé", 3), "éé…");
     }
 
     #[test]
-    fn truncate_respects_utf8_boundaries_and_byte_budgets() {
+    fn truncate_respects_utf8_boundaries_and_character_budgets() {
         for value in [
             "é".repeat(50),
             "界".repeat(40),
             "🦀".repeat(30),
             "ascii".repeat(20),
         ] {
-            for max in 0..=value.len() {
+            for max in 0..=value.chars().count() {
                 let result = truncate(&value, max);
-                assert!(result.len() <= max, "exceeded {max} bytes: {result:?}");
+                assert!(
+                    result.chars().count() <= max,
+                    "exceeded {max} characters: {result:?}"
+                );
                 let prefix = result.strip_suffix('…').unwrap_or(&result);
                 assert!(value.starts_with(prefix));
-                if value.len() <= max {
+                if value.chars().count() <= max {
                     assert_eq!(result, value);
-                } else if max >= "…".len() {
+                } else if max > 0 {
                     assert!(result.ends_with('…'));
                 }
             }
