@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-const TAXONOMY_URL: &str = "https://raw.githubusercontent.com/grat-soroban/grat/main/taxonomy/enhanced_error_taxonomy.toml";
+const TAXONOMY_URL: &str = "https://raw.githubusercontent.com/Killerjunior/Grat/codex/528-db-taxonomy-management/taxonomy/database.toml";
 
 #[derive(Serialize, Deserialize)]
 struct UpdateCache {
@@ -81,23 +81,35 @@ pub async fn check_and_update(offline: bool) -> GratResult<()> {
         }
     };
 
+    if let Err(error) = crate::taxonomy::loader::TaxonomyParser::parse(&content) {
+        tracing::warn!("Downloaded taxonomy database is invalid: {error}");
+        return Ok(());
+    }
+
     let Some(db_path) = db_file_path() else {
         return Ok(());
     };
 
-    if let Some(parent) = db_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
+    let Some(parent) = db_path.parent() else {
+        return Ok(());
+    };
+    let _ = fs::create_dir_all(parent);
 
-    // Atomically replace the database file
-    let temp_path = db_path.with_extension("tmp");
-    if fs::write(&temp_path, &content).is_ok() {
-        if fs::rename(&temp_path, &db_path).is_err() {
-            tracing::warn!("Failed to replace taxonomy database atomically");
-            let _ = fs::remove_file(temp_path);
-        } else {
-            tracing::info!("Taxonomy database updated successfully");
+    // Stage beside the database so concurrent updates cannot overwrite each
+    // other's temporary file and the final rename stays on the same filesystem.
+    match create_staging_file(parent, &db_path) {
+        Ok((temp_path, mut temp_file)) => {
+            use std::io::Write;
+            let staged = temp_file.write_all(content.as_bytes());
+            drop(temp_file);
+            if staged.is_err() || fs::rename(&temp_path, &db_path).is_err() {
+                tracing::warn!("Failed to atomically replace taxonomy database");
+                let _ = fs::remove_file(temp_path);
+            } else {
+                tracing::info!("Taxonomy database updated successfully");
+            }
         }
+        Err(error) => tracing::warn!("Failed to stage taxonomy database update: {error}"),
     }
 
     if let Some(parent) = cache_path.parent() {
@@ -114,4 +126,39 @@ pub async fn check_and_update(offline: bool) -> GratResult<()> {
     }
 
     Ok(())
+}
+
+fn create_staging_file(
+    parent: &std::path::Path,
+    database_path: &std::path::Path,
+) -> std::io::Result<(PathBuf, fs::File)> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_STAGING_ID: AtomicU64 = AtomicU64::new(0);
+
+    for _ in 0..100 {
+        let id = NEXT_STAGING_ID.fetch_add(1, Ordering::Relaxed);
+        let staging_path = parent.join(format!(
+            "{}.{}.{}.tmp",
+            database_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("taxonomy"),
+            std::process::id(),
+            id
+        ));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&staging_path)
+        {
+            Ok(file) => return Ok((staging_path, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "could not allocate a unique taxonomy staging file",
+    ))
 }

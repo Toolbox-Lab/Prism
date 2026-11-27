@@ -91,7 +91,7 @@ xz2 = "0.1"
 rpassword = "7"
 
 # TUI Debugger (Tier 3)
-ratatui = "0.29"
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
 crossterm = "0.28"
 
 # Logging & Tracing

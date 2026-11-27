@@ -6,7 +6,7 @@ name = "grat"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Grat CLI — Soroban Transaction Debugger"
+description = "Grat CLI - Soroban Transaction Debugger"
 build = "build.rs"
 
 [[bin]]
@@ -72,4 +72,3 @@ unicode-width = { workspace = true }
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
-stellar-xdr = { workspace = true }

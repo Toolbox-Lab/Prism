@@ -103,10 +103,21 @@ pub fn resolve_network_config(name: &str, config: &GratConfig) -> NetworkConfig 
 }
 
 fn default_config_path() -> anyhow::Result<PathBuf> {
-    let base_dirs = BaseDirs::new()
+    let home_dir = BaseDirs::new()
+        .map(|base_dirs| base_dirs.home_dir().to_path_buf())
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+        })
+        .or_else(|| {
+            std::env::var_os("USERPROFILE")
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+        })
         .ok_or_else(|| anyhow::anyhow!("Could not determine home directory for Grat config"))?;
 
-    Ok(base_dirs.home_dir().join(".grat").join("config.toml"))
+    Ok(home_dir.join(".grat").join("config.toml"))
 }
 
 #[cfg(test)]

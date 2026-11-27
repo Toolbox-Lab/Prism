@@ -283,7 +283,7 @@ fn render_auth_invocation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grat_core::types::trace::ContractInvocation;
+    use grat_core::types::trace::{ContractInvocation, TraceId};
 
     #[test]
     fn test_render_simple_auth_tree() {

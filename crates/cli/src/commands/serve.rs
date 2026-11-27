@@ -222,7 +222,9 @@ async fn stream_trace_replay(
 
     let trace_id = grat_core::types::trace::TraceId::new();
     let result =
-        match grat_core::replay::sandbox::execute_with_tracing(&ledger_state, tx_hash, trace_id).await {
+        match grat_core::replay::sandbox::execute_with_tracing(&ledger_state, tx_hash, trace_id)
+            .await
+        {
             Ok(r) => r,
             Err(e) => {
                 let _ = sender.send(TraceStreamMessage::TraceError {
@@ -255,8 +257,8 @@ async fn stream_trace_replay(
                 trace_id: result.trace_id.0.clone(),
                 cpu_used: result.total_cpu,
                 memory_used: result.total_memory,
-                cpu_limit: 100_000_000,
-                memory_limit: 40 * 1024 * 1024,
+                cpu_limit: ledger_state.invocation.limits.cpu_instructions,
+                memory_limit: ledger_state.invocation.limits.memory_bytes,
             });
         }
 
@@ -274,27 +276,16 @@ async fn stream_trace_replay(
     }
 
     if !result.diagnostic_events.is_empty() {
-        let diagnostic_messages: Vec<DiagnosticEventMessage> = result
-            .diagnostic_events
-            .iter()
-            .enumerate()
-            .map(|(idx, event)| {
-                let (topics, data) = match &event.event.body {
-                    stellar_xdr::curr::ContractEventBody::V0(v0) => {
-                        let topics = v0.topics.iter().map(|t| format!("{t:?}")).collect();
-                        let mut map = std::collections::HashMap::new();
-                        map.insert("raw".to_string(), format!("{:?}", v0.data));
-                        (topics, map)
-                    }
-                };
-                DiagnosticEventMessage {
-                    event_type: format!("{:?}", event.event.type_),
-                    topics,
-                    data,
-                    timeline_position: idx,
-                }
-            })
-            .collect();
+        let diagnostic_messages: Vec<DiagnosticEventMessage> =
+            grat_core::replay::structure_diagnostic_events(&result.diagnostic_events)
+                .into_iter()
+                .map(|event| DiagnosticEventMessage {
+                    event_type: event.event_type,
+                    topics: event.topics,
+                    data: event.data,
+                    timeline_position: event.timeline_position,
+                })
+                .collect();
         let _ = sender.send(TraceStreamMessage::DiagnosticEvents {
             events: diagnostic_messages,
         });
