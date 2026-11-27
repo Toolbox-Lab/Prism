@@ -55,8 +55,8 @@ pub fn render_contract_tree<W: WriteColor>(
     is_last: bool,
     depth: usize,
 ) -> std::io::Result<()> {
-    let (connector, next_prefix) = if is_last {
-        (tree_chars::CORNER, prefix.to_string() + tree_chars::SPACE)
+    let connector = if is_last {
+        tree_chars::CORNER
     } else {
         (
             tree_chars::BRANCH,

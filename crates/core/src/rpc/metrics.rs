@@ -61,12 +61,12 @@ fn metrics() -> &'static RpcMetrics {
 
         let http_errors = register_counter_vec!(
             opts!(
-                "rpc_http_errors_total",
-                "Total number of HTTP error responses from Soroban RPC nodes (e.g. 500, 429)"
+                "soroban_rpc_http_errors_total",
+                "Total number of Soroban RPC HTTP failures by status"
             ),
-            &["endpoint", "method", "status"]
+            &["method", "status"]
         )
-        .expect("failed to register rpc_http_errors_total counter");
+        .expect("failed to register soroban_rpc_http_errors_total counter");
 
         RpcMetrics {
             requests,
@@ -117,12 +117,11 @@ fn endpoint_label(endpoint: &str) -> String {
 }
 
 pub fn record_rpc_http_error(endpoint: &str, method: &str, status: u16) {
-    let status = status.to_string();
+    let _ = endpoint;
     metrics()
         .http_errors
-        .with_label_values(&[&endpoint_label(endpoint), method, &status])
+        .with_label_values(&[method, &status.to_string()])
         .inc();
-    record_rpc_error(&status);
 }
 
 pub fn gather_metrics() -> String {

@@ -90,6 +90,14 @@ pub fn print_resource_profile(
             for warning in &profile.warnings {
                 println!("{} {warning}", palette.warning_text("⚠"));
             }
+            if !profile.hotspots.is_empty() {
+                println!();
+                println!(
+                    "{}",
+                    renderers::render_section_header("Top Host Calls by CPU")
+                );
+                println!("{}", renderers::render_host_call_table(profile));
+            }
             println!();
             print!("{}", renderers::render_heatmap(profile));
         }
