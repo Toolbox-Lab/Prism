@@ -1,20 +1,68 @@
 ---
 title: "grat export"
 sidebarTitle: "export"
-description: "Export a transaction as a standalone test case."
+description: "Export a transaction as a standalone, reproducible Rust test case."
 icon: "file-export"
 ---
 
-The `export` command helps you turn a mainnet failure into a reproducible regression test.
+The `export` command turns a mainnet or testnet transaction (typically a failed one) into a standalone Rust integration test that reproduces it locally, with no network access.
 
 ## Usage
 
 ```bash
-grat export <TX_HASH> --format test
+grat export <TX_HASH> [--format test] [--out <PATH>]
 ```
 
-## Formats
+| Option | Default | Description |
+| --- | --- | --- |
+| `<TX_HASH>` | | 64-character hex transaction hash. |
+| `--format` | `test` | Export format. `test` writes a Rust integration test. |
+| `--out`, `-o` | `grat_test_<hash>.rs` | Output file, or an existing directory to write `grat_test_<hash>.rs` into. |
 
-- **`test`**: Generates a Rust unit test using the `soroban-sdk` test framework.
-- **`json`**: Exports the full reconstructed state and inputs for custom tools.
-- **`trace`**: Saves the Tier 2 execution timeline as a shareable file.
+The global `--network` and `--rpc-url` flags pick where the transaction is fetched from.
+
+## What the generated test does
+
+The file depends only on `soroban-env-host` and embeds, as XDR byte literals:
+
+- the transaction's host function, Soroban resources, source account and auth entries;
+- every footprint ledger entry as it existed when exported, with its TTL;
+- the network's CPU and memory cost parameters, protocol version, TTL settings and network id.
+
+Its single `#[test]` calls `soroban_env_host::e2e_invoke::invoke_host_function` with that state, prints the diagnostic events, and asserts the invocation ends the way it did on-chain (success or failure).
+
+```bash
+grat export 3f9c…e1 --network testnet --out tests/
+cp tests/grat_test_3f9c…e1.rs my-contract/tests/
+# my-contract/Cargo.toml
+# [dev-dependencies]
+# soroban-env-host = "21.2"
+cargo test reproduce_tx_3f9c -- --nocapture
+```
+
+## JSON output
+
+With `--output json`, the command prints metadata about the file it wrote:
+
+```json
+{
+  "status": "exported",
+  "tx_hash": "3f9c…e1",
+  "network": "testnet",
+  "ledger_sequence": 1234567,
+  "format": "test",
+  "output_path": "tests/grat_test_3f9c…e1.rs",
+  "file_name": "grat_test_3f9c…e1.rs",
+  "test_name": "reproduce_tx_3f9c…",
+  "expected_outcome": "failure",
+  "ledger_entries": 4,
+  "auth_entries": 1,
+  "bytes_written": 18342
+}
+```
+
+## Limitations
+
+- Ledger state is reconstructed through soroban-rpc, so the transaction must still be inside the RPC retention window (the same limit as `grat trace`).
+- The ledger close time is approximated with the latest ledger's close time.
+- Footprint entries are captured as they are now, which matches the transaction's pre-state only if nothing has written to them since.

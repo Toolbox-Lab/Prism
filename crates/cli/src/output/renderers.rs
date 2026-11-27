@@ -194,15 +194,61 @@ impl BudgetBar {
             palette.success_text(&bar_str)
         };
 
+        let limit_display = if self.limit > 0 {
+            self.limit.to_string()
+        } else {
+            "n/a".to_string()
+        };
+        let percentage_display = if self.limit > 0 {
+            format!("{:.0}%", pct * 100.0)
+        } else {
+            "n/a".to_string()
+        };
+
         format!(
-            "{:<6} [{}] {}/{} ({:.0}%)",
-            self.label,
-            colored_bar,
-            self.used,
-            self.limit,
-            pct * 100.0
+            "{:<6} [{}] {}/{} ({})",
+            self.label, colored_bar, self.used, limit_display, percentage_display
         )
     }
+}
+
+#[derive(Tabled)]
+struct HostCallRow {
+    #[tabled(rename = "Host Call")]
+    host_call: String,
+    #[tabled(rename = "Calls")]
+    calls: u64,
+    #[tabled(rename = "CPU")]
+    cpu: String,
+    #[tabled(rename = "CPU %")]
+    cpu_percentage: String,
+    #[tabled(rename = "Memory")]
+    memory: String,
+    #[tabled(rename = "Mem %")]
+    memory_percentage: String,
+}
+
+/// Ranked table of the host functions that consumed the most CPU, with each
+/// host function aggregated across every call site.
+pub fn render_host_call_table(profile: &ResourceProfile) -> String {
+    if profile.hotspots.is_empty() {
+        return String::new();
+    }
+
+    let rows: Vec<HostCallRow> = profile
+        .hotspots
+        .iter()
+        .map(|hotspot| HostCallRow {
+            host_call: hotspot.location.clone(),
+            calls: hotspot.call_count,
+            cpu: hotspot.cpu_instructions.to_string(),
+            cpu_percentage: format!("{:.1}%", hotspot.cpu_percentage),
+            memory: hotspot.memory_bytes.to_string(),
+            memory_percentage: format!("{:.1}%", hotspot.memory_percentage),
+        })
+        .collect();
+
+    Table::new(rows).to_string()
 }
 
 fn heat_cell(intensity: f64) -> String {
@@ -539,6 +585,7 @@ mod tests {
     fn heatmap_renders_function_names() {
         let profile = make_profile(vec![ResourceHotspot {
             location: "transfer::invoke".to_string(),
+            call_count: 1,
             cpu_instructions: 800_000,
             cpu_percentage: 80.0,
             memory_bytes: 300_000,
@@ -546,6 +593,32 @@ mod tests {
         }]);
         let output = render_heatmap(&profile);
         assert!(output.contains("transfer::invoke"));
+    }
+
+    #[test]
+    fn budget_bar_renders_not_available_when_limit_is_unknown() {
+        let rendered = BudgetBar::new("CPU", 123, 0).render();
+        assert!(rendered.contains("n/a"));
+        assert!(rendered.contains("123"));
+    }
+
+    #[test]
+    fn host_call_table_renders_calls_and_percentages() {
+        let profile = make_profile(vec![ResourceHotspot {
+            location: "storage_get".to_string(),
+            call_count: 42,
+            cpu_instructions: 800_000,
+            cpu_percentage: 80.0,
+            memory_bytes: 300_000,
+            memory_percentage: 30.0,
+        }]);
+
+        let rendered = render_host_call_table(&profile);
+        assert!(rendered.contains("Host Call"));
+        assert!(rendered.contains("storage_get"));
+        assert!(rendered.contains("42"));
+        assert!(rendered.contains("80.0%"));
+        assert!(rendered.contains("30.0%"));
     }
 
     #[test]

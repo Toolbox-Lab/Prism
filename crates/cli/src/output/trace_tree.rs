@@ -1,6 +1,4 @@
-
-
-use grat_core::types::trace::{ ContractInvocation, ExecutionTrace };
+use grat_core::types::trace::{ContractInvocation, ExecutionTrace};
 use std::io::Write;
 use termcolor::WriteColor;
 
@@ -14,7 +12,7 @@ mod tree_chars {
 
 #[allow(dead_code)]
 mod colors {
-    use termcolor::{ Color, ColorSpec, WriteColor };
+    use termcolor::{Color, ColorSpec, WriteColor};
 
     pub fn contract_id<W: WriteColor>(w: &mut W) {
         let mut spec = ColorSpec::new();
@@ -56,12 +54,15 @@ pub fn render_contract_tree<W: WriteColor>(
     invocation: &ContractInvocation,
     prefix: &str,
     is_last: bool,
-    depth: usize
+    depth: usize,
 ) -> std::io::Result<()> {
-    let (connector, next_prefix) = if is_last {
-        (tree_chars::CORNER, prefix.to_string() + tree_chars::SPACE)
+    let connector = if is_last {
+        tree_chars::CORNER
     } else {
-        (tree_chars::BRANCH, prefix.to_string() + tree_chars::CONTINUE)
+        (
+            tree_chars::BRANCH,
+            prefix.to_string() + tree_chars::CONTINUE,
+        )
     };
 
     write!(writer, "{}", prefix)?;
@@ -108,7 +109,10 @@ pub fn render_contract_tree<W: WriteColor>(
             let (arg_connector, _) = if is_arg_last {
                 (tree_chars::CORNER, args_prefix.clone() + tree_chars::SPACE)
             } else {
-                (tree_chars::BRANCH, args_prefix.clone() + tree_chars::CONTINUE)
+                (
+                    tree_chars::BRANCH,
+                    args_prefix.clone() + tree_chars::CONTINUE,
+                )
             };
 
             write!(writer, "{}{}📝 {}", args_prefix, arg_connector, arg)?;
@@ -149,12 +153,15 @@ fn render_host_call<W: WriteColor>(
     writer: &mut W,
     host_call: &grat_core::types::trace::HostFunctionCall,
     prefix: &str,
-    is_last: bool
+    is_last: bool,
 ) -> std::io::Result<()> {
     let (connector, _) = if is_last {
         (tree_chars::CORNER, prefix.to_string() + tree_chars::SPACE)
     } else {
-        (tree_chars::BRANCH, prefix.to_string() + tree_chars::CONTINUE)
+        (
+            tree_chars::BRANCH,
+            prefix.to_string() + tree_chars::CONTINUE,
+        )
     };
 
     write!(writer, "{}", prefix)?;
@@ -191,7 +198,10 @@ fn render_host_call<W: WriteColor>(
             let (arg_connector, _) = if is_arg_last {
                 (tree_chars::CORNER, args_prefix.clone() + tree_chars::SPACE)
             } else {
-                (tree_chars::BRANCH, args_prefix.clone() + tree_chars::CONTINUE)
+                (
+                    tree_chars::BRANCH,
+                    args_prefix.clone() + tree_chars::CONTINUE,
+                )
             };
 
             write!(writer, "{}{}📝 {}", args_prefix, arg_connector, arg)?;
@@ -217,7 +227,7 @@ fn render_host_call<W: WriteColor>(
 
 pub fn render_trace_tree<W: WriteColor>(
     writer: &mut W,
-    trace: &ExecutionTrace
+    trace: &ExecutionTrace,
 ) -> std::io::Result<()> {
     colors::contract_id(writer);
     write!(writer, "🔍 Execution Trace Tree")?;
@@ -238,17 +248,17 @@ pub fn render_trace_tree<W: WriteColor>(
         "   CPU: {}/{} ({}%)",
         format_cpu_usage(trace.resource_profile.total_cpu),
         format_cpu_usage(trace.resource_profile.cpu_limit),
-        (((trace.resource_profile.total_cpu as f64) / (trace.resource_profile.cpu_limit as f64)) *
-            100.0) as u32
+        (((trace.resource_profile.total_cpu as f64) / (trace.resource_profile.cpu_limit as f64))
+            * 100.0) as u32
     )?;
     writeln!(
         writer,
         "   Memory: {}/{} ({}%)",
         format_memory_usage(trace.resource_profile.total_memory),
         format_memory_usage(trace.resource_profile.memory_limit),
-        (((trace.resource_profile.total_memory as f64) /
-            (trace.resource_profile.memory_limit as f64)) *
-            100.0) as u32
+        (((trace.resource_profile.total_memory as f64)
+            / (trace.resource_profile.memory_limit as f64))
+            * 100.0) as u32
     )?;
     writeln!(writer)?;
 
@@ -303,7 +313,7 @@ fn format_memory_usage(bytes: u64) -> String {
 }
 
 pub fn print_trace_tree(trace: &ExecutionTrace) -> anyhow::Result<()> {
-    use termcolor::{ BufferWriter, ColorChoice };
+    use termcolor::{BufferWriter, ColorChoice};
 
     let writer = BufferWriter::stdout(ColorChoice::Auto);
     let mut buffer = writer.buffer();
@@ -317,14 +327,8 @@ pub fn print_trace_tree(trace: &ExecutionTrace) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grat_core::types::trace::{
-        ContractInvocation,
-        HostFunctionCall,
-        ExecutionTrace,
-        ResourceProfile,
-        StateDiff,
-    };
-    use termcolor::{ Buffer, ColorChoice };
+    use grat_core::types::trace::{ContractInvocation, TraceId};
+    use termcolor::Buffer;
 
     #[test]
     fn test_format_cpu_usage() {
@@ -343,12 +347,13 @@ mod tests {
     #[test]
     fn test_render_simple_tree() {
         let invocation = ContractInvocation {
+            trace_id: TraceId::new(),
             contract_id: "CB...123".to_string(),
             function_name: "transfer".to_string(),
             arguments: vec![
                 "from: alice".to_string(),
                 "to: bob".to_string(),
-                "amount: 100".to_string()
+                "amount: 100".to_string(),
             ],
             return_value: Some("true".to_string()),
             host_calls: vec![],
@@ -361,7 +366,8 @@ mod tests {
         let mut buffer = Buffer::no_color();
         render_contract_tree(&mut buffer, &invocation, "", true, 0).unwrap();
 
-        let output = String::from_utf8_lossy(&buffer.into_inner());
+        let bytes = buffer.into_inner();
+        let output = String::from_utf8_lossy(&bytes);
         assert!(output.contains("CB...123"));
         assert!(output.contains("transfer"));
         assert!(output.contains("[OK]"));

@@ -53,10 +53,8 @@ impl EnumDecoder {
                     return scval_to_json(val, None);
                 }
 
-                let payload: Vec<Value> = values[1..]
-                    .iter()
-                    .map(|v| scval_to_json(v, None))
-                    .collect();
+                let payload: Vec<Value> =
+                    values[1..].iter().map(|v| scval_to_json(v, None)).collect();
                 match payload.as_slice() {
                     [] => json!(variant_name),
                     [value] => json!({ variant_name: value }),

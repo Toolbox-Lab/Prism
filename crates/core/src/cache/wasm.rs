@@ -1,6 +1,6 @@
 use crate::cache::provider::{
-    cache_key, get_if_enabled, ledger_cache_key, put_if_enabled, CacheProvider,
-    SPEC_CACHE_PREFIX, WASM_CACHE_PREFIX,
+    cache_key, get_if_enabled, ledger_cache_key, put_if_enabled, CacheProvider, SPEC_CACHE_PREFIX,
+    WASM_CACHE_PREFIX,
 };
 use crate::error::GratResult;
 use sha2::{Digest, Sha256};
@@ -188,12 +188,7 @@ impl<P: CacheProvider> LedgerEntryCache<P> {
         self.get_entry(ledger_sequence, key).await
     }
 
-    pub async fn put(
-        &self,
-        ledger_sequence: u32,
-        key: &str,
-        entry: &[u8],
-    ) -> GratResult<()> {
+    pub async fn put(&self, ledger_sequence: u32, key: &str, entry: &[u8]) -> GratResult<()> {
         self.store_entry(ledger_sequence, key, entry).await
     }
 
