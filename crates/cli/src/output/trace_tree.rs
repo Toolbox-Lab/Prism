@@ -58,10 +58,7 @@ pub fn render_contract_tree<W: WriteColor>(
     let connector = if is_last {
         tree_chars::CORNER
     } else {
-        (
-            tree_chars::BRANCH,
-            prefix.to_string() + tree_chars::CONTINUE,
-        )
+        tree_chars::BRANCH
     };
 
     write!(writer, "{}", prefix)?;
