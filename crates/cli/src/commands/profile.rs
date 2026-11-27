@@ -3,6 +3,7 @@ use grat_core::types::config::NetworkConfig;
 
 #[derive(Args)]
 pub struct ProfileArgs {
+    /// Transaction hash to replay and profile.
     pub tx_hash: String,
 }
 

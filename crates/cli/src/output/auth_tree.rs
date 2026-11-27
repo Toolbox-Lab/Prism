@@ -283,11 +283,12 @@ fn render_auth_invocation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grat_core::types::trace::ContractInvocation;
+    use grat_core::types::trace::{ContractInvocation, TraceId};
 
     #[test]
     fn test_render_simple_auth_tree() {
         let invocation = ContractInvocation {
+            trace_id: grat_core::types::trace::TraceId::new(),
             contract_id: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC".to_string(),
             function_name: "transfer".to_string(),
             arguments: vec![
@@ -323,6 +324,7 @@ mod tests {
     #[test]
     fn test_render_nested_auth_tree() {
         let sub_invocation = ContractInvocation {
+            trace_id: grat_core::types::trace::TraceId::new(),
             contract_id: "SUB123...".to_string(),
             function_name: "approve".to_string(),
             arguments: vec!["spender: G...".to_string(), "amount: 50".to_string()],
@@ -335,6 +337,7 @@ mod tests {
         };
 
         let main_invocation = ContractInvocation {
+            trace_id: grat_core::types::trace::TraceId::new(),
             contract_id: "MAIN456...".to_string(),
             function_name: "execute".to_string(),
             arguments: vec!["target: SUB123...".to_string()],

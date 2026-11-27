@@ -12,6 +12,7 @@ pub mod human;
 pub mod json;
 pub mod renderers;
 pub mod theme;
+pub mod trace_tree;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -48,7 +49,7 @@ pub fn format_trace(trace: &ExecutionTrace, output_format: &str) -> anyhow::Resu
         OutputFormat::Json => serde_json::to_string_pretty(trace)?,
         OutputFormat::Short => format_trace_summary(trace),
         OutputFormat::Human => {
-            use termcolor::{Buffer, ColorChoice};
+            use termcolor::Buffer;
             let mut buffer = Buffer::no_color();
             trace_tree::render_trace_tree(&mut buffer, trace)
                 .map_err(|error| anyhow::anyhow!("failed to render trace tree: {error}"))?;
@@ -88,6 +89,14 @@ pub fn print_resource_profile(
             let palette = theme::ColorPalette::default();
             for warning in &profile.warnings {
                 println!("{} {warning}", palette.warning_text("⚠"));
+            }
+            if !profile.hotspots.is_empty() {
+                println!();
+                println!(
+                    "{}",
+                    renderers::render_section_header("Top Host Calls by CPU")
+                );
+                println!("{}", renderers::render_host_call_table(profile));
             }
             println!();
             print!("{}", renderers::render_heatmap(profile));
@@ -312,6 +321,7 @@ mod tests {
             state_diff: Default::default(),
             resource_profile: Default::default(),
             diagnostic_events: Vec::new(),
+            auth_chains: Vec::new(),
         }
     }
 

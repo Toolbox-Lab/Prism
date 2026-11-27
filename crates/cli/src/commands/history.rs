@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    env, fs,
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -26,7 +26,12 @@ pub async fn run(_output_format: &str) -> anyhow::Result<()> {
     println!("{:<4} {:<66} {}", "#", "Transaction Hash", "Decoded");
     println!("{}", "-".repeat(100));
     for (i, entry) in entries.iter().enumerate() {
-        println!("{:<4} {:<66} {}", i + 1, entry.tx_hash, relative_time(entry.timestamp));
+        println!(
+            "{:<4} {:<66} {}",
+            i + 1,
+            entry.tx_hash,
+            relative_time(entry.timestamp)
+        );
     }
     Ok(())
 }

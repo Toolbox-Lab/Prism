@@ -25,6 +25,7 @@ pub enum Network {
     #[default]
     Testnet,
     Futurenet,
+    Standalone,
     Custom(String),
 }
 
@@ -44,7 +45,7 @@ impl Network {
             "mainnet" | "main" | "pubnet" | "public" => Self::Mainnet,
             "testnet" | "test" => Self::Testnet,
             "futurenet" | "future" => Self::Futurenet,
-            "local" | "localhost" | "standalone" => Self::Custom(Self::LOCAL.to_string()),
+            "local" | "localhost" | "standalone" => Self::Standalone,
             _ if trimmed.starts_with("http://") || trimmed.starts_with("https://") => {
                 Self::Custom(trimmed.to_string())
             }
@@ -59,12 +60,14 @@ impl Network {
             Self::Mainnet => "mainnet",
             Self::Testnet => "testnet",
             Self::Futurenet => "futurenet",
+            Self::Standalone => "standalone",
             Self::Custom(name) => name.as_str(),
         }
     }
 
     pub fn is_local(&self) -> bool {
-        matches!(self, Self::Custom(name) if name.eq_ignore_ascii_case(Self::LOCAL))
+        matches!(self, Self::Standalone)
+            || matches!(self, Self::Custom(name) if name.eq_ignore_ascii_case(Self::LOCAL))
     }
 
     pub fn config(&self) -> NetworkConfig {
@@ -76,7 +79,7 @@ impl Network {
             Self::Mainnet => MAINNET_PASSPHRASE,
             Self::Testnet => TESTNET_PASSPHRASE,
             Self::Futurenet => FUTURENET_PASSPHRASE,
-            Self::Custom(_) => LOCAL_PASSPHRASE,
+            Self::Standalone | Self::Custom(_) => LOCAL_PASSPHRASE,
         }
     }
 
@@ -85,7 +88,7 @@ impl Network {
             Self::Mainnet => MAINNET_RPC_URL,
             Self::Testnet => TESTNET_RPC_URL,
             Self::Futurenet => FUTURENET_RPC_URL,
-            Self::Custom(_) => LOCAL_RPC_URL,
+            Self::Standalone | Self::Custom(_) => LOCAL_RPC_URL,
         }
     }
 }
@@ -189,7 +192,7 @@ impl NetworkConfig {
 
     pub fn local() -> Self {
         Self {
-            network: Network::Custom(Network::LOCAL.to_string()),
+            network: Network::Standalone,
             rpc_url: LOCAL_RPC_URL.to_string(),
             network_passphrase: LOCAL_PASSPHRASE.to_string(),
             archive_urls: Vec::new(),
@@ -225,6 +228,7 @@ impl NetworkConfig {
             Network::Mainnet => Self::mainnet(),
             Network::Testnet => Self::testnet(),
             Network::Futurenet => Self::futurenet(),
+            Network::Standalone => Self::local(),
             Network::Custom(name) if name.eq_ignore_ascii_case(Network::LOCAL) => Self::local(),
             Network::Custom(name)
                 if name.starts_with("http://") || name.starts_with("https://") =>
@@ -273,11 +277,10 @@ mod tests {
     }
 
     #[test]
-    fn parses_local_aliases_as_custom_local_network() {
-        assert_eq!(
-            Network::parse("standalone").unwrap(),
-            Network::Custom(Network::LOCAL.to_string())
-        );
+    fn parses_local_aliases_as_standalone_network() {
+        assert_eq!(Network::parse("standalone").unwrap(), Network::Standalone);
+        assert_eq!(Network::parse("local").unwrap(), Network::Standalone);
+        assert_eq!(Network::parse("localhost").unwrap(), Network::Standalone);
         assert!(Network::parse("local").unwrap().is_local());
     }
 
@@ -285,10 +288,23 @@ mod tests {
     fn resolves_local_network_defaults() {
         let config = resolve_network("local");
 
+        assert_eq!(config.network, Network::Standalone);
         assert!(config.network.is_local());
         assert_eq!(config.rpc_url, LOCAL_RPC_URL);
         assert_eq!(config.network_passphrase, LOCAL_PASSPHRASE);
         assert!(config.archive_urls.is_empty());
+    }
+
+    #[test]
+    fn standalone_config_round_trips_through_serde() {
+        let config = Network::Standalone.config();
+        assert_eq!(config.network, Network::Standalone);
+
+        let json = serde_json::to_string(&config).expect("config should serialize");
+        let parsed: NetworkConfig = serde_json::from_str(&json).expect("config should parse");
+
+        assert_eq!(parsed.network, Network::Standalone);
+        assert_eq!(parsed.rpc_url, LOCAL_RPC_URL);
     }
 
     #[test]

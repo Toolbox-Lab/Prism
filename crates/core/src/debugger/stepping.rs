@@ -34,9 +34,9 @@ pub enum StepCommand {
 
     /// Leave the current invocation and resume in its caller.
     ///
-    /// Moves to the next recorded frame that is shallower than the current
-    /// frame. Root invocations have no caller, so stepping out of one leaves
-    /// the debugger where it is.
+    /// Moves to the current frame's recorded parent invocation. Root
+    /// invocations have no caller, so stepping out of one leaves the debugger
+    /// where it is.
     StepOut,
 
     /// Run to the next top-level invocation.
@@ -48,6 +48,9 @@ pub enum StepCommand {
     Continue,
 
     /// Run to the last recorded invocation.
+    StepToEnd,
+
+    /// Alias for [`StepCommand::StepToEnd`] kept for backwards compatibility.
     RunToEnd,
 }
 
@@ -65,6 +68,9 @@ pub struct PauseState {
 
     /// Nesting depth of the current invocation (`0` for a root invocation).
     pub call_depth: usize,
+
+    /// Arguments passed to the invocation the debugger is paused on.
+    pub current_arguments: Vec<String>,
 
     /// CPU instructions still available in the recorded budget.
     pub remaining_cpu: u64,
@@ -90,6 +96,9 @@ pub struct InvocationFrame {
 
     /// Function that was invoked.
     pub function_name: String,
+
+    /// Arguments passed to the invocation.
+    pub arguments: Vec<String>,
 
     /// Position of the parent frame inside the flattened frame list.
     pub parent: Option<usize>,
@@ -172,15 +181,12 @@ impl ExecutionStepper {
                 let depth = self.depth_at(current);
                 self.next_frame(current, |candidate| candidate <= depth)
             }
-            StepCommand::StepOut => {
-                let depth = self.depth_at(current);
-                self.next_frame(current, |candidate| candidate < depth)
-            }
+            StepCommand::StepOut => self.frames.get(current).and_then(|frame| frame.parent),
             StepCommand::Continue => self
                 .next_frame(current, |candidate| candidate == 0)
                 .or_else(|| self.frames.len().checked_sub(1))
                 .filter(|&position| position > current),
-            StepCommand::RunToEnd => self.frames.len().checked_sub(1),
+            StepCommand::StepToEnd | StepCommand::RunToEnd => self.frames.len().checked_sub(1),
         };
 
         if let Some(next) = next {
@@ -190,6 +196,32 @@ impl ExecutionStepper {
             }
         }
 
+        self.current_state.as_ref()
+    }
+
+    /// Steps backward by one frame, strictly clamping at the first frame (`0`).
+    ///
+    /// Returns the updated [`PauseState`], or `None` if no trace is loaded.
+    pub fn step_back(&mut self) -> Option<&PauseState> {
+        let current = self.current_index?;
+        let previous = current.saturating_sub(1);
+        if previous != current {
+            self.current_index = Some(previous);
+            self.refresh_state();
+        }
+        self.current_state.as_ref()
+    }
+
+    /// Moves directly to `index`, strictly clamped within `0..self.frames.len()`.
+    ///
+    /// Returns `None` if no trace is loaded or the trace has no invocations.
+    pub fn seek(&mut self, index: usize) -> Option<&PauseState> {
+        let last = self.frames.len().checked_sub(1)?;
+        let target = index.min(last);
+        if self.current_index != Some(target) {
+            self.current_index = Some(target);
+            self.refresh_state();
+        }
         self.current_state.as_ref()
     }
 
@@ -203,10 +235,30 @@ impl ExecutionStepper {
         self.is_paused
     }
 
+    /// Whether the stepper is positioned at the first recorded invocation.
+    pub fn is_at_start(&self) -> bool {
+        self.current_index == Some(0)
+    }
+
     /// Whether the stepper reached the last recorded invocation.
     pub fn is_finished(&self) -> bool {
         self.current_index
             .is_some_and(|index| index + 1 >= self.frames.len())
+    }
+
+    /// Returns the active call stack from the root caller down to the paused frame.
+    pub fn call_stack(&self) -> Vec<&InvocationFrame> {
+        let mut stack = Vec::new();
+        let mut cursor = self.current_index;
+        while let Some(index) = cursor {
+            let Some(frame) = self.frames.get(index) else {
+                break;
+            };
+            stack.push(frame);
+            cursor = frame.parent;
+        }
+        stack.reverse();
+        stack
     }
 
     /// The trace the stepper is walking.
@@ -232,6 +284,7 @@ impl ExecutionStepper {
     /// Rewinds the stepper to the first invocation of the loaded trace.
     pub fn reset(&mut self) {
         self.current_index = (!self.frames.is_empty()).then_some(0);
+        self.is_paused = !self.frames.is_empty();
         self.refresh_state();
     }
 
@@ -259,6 +312,7 @@ impl ExecutionStepper {
             current_contract: frame.contract_id.clone(),
             current_function: frame.function_name.clone(),
             call_depth: frame.depth,
+            current_arguments: frame.arguments.clone(),
             remaining_cpu: cpu_limit.saturating_sub(frame.cumulative_cpu),
             remaining_memory: memory_limit.saturating_sub(frame.cumulative_memory),
             visible_storage: self.visible_storage.clone(),
@@ -339,6 +393,7 @@ fn flatten_invocation(
         depth,
         contract_id: invocation.contract_id.clone(),
         function_name: invocation.function_name.clone(),
+        arguments: invocation.arguments.clone(),
         parent,
         cpu_instructions: invocation.total_cpu_instructions.saturating_sub(nested_cpu),
         memory_bytes: invocation.total_memory_bytes.saturating_sub(nested_memory),
@@ -441,25 +496,28 @@ mod tests {
     /// `-- f
     /// ```
     fn mock_trace() -> ExecutionTrace {
+        let mut b = invocation("C_B", "b", 10, 100, Vec::new());
+        b.arguments = vec!["42".to_string()];
+
         let mut a = invocation(
             "C_A",
             "a",
             40,
             400,
-            vec![
-                invocation("C_B", "b", 10, 100, Vec::new()),
-                invocation("C_C", "c", 20, 200, Vec::new()),
-            ],
+            vec![b, invocation("C_C", "c", 20, 200, Vec::new())],
         );
-        a.host_calls.push(host_call("require_auth", &["G_AUTHORIZED"]));
+        a.arguments = vec!["G_ALICE".to_string(), "100".to_string()];
+        a.host_calls
+            .push(host_call("require_auth", &["G_AUTHORIZED"]));
 
-        let root1 = invocation(
+        let mut root1 = invocation(
             "C_ROOT1",
             "root1",
             100,
             1_000,
             vec![a, invocation("C_D", "d", 30, 300, Vec::new())],
         );
+        root1.arguments = vec!["init".to_string()];
 
         let root2 = invocation(
             "C_ROOT2",
@@ -520,11 +578,8 @@ mod tests {
         let depths: Vec<usize> = stepper.frames().iter().map(|frame| frame.depth).collect();
         assert_eq!(depths, [0, 1, 2, 2, 1, 0, 1, 1]);
 
-        let parents: Vec<Option<usize>> = stepper
-            .frames()
-            .iter()
-            .map(|frame| frame.parent)
-            .collect();
+        let parents: Vec<Option<usize>> =
+            stepper.frames().iter().map(|frame| frame.parent).collect();
         assert_eq!(
             parents,
             [
@@ -583,8 +638,8 @@ mod tests {
         assert_eq!(stepper.current_index(), Some(2));
 
         stepper.step(StepCommand::StepOut);
-        assert_eq!(stepper.current_index(), Some(4));
-        assert_eq!(stepper.current_frame().unwrap().function_name, "d");
+        assert_eq!(stepper.current_index(), Some(1));
+        assert_eq!(stepper.current_frame().unwrap().function_name, "a");
     }
 
     #[test]
@@ -684,7 +739,10 @@ mod tests {
         let mut stepper = stepper();
 
         let state = stepper.current_state().unwrap();
-        assert_eq!(state.visible_storage, vec![("counter".to_string(), "2".to_string())]);
+        assert_eq!(
+            state.visible_storage,
+            vec![("counter".to_string(), "2".to_string())]
+        );
         assert!(state.auth_context.is_empty());
 
         stepper.step(StepCommand::StepInto);
@@ -715,5 +773,162 @@ mod tests {
 
         assert_eq!(stepper.current_index(), Some(0));
         assert_eq!(stepper.current_state().unwrap().current_function, "root1");
+        assert!(stepper.is_at_start());
+    }
+
+    #[test]
+    fn step_to_end_moves_to_the_last_frame() {
+        let mut stepper = stepper();
+
+        let state = stepper.step(StepCommand::StepToEnd).unwrap();
+        assert_eq!(state.trace_position, 7);
+        assert_eq!(state.current_function, "f");
+        assert!(stepper.is_finished());
+        assert!(!stepper.is_at_start());
+    }
+
+    #[test]
+    fn pause_state_tracks_current_invocation_arguments() {
+        let mut stepper = stepper();
+
+        assert_eq!(
+            stepper.current_state().unwrap().current_arguments,
+            vec!["init".to_string()]
+        );
+
+        stepper.step(StepCommand::StepInto);
+        assert_eq!(
+            stepper.current_state().unwrap().current_arguments,
+            vec!["G_ALICE".to_string(), "100".to_string()]
+        );
+
+        stepper.step(StepCommand::StepInto);
+        assert_eq!(
+            stepper.current_state().unwrap().current_arguments,
+            vec!["42".to_string()]
+        );
+
+        stepper.step(StepCommand::StepInto);
+        assert!(stepper
+            .current_state()
+            .unwrap()
+            .current_arguments
+            .is_empty());
+    }
+
+    #[test]
+    fn call_stack_tracks_active_ancestors() {
+        fn stack_names(s: &ExecutionStepper) -> Vec<&str> {
+            s.call_stack()
+                .iter()
+                .map(|frame| frame.function_name.as_str())
+                .collect()
+        }
+
+        let mut stepper = stepper();
+
+        assert_eq!(stack_names(&stepper), vec!["root1"]);
+
+        stepper.step(StepCommand::StepInto);
+        assert_eq!(stack_names(&stepper), vec!["root1", "a"]);
+
+        stepper.step(StepCommand::StepInto);
+        assert_eq!(stack_names(&stepper), vec!["root1", "a", "b"]);
+
+        stepper.step(StepCommand::StepOut);
+        assert_eq!(stack_names(&stepper), vec!["root1", "a"]);
+
+        stepper.step(StepCommand::Continue);
+        assert_eq!(stack_names(&stepper), vec!["root2"]);
+
+        stepper.step(StepCommand::StepInto);
+        assert_eq!(stack_names(&stepper), vec!["root2", "e"]);
+    }
+
+    #[test]
+    fn step_back_enforces_start_boundary() {
+        let mut stepper = stepper();
+
+        assert!(stepper.is_at_start());
+        stepper.step_back();
+        assert_eq!(stepper.current_index(), Some(0));
+        assert_eq!(stepper.current_state().unwrap().current_function, "root1");
+
+        stepper.step(StepCommand::StepInto);
+        stepper.step(StepCommand::StepInto);
+        assert_eq!(stepper.current_index(), Some(2));
+        assert!(!stepper.is_at_start());
+
+        stepper.step_back();
+        assert_eq!(stepper.current_index(), Some(1));
+        assert_eq!(stepper.current_state().unwrap().current_function, "a");
+        assert_eq!(stepper.current_state().unwrap().remaining_cpu, 360);
+
+        stepper.step_back();
+        assert_eq!(stepper.current_index(), Some(0));
+        assert!(stepper.is_at_start());
+
+        stepper.step_back();
+        assert_eq!(stepper.current_index(), Some(0));
+    }
+
+    #[test]
+    fn seek_clamps_to_valid_frame_bounds() {
+        let mut stepper = stepper();
+
+        let state = stepper.seek(999).unwrap();
+        assert_eq!(state.trace_position, 7);
+        assert!(stepper.is_finished());
+
+        let state = stepper.seek(0).unwrap();
+        assert_eq!(state.trace_position, 0);
+        assert!(stepper.is_at_start());
+
+        let mut empty = ExecutionStepper::new();
+        assert!(empty.seek(0).is_none());
+        assert!(empty.step_back().is_none());
+        assert!(empty.call_stack().is_empty());
+    }
+
+    #[test]
+    fn empty_trace_and_single_frame_boundaries() {
+        let mut empty_trace = mock_trace();
+        empty_trace.invocations.clear();
+
+        let mut empty_stepper = ExecutionStepper::with_trace(empty_trace);
+        assert!(empty_stepper.current_index().is_none());
+        assert!(empty_stepper.current_state().is_none());
+        assert!(!empty_stepper.is_paused());
+        assert!(!empty_stepper.is_at_start());
+        assert!(!empty_stepper.is_finished());
+        assert!(empty_stepper.step(StepCommand::StepInto).is_none());
+        assert!(empty_stepper.step(StepCommand::StepToEnd).is_none());
+
+        let mut single_trace = mock_trace();
+        single_trace.invocations = vec![invocation("C_ONLY", "only", 50, 500, Vec::new())];
+        let mut single_stepper = ExecutionStepper::with_trace(single_trace);
+
+        assert!(single_stepper.is_at_start());
+        assert!(single_stepper.is_finished());
+
+        for cmd in [
+            StepCommand::StepInto,
+            StepCommand::StepOver,
+            StepCommand::StepOut,
+            StepCommand::Continue,
+            StepCommand::StepToEnd,
+        ] {
+            let state = single_stepper.step(cmd).unwrap();
+            assert_eq!(state.trace_position, 0);
+            assert_eq!(state.current_function, "only");
+        }
+        assert_eq!(single_stepper.step_back().unwrap().trace_position, 0);
+    }
+
+    #[test]
+    fn debugger_module_re_exports_stepper_types() {
+        let stepper = crate::debugger::ExecutionStepper::new();
+        assert!(!stepper.is_paused());
+        let _: crate::debugger::StepCommand = crate::debugger::StepCommand::StepToEnd;
     }
 }
