@@ -26,9 +26,9 @@ use ratatui::{
 /// * `area`       – Terminal rectangle allocated to this widget.
 /// * `state_diff` – Storage state changes computed for the current trace.
 /// * `selected`   – The currently focused invocation frame (used for the
-///                  header title and argument summary).
+///   header title and argument summary).
 /// * `scroll`     – Number of diff rows already scrolled past (modified by
-///                  the caller via up/down key events).
+///   the caller via up/down key events).
 pub fn render_inspector(
     frame: &mut Frame,
     area: Rect,
@@ -263,6 +263,59 @@ mod tests {
         assert!(result.ends_with('…'), "should end with ellipsis");
         // Multi-byte input must not be split inside a character.
         assert_eq!(truncate("ééééééé", 3), "éé…");
+    }
+
+    #[test]
+    fn truncate_respects_utf8_boundaries_and_character_budgets() {
+        for value in [
+            "é".repeat(50),
+            "界".repeat(40),
+            "🦀".repeat(30),
+            "ascii".repeat(20),
+        ] {
+            for max in 0..=value.chars().count() {
+                let result = truncate(&value, max);
+                assert!(
+                    result.chars().count() <= max,
+                    "exceeded {max} characters: {result:?}"
+                );
+                let prefix = result.strip_suffix('…').unwrap_or(&result);
+                assert!(value.starts_with(prefix));
+                if value.chars().count() <= max {
+                    assert_eq!(result, value);
+                } else if max > 0 {
+                    assert!(result.ends_with('…'));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn inspector_renders_unicode_arguments_and_state_values() {
+        use ratatui::{backend::TestBackend, Terminal};
+
+        let mut state = crate::tui::state::fixture();
+        let invocation = state.selected_invocation.as_mut().unwrap();
+        invocation.arguments = vec!["é".repeat(50)];
+        let diff = make_diff(vec![LedgerEntryDiff {
+            key: "界".repeat(20),
+            before: Some("🦀".repeat(20)),
+            after: Some("é".repeat(30)),
+            change_type: DiffChangeType::Updated,
+        }]);
+        let mut terminal = Terminal::new(TestBackend::new(120, 24)).unwrap();
+        terminal
+            .draw(|frame| render_inspector(frame, frame.area(), &diff, Some(invocation), 0))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("Inspector") && text.contains("Args:"));
+        assert!(text.contains('é') && text.contains('界') && text.contains('🦀'));
     }
 
     #[test]

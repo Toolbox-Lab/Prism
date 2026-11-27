@@ -14,7 +14,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 
@@ -131,28 +131,31 @@ fn render(frame: &mut Frame<'_>, state: &TuiState) {
     );
     let detail_sections = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(6), Constraint::Min(0)])
+        .constraints([Constraint::Length(7), Constraint::Min(0)])
         .split(panels[1]);
     let details = state.entries.get(state.scroll_offset).map_or_else(
         || "No recorded invocations. [q] quits.".to_owned(),
         |entry| {
             format!(
                 "Contract: {}\nFunction: {}\nArguments: {}\nReturn: {}\nError: {}",
-                entry.contract,
-                entry.function,
-                entry.arguments.join(", "),
-                entry.return_value.as_deref().unwrap_or("unavailable"),
+                entry.contract.escape_debug(),
+                entry.function.escape_debug(),
+                entry.arguments.join(", ").escape_debug(),
+                entry
+                    .return_value
+                    .as_deref()
+                    .unwrap_or("unavailable")
+                    .escape_debug(),
                 entry.is_error
             )
         },
     );
+    // Keep each summary field on one row so long values cannot hide the error status.
     frame.render_widget(
-        Paragraph::new(details)
-            .wrap(Wrap { trim: true })
-            .block(panel(
-                "Invocation",
-                state.selected_panel == Panel::Inspector,
-            )),
+        Paragraph::new(details).block(panel(
+            "Invocation",
+            state.selected_panel == Panel::Inspector,
+        )),
         detail_sections[0],
     );
     inspector::render_inspector(
@@ -254,6 +257,61 @@ mod tests {
         assert!(text.contains("ledger 1"));
         assert!(text.contains("Replay: Paused 2/3"));
         assert_eq!(timeline::count(&state.invocations), state.entries.len());
+    }
+
+    #[test]
+    fn invocation_panel_shows_the_error_status_below_the_return_value() {
+        let mut state = super::super::state::fixture();
+        state.entries[0].is_error = true;
+        let mut terminal = Terminal::new(TestBackend::new(120, 24)).unwrap();
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        for label in [
+            "Contract:",
+            "Function:",
+            "Arguments:",
+            "Return:",
+            "Error: true",
+        ] {
+            assert!(text.contains(label), "missing {label}");
+        }
+    }
+
+    #[test]
+    fn long_invocation_values_cannot_displace_summary_fields() {
+        let mut state = super::super::state::fixture();
+        let entry = &mut state.entries[0];
+        entry.contract = format!("C{}", "A".repeat(55));
+        entry.function = "long_function".repeat(10);
+        entry.arguments = vec!["\u{e9}\n\u{1f980}\r\u{754c}".repeat(50)];
+        entry.return_value = Some("long\nreturn".repeat(50));
+        entry.is_error = true;
+        for width in [80, 120] {
+            let mut terminal = Terminal::new(TestBackend::new(width, 24)).unwrap();
+            terminal.draw(|frame| render(frame, &state)).unwrap();
+            let text: String = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect();
+            for label in [
+                "Contract:",
+                "Function:",
+                "Arguments:",
+                "Return:",
+                "Error: true",
+            ] {
+                assert!(text.contains(label), "missing {label} at width {width}");
+            }
+        }
     }
 
     #[test]
